@@ -9,6 +9,32 @@ pub enum Op {
     Given(u32),
 }
 
+impl Op {
+    fn is_satisfied(&self, filled: &[u32], all_filled: bool) -> bool {
+        match self {
+            Op::Given(t) => !all_filled || filled[0] == *t,
+            Op::Add(t) => {
+                let sum: u32 = filled.iter().sum();
+                if all_filled { sum == *t } else { sum < *t }
+            }
+            Op::Mul(t) => {
+                let prod: u32 = filled.iter().product();
+                // Partial product equal to target is still satisfiable (multiply by 1s)
+                if all_filled { prod == *t } else { prod <= *t }
+            }
+            Op::Sub(t) => !all_filled || filled[0].abs_diff(filled[1]) == *t,
+            Op::Div(t) => {
+                if !all_filled {
+                    return true;
+                }
+                let (a, b) = (filled[0], filled[1]);
+                let (big, small) = if a >= b { (a, b) } else { (b, a) };
+                small != 0 && big % small == 0 && big / small == *t
+            }
+        }
+    }
+}
+
 #[derive(Debug, Clone)]
 pub struct Cage {
     pub cells: Vec<(usize, usize)>,
@@ -39,23 +65,25 @@ pub fn is_cage_contiguous(cage: &Cage) -> bool {
     visited.len() == cage.cells.len()
 }
 
-fn neighbors(r: usize, c: usize) -> Vec<(usize, usize)> {
-    let mut n = vec![(r + 1, c), (r, c + 1)];
-    if r > 0 { n.push((r - 1, c)); }
-    if c > 0 { n.push((r, c - 1)); }
-    n
+fn neighbors(r: usize, c: usize) -> [(usize, usize); 4] {
+    // usize::MAX sentinels are filtered by is_cage_contiguous's cell_set lookup
+    [
+        (r.wrapping_sub(1), c),
+        (r + 1, c),
+        (r, c.wrapping_sub(1)),
+        (r, c + 1),
+    ]
 }
 
 /// Returns true if the cages exactly cover every cell in the puzzle grid with no overlaps.
 pub fn is_puzzle_covered(puzzle: &Puzzle) -> bool {
     let mut seen = HashSet::new();
     for cage in &puzzle.cages {
-        for &cell in &cage.cells {
-            let (r, c) = cell;
+        for &(r, c) in &cage.cells {
             if r >= puzzle.size || c >= puzzle.size {
                 return false;
             }
-            if !seen.insert(cell) {
+            if !seen.insert((r, c)) {
                 return false;
             }
         }
@@ -110,65 +138,21 @@ fn is_valid_placement(grid: &[Vec<u32>], size: usize, row: usize, col: usize, va
     true
 }
 
-// Check cages that are fully filled; partially filled cages are only checked for feasibility.
 fn cages_satisfied(puzzle: &Puzzle, grid: &[Vec<u32>], last_row: usize, last_col: usize) -> bool {
     for cage in &puzzle.cages {
         if !cage.cells.contains(&(last_row, last_col)) {
             continue;
         }
-        let values: Vec<u32> = cage
-            .cells
-            .iter()
-            .map(|&(r, c)| grid[r][c])
-            .collect();
-        let filled: Vec<u32> = values.iter().copied().filter(|&v| v != 0).collect();
+        let mut filled = Vec::with_capacity(cage.cells.len());
+        for &(r, c) in &cage.cells {
+            let v = grid[r][c];
+            if v != 0 {
+                filled.push(v);
+            }
+        }
         let all_filled = filled.len() == cage.cells.len();
-
-        match &cage.op {
-            Op::Given(target) => {
-                if all_filled && filled[0] != *target {
-                    return false;
-                }
-            }
-            Op::Add(target) => {
-                let sum: u32 = filled.iter().sum();
-                if all_filled && sum != *target {
-                    return false;
-                }
-                // Prune: partial sum already exceeds target
-                if sum >= *target && !all_filled {
-                    return false;
-                }
-            }
-            Op::Mul(target) => {
-                let prod: u32 = filled.iter().product();
-                if all_filled && prod != *target {
-                    return false;
-                }
-                // Prune: partial product already exceeds target
-                if prod > *target && !all_filled {
-                    return false;
-                }
-            }
-            Op::Sub(target) => {
-                if all_filled {
-                    let a = filled[0];
-                    let b = filled[1];
-                    if a.abs_diff(b) != *target {
-                        return false;
-                    }
-                }
-            }
-            Op::Div(target) => {
-                if all_filled {
-                    let a = filled[0];
-                    let b = filled[1];
-                    let (big, small) = if a >= b { (a, b) } else { (b, a) };
-                    if small == 0 || big % small != 0 || big / small != *target {
-                        return false;
-                    }
-                }
-            }
+        if !cage.op.is_satisfied(&filled, all_filled) {
+            return false;
         }
     }
     true
@@ -176,7 +160,6 @@ fn cages_satisfied(puzzle: &Puzzle, grid: &[Vec<u32>], last_row: usize, last_col
 
 pub fn is_solution_valid(puzzle: &Puzzle, grid: &[Vec<u32>]) -> bool {
     let size = puzzle.size;
-    // Check rows and columns contain each value exactly once
     let expected: HashSet<u32> = (1..=(size as u32)).collect();
     for i in 0..size {
         let row: HashSet<u32> = grid[i].iter().copied().collect();
@@ -188,37 +171,10 @@ pub fn is_solution_valid(puzzle: &Puzzle, grid: &[Vec<u32>]) -> bool {
             return false;
         }
     }
-    // Check all cages
     for cage in &puzzle.cages {
         let values: Vec<u32> = cage.cells.iter().map(|&(r, c)| grid[r][c]).collect();
-        match &cage.op {
-            Op::Given(t) => {
-                if values[0] != *t {
-                    return false;
-                }
-            }
-            Op::Add(t) => {
-                if values.iter().sum::<u32>() != *t {
-                    return false;
-                }
-            }
-            Op::Mul(t) => {
-                if values.iter().product::<u32>() != *t {
-                    return false;
-                }
-            }
-            Op::Sub(t) => {
-                if values[0].abs_diff(values[1]) != *t {
-                    return false;
-                }
-            }
-            Op::Div(t) => {
-                let (a, b) = (values[0], values[1]);
-                let (big, small) = if a >= b { (a, b) } else { (b, a) };
-                if small == 0 || big % small != 0 || big / small != *t {
-                    return false;
-                }
-            }
+        if !cage.op.is_satisfied(&values, true) {
+            return false;
         }
     }
     true
@@ -228,27 +184,22 @@ pub fn is_solution_valid(puzzle: &Puzzle, grid: &[Vec<u32>]) -> bool {
 mod tests {
     use super::*;
 
-    // 3x3 puzzle with a unique solution:
+    // 3x3 puzzle with unique solution [2,1,3 / 3,2,1 / 1,3,2]:
     //
-    //  +-------+---+---+
-    //  | 4+    | 2 |   |
-    //  +   +---+   +---+
-    //  |   | 1-|   | 2÷|
-    //  +---+---+---+   |
-    //  | 2÷|   | 6×|   |
-    //  +---+---+---+---+
-    //
-    // Let's use a well-known 3x3 with unique solution:
-    //   2 1 3
-    //   3 2 1
-    //   1 3 2
+    //  +-------+---+
+    //  | 5+    | 4+|
+    //  +   +---+---+
+    //  |   | 2 | 2×|
+    //  +---+---+   |
+    //  | 2-|   |   |
+    //  +---+---+---+
     //
     // Cages:
-    //   (0,0),(1,0) Add=5    -> 2+3=5
-    //   (0,1),(0,2) Add=4    -> 1+3=4
-    //   (1,1)       Given=2
-    //   (1,2),(2,2) Mul=2    -> 1*2=2
-    //   (2,0),(2,1) Sub=2    -> 3-1=2
+    //   (0,0),(1,0)  Add=5   2+3=5
+    //   (0,1),(0,2)  Add=4   1+3=4
+    //   (1,1)        Given=2
+    //   (1,2),(2,2)  Mul=2   1*2=2
+    //   (2,0),(2,1)  Sub=2   3-1=2
     fn make_3x3_puzzle() -> Puzzle {
         Puzzle {
             size: 3,
@@ -301,7 +252,6 @@ mod tests {
     #[test]
     fn invalid_solution_fails_validation() {
         let puzzle = make_3x3_puzzle();
-        // Swap two cells to break the solution
         let bad = vec![
             vec![2, 3, 1],
             vec![3, 2, 1],
@@ -312,27 +262,25 @@ mod tests {
 
     #[test]
     fn contiguous_cage_is_valid() {
-        let cage = Cage { cells: vec![(0,0),(0,1),(1,1)], op: Op::Add(6) };
+        let cage = Cage { cells: vec![(0, 0), (0, 1), (1, 1)], op: Op::Add(6) };
         assert!(is_cage_contiguous(&cage));
     }
 
     #[test]
     fn single_cell_cage_is_contiguous() {
-        let cage = Cage { cells: vec![(2,2)], op: Op::Given(3) };
+        let cage = Cage { cells: vec![(2, 2)], op: Op::Given(3) };
         assert!(is_cage_contiguous(&cage));
     }
 
     #[test]
     fn diagonal_cage_is_not_contiguous() {
-        // (0,0) and (1,1) are diagonal — not orthogonally connected
-        let cage = Cage { cells: vec![(0,0),(1,1)], op: Op::Add(4) };
+        let cage = Cage { cells: vec![(0, 0), (1, 1)], op: Op::Add(4) };
         assert!(!is_cage_contiguous(&cage));
     }
 
     #[test]
     fn gap_cage_is_not_contiguous() {
-        // (0,0) and (0,2) with no (0,1) in between
-        let cage = Cage { cells: vec![(0,0),(0,2)], op: Op::Add(4) };
+        let cage = Cage { cells: vec![(0, 0), (0, 2)], op: Op::Add(4) };
         assert!(!is_cage_contiguous(&cage));
     }
 
@@ -344,7 +292,6 @@ mod tests {
     #[test]
     fn puzzle_with_missing_cell_is_not_covered() {
         let mut puzzle = make_3x3_puzzle();
-        // Remove the last cage so (2,0) and (2,1) are uncovered
         puzzle.cages.retain(|c| c.op != Op::Sub(2));
         assert!(!is_puzzle_covered(&puzzle));
     }
@@ -352,7 +299,6 @@ mod tests {
     #[test]
     fn puzzle_with_overlapping_cages_is_not_covered() {
         let mut puzzle = make_3x3_puzzle();
-        // Add a cage that overlaps (0,0)
         puzzle.cages.push(Cage { cells: vec![(0, 0)], op: Op::Given(2) });
         assert!(!is_puzzle_covered(&puzzle));
     }
