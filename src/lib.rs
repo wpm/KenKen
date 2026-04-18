@@ -70,7 +70,6 @@ pub fn is_cage_contiguous(cage: &Cage) -> bool {
 }
 
 fn neighbors(r: usize, c: usize) -> [(usize, usize); 4] {
-    // usize::MAX sentinels are filtered by is_cage_contiguous's cell_set lookup
     [
         (r.wrapping_sub(1), c),
         (r + 1, c),
@@ -196,7 +195,6 @@ fn backtrack_count(
             if cages_satisfied(puzzle, grid, row, col) {
                 backtrack_count(puzzle, grid, next_row, next_col, limit, found);
                 if *found >= limit {
-                    grid[row][col] = 0;
                     return;
                 }
             }
@@ -327,10 +325,10 @@ pub fn generate_with_rng<R: RngCore>(size: usize, rng: &mut R) -> (Puzzle, Vec<V
 
         let trial = Puzzle {
             size,
-            cages: trial_cages.clone(),
+            cages: trial_cages,
         };
         if has_unique_solution(&trial) {
-            cages = trial_cages;
+            cages = trial.cages;
             ids = trial_ids;
             next_id += 1;
         } else {
@@ -421,9 +419,7 @@ fn random_latin_square<R: RngCore>(size: usize, rng: &mut R) -> Vec<Vec<u32>> {
     // on pathological orderings, but restart is cheap at the sizes we care about.
     loop {
         for row in grid.iter_mut() {
-            for cell in row.iter_mut() {
-                *cell = 0;
-            }
+            row.fill(0);
         }
         if fill_latin_square(&mut grid, 0, 0, size, rng, &mut order) {
             return grid;
@@ -442,14 +438,10 @@ fn fill_latin_square<R: RngCore>(
     if row == size {
         return true;
     }
-    let (next_row, next_col) = if col + 1 == size {
-        (row + 1, 0)
-    } else {
-        (row, col + 1)
-    };
+    let (next_row, next_col) = next_cell(col, row, size);
     order.shuffle(rng);
-    let candidates = order.clone();
-    for val in candidates {
+    for i in 0..order.len() {
+        let val = order[i];
         if is_valid_placement(grid, size, row, col, val) {
             grid[row][col] = val;
             if fill_latin_square(grid, next_row, next_col, size, rng, order) {
