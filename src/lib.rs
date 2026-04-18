@@ -1,3 +1,7 @@
+use rand::prelude::IndexedRandom;
+use rand::seq::SliceRandom;
+use rand::{Rng, RngCore, SeedableRng};
+use rand_chacha::ChaCha8Rng;
 use std::collections::HashSet;
 
 #[derive(Debug, Clone, PartialEq)]
@@ -105,6 +109,21 @@ pub fn solve_all(puzzle: &Puzzle) -> Vec<Vec<Vec<u32>>> {
     solutions
 }
 
+/// Returns true iff the puzzle has exactly one solution. Stops searching as
+/// soon as a second solution is found, so it is much faster than
+/// `solve_all(p).len() == 1` for ambiguous puzzles.
+pub fn has_unique_solution(puzzle: &Puzzle) -> bool {
+    count_solutions_up_to(puzzle, 2) == 1
+}
+
+/// Counts the puzzle's solutions, stopping once `limit` have been found.
+pub fn count_solutions_up_to(puzzle: &Puzzle, limit: usize) -> usize {
+    let mut grid = vec![vec![0u32; puzzle.size]; puzzle.size];
+    let mut found = 0usize;
+    backtrack_count(puzzle, &mut grid, 0, 0, limit, &mut found);
+    found
+}
+
 fn next_cell(col: usize, row: usize, size: usize) -> (usize, usize) {
     if col + 1 == size {
         (row + 1, 0)
@@ -149,6 +168,37 @@ fn backtrack_all(
             grid[row][col] = val;
             if cages_satisfied(puzzle, grid, row, col) {
                 backtrack_all(puzzle, grid, next_row, next_col, solutions);
+            }
+            grid[row][col] = 0;
+        }
+    }
+}
+
+fn backtrack_count(
+    puzzle: &Puzzle,
+    grid: &mut Vec<Vec<u32>>,
+    row: usize,
+    col: usize,
+    limit: usize,
+    found: &mut usize,
+) {
+    if *found >= limit {
+        return;
+    }
+    if row == puzzle.size {
+        *found += 1;
+        return;
+    }
+    let (next_row, next_col) = next_cell(col, row, puzzle.size);
+    for val in 1..=(puzzle.size as u32) {
+        if is_valid_placement(grid, puzzle.size, row, col, val) {
+            grid[row][col] = val;
+            if cages_satisfied(puzzle, grid, row, col) {
+                backtrack_count(puzzle, grid, next_row, next_col, limit, found);
+                if *found >= limit {
+                    grid[row][col] = 0;
+                    return;
+                }
             }
             grid[row][col] = 0;
         }
@@ -205,6 +255,210 @@ pub fn is_solution_valid(puzzle: &Puzzle, grid: &[Vec<u32>]) -> bool {
         }
     }
     true
+}
+
+/// Generate a random KenKen puzzle of side `size` that has a unique solution.
+/// Returns `(puzzle, solution)` where `solution` is the intended unique
+/// solution. Deterministic for a given seed.
+pub fn generate(size: usize, seed: u64) -> (Puzzle, Vec<Vec<u32>>) {
+    let mut rng = ChaCha8Rng::seed_from_u64(seed);
+    generate_with_rng(size, &mut rng)
+}
+
+/// Generate a random unique-solution KenKen using a caller-provided RNG.
+///
+/// Uses a *coarsening* strategy: start from `size*size` singleton `Given` cages
+/// (trivially unique), then repeatedly merge a random pair of adjacent cages
+/// and assign an operation consistent with the target solution, keeping only
+/// merges that preserve uniqueness.
+pub fn generate_with_rng<R: RngCore>(size: usize, rng: &mut R) -> (Puzzle, Vec<Vec<u32>>) {
+    assert!(size >= 2, "KenKen size must be at least 2");
+
+    let solution = random_latin_square(size, rng);
+
+    // Each cage carries a stable id so the blacklist survives index churn.
+    let mut cages: Vec<Cage> = (0..size)
+        .flat_map(|r| {
+            let row = solution[r].clone();
+            (0..size).map(move |c| Cage {
+                cells: vec![(r, c)],
+                op: Op::Given(row[c]),
+            })
+        })
+        .collect();
+    let mut ids: Vec<usize> = (0..cages.len()).collect();
+    let mut next_id: usize = cages.len();
+    let mut blacklist: HashSet<(usize, usize)> = HashSet::new();
+
+    let target = ((size * size) / 3).max(2);
+    let max_cage_size = (size - 1).max(3);
+
+    loop {
+        if cages.len() <= target {
+            break;
+        }
+        let candidates = adjacent_cage_pairs(&cages, size, max_cage_size, &ids, &blacklist);
+        if candidates.is_empty() {
+            break;
+        }
+        let &(i, j) = candidates.choose(rng).unwrap();
+        let pair_key = canonical_pair(ids[i], ids[j]);
+
+        let mut merged_cells = cages[i].cells.clone();
+        merged_cells.extend_from_slice(&cages[j].cells);
+        let values: Vec<u32> = merged_cells.iter().map(|&(r, c)| solution[r][c]).collect();
+        let op = choose_op_for_values(&values, rng);
+
+        // Build a trial puzzle with i,j replaced by the merged cage.
+        let mut trial_cages = Vec::with_capacity(cages.len() - 1);
+        let mut trial_ids = Vec::with_capacity(ids.len() - 1);
+        for (idx, cage) in cages.iter().enumerate() {
+            if idx == i || idx == j {
+                continue;
+            }
+            trial_cages.push(cage.clone());
+            trial_ids.push(ids[idx]);
+        }
+        trial_cages.push(Cage {
+            cells: merged_cells,
+            op,
+        });
+        trial_ids.push(next_id);
+
+        let trial = Puzzle {
+            size,
+            cages: trial_cages.clone(),
+        };
+        if has_unique_solution(&trial) {
+            cages = trial_cages;
+            ids = trial_ids;
+            next_id += 1;
+        } else {
+            blacklist.insert(pair_key);
+        }
+    }
+
+    (Puzzle { size, cages }, solution)
+}
+
+fn canonical_pair(a: usize, b: usize) -> (usize, usize) {
+    if a <= b { (a, b) } else { (b, a) }
+}
+
+fn adjacent_cage_pairs(
+    cages: &[Cage],
+    size: usize,
+    max_cage_size: usize,
+    ids: &[usize],
+    blacklist: &HashSet<(usize, usize)>,
+) -> Vec<(usize, usize)> {
+    // Map each cell to its owning cage index.
+    let mut owner = vec![vec![usize::MAX; size]; size];
+    for (idx, cage) in cages.iter().enumerate() {
+        for &(r, c) in &cage.cells {
+            owner[r][c] = idx;
+        }
+    }
+    let mut pairs: HashSet<(usize, usize)> = HashSet::new();
+    for (idx, cage) in cages.iter().enumerate() {
+        for &(r, c) in &cage.cells {
+            for (nr, nc) in neighbors(r, c) {
+                if nr >= size || nc >= size {
+                    continue;
+                }
+                let other = owner[nr][nc];
+                if other == idx || other == usize::MAX {
+                    continue;
+                }
+                let (a, b) = (idx.min(other), idx.max(other));
+                if cages[a].cells.len() + cages[b].cells.len() > max_cage_size {
+                    continue;
+                }
+                if blacklist.contains(&canonical_pair(ids[a], ids[b])) {
+                    continue;
+                }
+                pairs.insert((a, b));
+            }
+        }
+    }
+    // HashSet iteration is randomized per-instance, so sort for determinism.
+    let mut out: Vec<(usize, usize)> = pairs.into_iter().collect();
+    out.sort_unstable();
+    out
+}
+
+fn choose_op_for_values<R: RngCore>(values: &[u32], rng: &mut R) -> Op {
+    match values.len() {
+        0 => unreachable!("empty cage"),
+        1 => Op::Given(values[0]),
+        2 => {
+            let (a, b) = (values[0], values[1]);
+            let (big, small) = if a >= b { (a, b) } else { (b, a) };
+            let mut choices: Vec<Op> = vec![Op::Add(a + b), Op::Sub(big - small), Op::Mul(a * b)];
+            if small != 0 && big % small == 0 {
+                choices.push(Op::Div(big / small));
+            }
+            let n = choices.len();
+            choices.swap_remove(rng.random_range(0..n))
+        }
+        _ => {
+            let sum: u32 = values.iter().sum();
+            let prod: u32 = values.iter().product();
+            if rng.random_bool(0.5) {
+                Op::Add(sum)
+            } else {
+                Op::Mul(prod)
+            }
+        }
+    }
+}
+
+/// Generate a random `size`x`size` Latin square using randomized backtracking.
+fn random_latin_square<R: RngCore>(size: usize, rng: &mut R) -> Vec<Vec<u32>> {
+    let mut grid = vec![vec![0u32; size]; size];
+    let mut order: Vec<u32> = (1..=size as u32).collect();
+    // Loop until we succeed — randomized backtracking occasionally dead-ends
+    // on pathological orderings, but restart is cheap at the sizes we care about.
+    loop {
+        for row in grid.iter_mut() {
+            for cell in row.iter_mut() {
+                *cell = 0;
+            }
+        }
+        if fill_latin_square(&mut grid, 0, 0, size, rng, &mut order) {
+            return grid;
+        }
+    }
+}
+
+fn fill_latin_square<R: RngCore>(
+    grid: &mut Vec<Vec<u32>>,
+    row: usize,
+    col: usize,
+    size: usize,
+    rng: &mut R,
+    order: &mut Vec<u32>,
+) -> bool {
+    if row == size {
+        return true;
+    }
+    let (next_row, next_col) = if col + 1 == size {
+        (row + 1, 0)
+    } else {
+        (row, col + 1)
+    };
+    order.shuffle(rng);
+    let candidates = order.clone();
+    for val in candidates {
+        if is_valid_placement(grid, size, row, col, val) {
+            grid[row][col] = val;
+            if fill_latin_square(grid, next_row, next_col, size, rng, order) {
+                return true;
+            }
+            grid[row][col] = 0;
+        }
+    }
+    false
 }
 
 #[cfg(test)]
@@ -386,5 +640,79 @@ mod tests {
             op: Op::Given(1),
         });
         assert!(!is_puzzle_covered(&puzzle));
+    }
+
+    #[test]
+    fn has_unique_solution_matches_solve_all() {
+        let unique = make_3x3_puzzle();
+        assert!(has_unique_solution(&unique));
+        assert_eq!(count_solutions_up_to(&unique, 5), 1);
+
+        let many = make_non_unique_puzzle();
+        assert!(!has_unique_solution(&many));
+        // Early-terminates at the 2nd solution even though 12 exist.
+        assert_eq!(count_solutions_up_to(&many, 2), 2);
+    }
+
+    fn assert_generated_puzzle_is_good(size: usize, seed: u64) {
+        let (puzzle, solution) = generate(size, seed);
+        assert_eq!(puzzle.size, size);
+        assert!(is_puzzle_covered(&puzzle), "cages must tile the grid");
+        assert!(
+            is_solution_valid(&puzzle, &solution),
+            "claimed solution must satisfy the puzzle"
+        );
+        assert!(
+            has_unique_solution(&puzzle),
+            "generated puzzle must have a unique solution"
+        );
+        for cage in &puzzle.cages {
+            assert!(is_cage_contiguous(cage), "every cage must be contiguous");
+        }
+    }
+
+    #[test]
+    fn generate_3x3_is_unique_and_valid() {
+        assert_generated_puzzle_is_good(3, 42);
+    }
+
+    #[test]
+    fn generate_4x4_is_unique_and_valid() {
+        assert_generated_puzzle_is_good(4, 7);
+    }
+
+    #[test]
+    fn generate_5x5_is_unique_and_valid() {
+        assert_generated_puzzle_is_good(5, 2026);
+    }
+
+    #[test]
+    fn generate_is_deterministic() {
+        let a = generate(5, 123);
+        let b = generate(5, 123);
+        assert_eq!(a.1, b.1, "solutions should match");
+        assert_eq!(a.0.cages.len(), b.0.cages.len(), "cage counts should match");
+        for (ca, cb) in a.0.cages.iter().zip(b.0.cages.iter()) {
+            assert_eq!(ca.cells, cb.cells);
+            assert_eq!(ca.op, cb.op);
+        }
+    }
+
+    #[test]
+    fn generate_different_seeds_produce_different_puzzles() {
+        let (_, sol1) = generate(5, 1);
+        let (_, sol2) = generate(5, 2);
+        assert_ne!(sol1, sol2);
+    }
+
+    #[test]
+    fn generator_produces_nontrivial_cages() {
+        // The generator should merge beyond all-singleton cages most of the time;
+        // assert at least one cage of size >= 2 for a 5x5.
+        let (puzzle, _) = generate(5, 99);
+        assert!(
+            puzzle.cages.iter().any(|c| c.cells.len() >= 2),
+            "expected at least one multi-cell cage"
+        );
     }
 }
