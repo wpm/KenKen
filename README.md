@@ -17,6 +17,12 @@ When a placement violates either constraint the solver backtracks immediately, a
 
 Two entry points are provided: one that returns the first solution found (short-circuiting as soon as one is complete), and one that exhausts the search tree to collect every solution.
 
+## Generation
+
+The library can also generate random KenKen puzzles with a **guaranteed unique solution**, via `generate(size, seed) -> (Puzzle, solution)`. The algorithm uses **coarsening**: it first builds a random Latin square as the target solution, then starts from a maximally-constrained puzzle (one `Given` cage per cell, trivially unique) and repeatedly merges pairs of adjacent cages, assigning each merged cage an operation consistent with the solution. A candidate merge is kept only if the resulting puzzle still has exactly one solution; otherwise the pair is blacklisted and another is tried. This is strictly more efficient than generate-and-test: every intermediate state is a valid uniquely-solvable puzzle, each step is a local perturbation, and rejection of a merge carries information (those two cages together would lose uniqueness).
+
+Uniqueness is checked via `has_unique_solution`, which runs the backtracking search but stops as soon as a second solution is found.
+
 ## Validation
 
 Separate from solving, the library can validate:
