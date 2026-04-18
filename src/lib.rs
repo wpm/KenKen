@@ -113,10 +113,10 @@ fn backtrack(puzzle: &Puzzle, grid: &mut Vec<Vec<u32>>, row: usize, col: usize) 
     for val in 1..=(puzzle.size as u32) {
         if is_valid_placement(grid, puzzle.size, row, col, val) {
             grid[row][col] = val;
-            if cages_satisfied(puzzle, grid, row, col) {
-                if backtrack(puzzle, grid, next_row, next_col) {
-                    return true;
-                }
+            if cages_satisfied(puzzle, grid, row, col)
+                && backtrack(puzzle, grid, next_row, next_col)
+            {
+                return true;
             }
             grid[row][col] = 0;
         }
@@ -125,15 +125,11 @@ fn backtrack(puzzle: &Puzzle, grid: &mut Vec<Vec<u32>>, row: usize, col: usize) 
 }
 
 fn is_valid_placement(grid: &[Vec<u32>], size: usize, row: usize, col: usize, val: u32) -> bool {
-    for c in 0..size {
-        if grid[row][c] == val {
-            return false;
-        }
+    if grid[row].contains(&val) {
+        return false;
     }
-    for r in 0..size {
-        if grid[r][col] == val {
-            return false;
-        }
+    if (0..size).any(|r| grid[r][col] == val) {
+        return false;
     }
     true
 }
@@ -161,9 +157,9 @@ fn cages_satisfied(puzzle: &Puzzle, grid: &[Vec<u32>], last_row: usize, last_col
 pub fn is_solution_valid(puzzle: &Puzzle, grid: &[Vec<u32>]) -> bool {
     let size = puzzle.size;
     let expected: HashSet<u32> = (1..=(size as u32)).collect();
-    for i in 0..size {
-        let row: HashSet<u32> = grid[i].iter().copied().collect();
-        if row != expected {
+    for (i, row) in grid.iter().enumerate() {
+        let row_set: HashSet<u32> = row.iter().copied().collect();
+        if row_set != expected {
             return false;
         }
         let col: HashSet<u32> = (0..size).map(|r| grid[r][i]).collect();
@@ -233,11 +229,7 @@ mod tests {
         let puzzle = make_3x3_puzzle();
         let solution = solve(&puzzle).expect("puzzle should have a solution");
 
-        let expected = vec![
-            vec![2, 1, 3],
-            vec![3, 2, 1],
-            vec![1, 3, 2],
-        ];
+        let expected = vec![vec![2, 1, 3], vec![3, 2, 1], vec![1, 3, 2]];
         assert_eq!(solution, expected);
         assert!(is_solution_valid(&puzzle, &solution));
     }
@@ -252,35 +244,43 @@ mod tests {
     #[test]
     fn invalid_solution_fails_validation() {
         let puzzle = make_3x3_puzzle();
-        let bad = vec![
-            vec![2, 3, 1],
-            vec![3, 2, 1],
-            vec![1, 3, 2],
-        ];
+        let bad = vec![vec![2, 3, 1], vec![3, 2, 1], vec![1, 3, 2]];
         assert!(!is_solution_valid(&puzzle, &bad));
     }
 
     #[test]
     fn contiguous_cage_is_valid() {
-        let cage = Cage { cells: vec![(0, 0), (0, 1), (1, 1)], op: Op::Add(6) };
+        let cage = Cage {
+            cells: vec![(0, 0), (0, 1), (1, 1)],
+            op: Op::Add(6),
+        };
         assert!(is_cage_contiguous(&cage));
     }
 
     #[test]
     fn single_cell_cage_is_contiguous() {
-        let cage = Cage { cells: vec![(2, 2)], op: Op::Given(3) };
+        let cage = Cage {
+            cells: vec![(2, 2)],
+            op: Op::Given(3),
+        };
         assert!(is_cage_contiguous(&cage));
     }
 
     #[test]
     fn diagonal_cage_is_not_contiguous() {
-        let cage = Cage { cells: vec![(0, 0), (1, 1)], op: Op::Add(4) };
+        let cage = Cage {
+            cells: vec![(0, 0), (1, 1)],
+            op: Op::Add(4),
+        };
         assert!(!is_cage_contiguous(&cage));
     }
 
     #[test]
     fn gap_cage_is_not_contiguous() {
-        let cage = Cage { cells: vec![(0, 0), (0, 2)], op: Op::Add(4) };
+        let cage = Cage {
+            cells: vec![(0, 0), (0, 2)],
+            op: Op::Add(4),
+        };
         assert!(!is_cage_contiguous(&cage));
     }
 
@@ -299,14 +299,20 @@ mod tests {
     #[test]
     fn puzzle_with_overlapping_cages_is_not_covered() {
         let mut puzzle = make_3x3_puzzle();
-        puzzle.cages.push(Cage { cells: vec![(0, 0)], op: Op::Given(2) });
+        puzzle.cages.push(Cage {
+            cells: vec![(0, 0)],
+            op: Op::Given(2),
+        });
         assert!(!is_puzzle_covered(&puzzle));
     }
 
     #[test]
     fn puzzle_with_out_of_bounds_cell_is_not_covered() {
         let mut puzzle = make_3x3_puzzle();
-        puzzle.cages.push(Cage { cells: vec![(5, 5)], op: Op::Given(1) });
+        puzzle.cages.push(Cage {
+            cells: vec![(5, 5)],
+            op: Op::Given(1),
+        });
         assert!(!is_puzzle_covered(&puzzle));
     }
 }
