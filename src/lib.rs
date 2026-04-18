@@ -91,30 +91,38 @@ pub fn is_puzzle_covered(puzzle: &Puzzle) -> bool {
     seen.len() == puzzle.size * puzzle.size
 }
 
+/// Returns the first solution, or `None` if the puzzle is unsolvable.
 pub fn solve(puzzle: &Puzzle) -> Option<Vec<Vec<u32>>> {
     let mut grid = vec![vec![0u32; puzzle.size]; puzzle.size];
-    if backtrack(puzzle, &mut grid, 0, 0) {
-        Some(grid)
-    } else {
-        None
-    }
+    backtrack_first(puzzle, &mut grid, 0, 0).then_some(grid)
 }
 
-fn backtrack(puzzle: &Puzzle, grid: &mut Vec<Vec<u32>>, row: usize, col: usize) -> bool {
-    if row == puzzle.size {
-        return true;
-    }
-    let (next_row, next_col) = if col + 1 == puzzle.size {
+/// Returns all solutions.
+pub fn solve_all(puzzle: &Puzzle) -> Vec<Vec<Vec<u32>>> {
+    let mut grid = vec![vec![0u32; puzzle.size]; puzzle.size];
+    let mut solutions = Vec::new();
+    backtrack_all(puzzle, &mut grid, 0, 0, &mut solutions);
+    solutions
+}
+
+fn next_cell(col: usize, row: usize, size: usize) -> (usize, usize) {
+    if col + 1 == size {
         (row + 1, 0)
     } else {
         (row, col + 1)
-    };
+    }
+}
 
+fn backtrack_first(puzzle: &Puzzle, grid: &mut Vec<Vec<u32>>, row: usize, col: usize) -> bool {
+    if row == puzzle.size {
+        return true;
+    }
+    let (next_row, next_col) = next_cell(col, row, puzzle.size);
     for val in 1..=(puzzle.size as u32) {
         if is_valid_placement(grid, puzzle.size, row, col, val) {
             grid[row][col] = val;
             if cages_satisfied(puzzle, grid, row, col)
-                && backtrack(puzzle, grid, next_row, next_col)
+                && backtrack_first(puzzle, grid, next_row, next_col)
             {
                 return true;
             }
@@ -122,6 +130,29 @@ fn backtrack(puzzle: &Puzzle, grid: &mut Vec<Vec<u32>>, row: usize, col: usize) 
         }
     }
     false
+}
+
+fn backtrack_all(
+    puzzle: &Puzzle,
+    grid: &mut Vec<Vec<u32>>,
+    row: usize,
+    col: usize,
+    solutions: &mut Vec<Vec<Vec<u32>>>,
+) {
+    if row == puzzle.size {
+        solutions.push(grid.clone());
+        return;
+    }
+    let (next_row, next_col) = next_cell(col, row, puzzle.size);
+    for val in 1..=(puzzle.size as u32) {
+        if is_valid_placement(grid, puzzle.size, row, col, val) {
+            grid[row][col] = val;
+            if cages_satisfied(puzzle, grid, row, col) {
+                backtrack_all(puzzle, grid, next_row, next_col, solutions);
+            }
+            grid[row][col] = 0;
+        }
+    }
 }
 
 fn is_valid_placement(grid: &[Vec<u32>], size: usize, row: usize, col: usize, val: u32) -> bool {
@@ -235,10 +266,51 @@ mod tests {
     }
 
     #[test]
+    fn unique_puzzle_has_one_solution() {
+        let puzzle = make_3x3_puzzle();
+        let solutions = solve_all(&puzzle);
+        assert_eq!(solutions.len(), 1);
+        assert!(is_solution_valid(&puzzle, &solutions[0]));
+    }
+
+    #[test]
     fn solution_passes_validation() {
         let puzzle = make_3x3_puzzle();
         let solution = solve(&puzzle).unwrap();
         assert!(is_solution_valid(&puzzle, &solution));
+    }
+
+    // 3x3 puzzle with multiple solutions: one Add=6 cage per row.
+    // Every valid 3x3 Latin square satisfies this (all 12 of them).
+    //
+    //  +---+---+---+
+    //  | 6+        |
+    //  +---+---+---+
+    //  | 6+        |
+    //  +---+---+---+
+    //  | 6+        |
+    //  +---+---+---+
+    fn make_non_unique_puzzle() -> Puzzle {
+        Puzzle {
+            size: 3,
+            cages: (0..3)
+                .map(|r| Cage {
+                    cells: (0..3).map(|c| (r, c)).collect(),
+                    op: Op::Add(6),
+                })
+                .collect(),
+        }
+    }
+
+    #[test]
+    fn non_unique_puzzle_has_multiple_solutions() {
+        let puzzle = make_non_unique_puzzle();
+        let solutions = solve_all(&puzzle);
+        // A 3x3 Latin square has exactly 12 valid arrangements.
+        assert_eq!(solutions.len(), 12);
+        for s in &solutions {
+            assert!(is_solution_valid(&puzzle, s));
+        }
     }
 
     #[test]
