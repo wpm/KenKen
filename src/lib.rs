@@ -446,14 +446,16 @@ fn random_latin_square<R: RngCore>(n: usize, rng: &mut R) -> Vec<Vec<u32>> {
     let target_moves = n * n * n;
     let mut moves = 0usize;
     while moves < target_moves || improper.is_some() {
-        let (i, j, k) = improper.unwrap_or_else(|| loop {
-            // Rejection-sample a 0-cell: n³ − n² of the n³ entries are
-            // zero, so a draw is accepted with probability ≥ (n−1)/n.
-            let r = rng.random_range(0..n);
-            let c = rng.random_range(0..n);
-            let v = rng.random_range(0..n);
-            if m[r][c][v] == 0 {
-                break (r, c, v);
+        let (i, j, k) = improper.unwrap_or_else(|| {
+            loop {
+                // Rejection-sample a 0-cell: n³ − n² of the n³ entries are
+                // zero, so a draw is accepted with probability ≥ (n−1)/n.
+                let r = rng.random_range(0..n);
+                let c = rng.random_range(0..n);
+                let v = rng.random_range(0..n);
+                if m[r][c][v] == 0 {
+                    break (r, c, v);
+                }
             }
         });
 
