@@ -46,6 +46,23 @@ fn neighbors(r: usize, c: usize) -> Vec<(usize, usize)> {
     n
 }
 
+/// Returns true if the cages exactly cover every cell in the puzzle grid with no overlaps.
+pub fn is_puzzle_covered(puzzle: &Puzzle) -> bool {
+    let mut seen = HashSet::new();
+    for cage in &puzzle.cages {
+        for &cell in &cage.cells {
+            let (r, c) = cell;
+            if r >= puzzle.size || c >= puzzle.size {
+                return false;
+            }
+            if !seen.insert(cell) {
+                return false;
+            }
+        }
+    }
+    seen.len() == puzzle.size * puzzle.size
+}
+
 pub fn solve(puzzle: &Puzzle) -> Option<Vec<Vec<u32>>> {
     let mut grid = vec![vec![0u32; puzzle.size]; puzzle.size];
     if backtrack(puzzle, &mut grid, 0, 0) {
@@ -317,5 +334,33 @@ mod tests {
         // (0,0) and (0,2) with no (0,1) in between
         let cage = Cage { cells: vec![(0,0),(0,2)], op: Op::Add(4) };
         assert!(!is_cage_contiguous(&cage));
+    }
+
+    #[test]
+    fn valid_puzzle_is_covered() {
+        assert!(is_puzzle_covered(&make_3x3_puzzle()));
+    }
+
+    #[test]
+    fn puzzle_with_missing_cell_is_not_covered() {
+        let mut puzzle = make_3x3_puzzle();
+        // Remove the last cage so (2,0) and (2,1) are uncovered
+        puzzle.cages.retain(|c| c.op != Op::Sub(2));
+        assert!(!is_puzzle_covered(&puzzle));
+    }
+
+    #[test]
+    fn puzzle_with_overlapping_cages_is_not_covered() {
+        let mut puzzle = make_3x3_puzzle();
+        // Add a cage that overlaps (0,0)
+        puzzle.cages.push(Cage { cells: vec![(0, 0)], op: Op::Given(2) });
+        assert!(!is_puzzle_covered(&puzzle));
+    }
+
+    #[test]
+    fn puzzle_with_out_of_bounds_cell_is_not_covered() {
+        let mut puzzle = make_3x3_puzzle();
+        puzzle.cages.push(Cage { cells: vec![(5, 5)], op: Op::Given(1) });
+        assert!(!is_puzzle_covered(&puzzle));
     }
 }
