@@ -20,6 +20,32 @@ pub struct Puzzle {
     pub cages: Vec<Cage>,
 }
 
+pub fn is_cage_contiguous(cage: &Cage) -> bool {
+    if cage.cells.len() <= 1 {
+        return true;
+    }
+    let cell_set: HashSet<(usize, usize)> = cage.cells.iter().copied().collect();
+    let mut visited = HashSet::new();
+    let mut queue = std::collections::VecDeque::new();
+    queue.push_back(cage.cells[0]);
+    visited.insert(cage.cells[0]);
+    while let Some((r, c)) = queue.pop_front() {
+        for (nr, nc) in neighbors(r, c) {
+            if cell_set.contains(&(nr, nc)) && visited.insert((nr, nc)) {
+                queue.push_back((nr, nc));
+            }
+        }
+    }
+    visited.len() == cage.cells.len()
+}
+
+fn neighbors(r: usize, c: usize) -> Vec<(usize, usize)> {
+    let mut n = vec![(r + 1, c), (r, c + 1)];
+    if r > 0 { n.push((r - 1, c)); }
+    if c > 0 { n.push((r, c - 1)); }
+    n
+}
+
 pub fn solve(puzzle: &Puzzle) -> Option<Vec<Vec<u32>>> {
     let mut grid = vec![vec![0u32; puzzle.size]; puzzle.size];
     if backtrack(puzzle, &mut grid, 0, 0) {
@@ -265,5 +291,31 @@ mod tests {
             vec![1, 3, 2],
         ];
         assert!(!is_solution_valid(&puzzle, &bad));
+    }
+
+    #[test]
+    fn contiguous_cage_is_valid() {
+        let cage = Cage { cells: vec![(0,0),(0,1),(1,1)], op: Op::Add(6) };
+        assert!(is_cage_contiguous(&cage));
+    }
+
+    #[test]
+    fn single_cell_cage_is_contiguous() {
+        let cage = Cage { cells: vec![(2,2)], op: Op::Given(3) };
+        assert!(is_cage_contiguous(&cage));
+    }
+
+    #[test]
+    fn diagonal_cage_is_not_contiguous() {
+        // (0,0) and (1,1) are diagonal — not orthogonally connected
+        let cage = Cage { cells: vec![(0,0),(1,1)], op: Op::Add(4) };
+        assert!(!is_cage_contiguous(&cage));
+    }
+
+    #[test]
+    fn gap_cage_is_not_contiguous() {
+        // (0,0) and (0,2) with no (0,1) in between
+        let cage = Cage { cells: vec![(0,0),(0,2)], op: Op::Add(4) };
+        assert!(!is_cage_contiguous(&cage));
     }
 }
