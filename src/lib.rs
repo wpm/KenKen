@@ -1,5 +1,4 @@
 use rand::prelude::IndexedRandom;
-use rand::seq::SliceRandom;
 use rand::{Rng, RngCore, SeedableRng};
 use rand_chacha::ChaCha8Rng;
 use std::collections::HashSet;
@@ -411,46 +410,96 @@ fn choose_op_for_values<R: RngCore>(values: &[u32], rng: &mut R) -> Op {
     }
 }
 
-/// Generate a random `size`x`size` Latin square using randomized backtracking.
-fn random_latin_square<R: RngCore>(size: usize, rng: &mut R) -> Vec<Vec<u32>> {
-    let mut grid = vec![vec![0u32; size]; size];
-    let mut order: Vec<u32> = (1..=size as u32).collect();
-    // Loop until we succeed — randomized backtracking occasionally dead-ends
-    // on pathological orderings, but restart is cheap at the sizes we care about.
-    loop {
-        for row in grid.iter_mut() {
-            row.fill(0);
-        }
-        if fill_latin_square(&mut grid, 0, 0, size, rng, &mut order) {
-            return grid;
+/// Generate a uniformly-random `size`x`size` Latin square using the
+/// Jacobson–Matthews Markov chain.
+///
+/// The state is the n×n×n incidence cube `M` where, in the *proper*
+/// regime, `M[r,c,v] ∈ {0,1}` and `M[r,c,v] = 1` iff the underlying
+/// Latin square has value `v+1` at cell `(r,c)`. Every line of `M`
+/// (fixing any two coordinates) sums to 1. A move perturbs `M` by ±1
+/// at the eight corners of a 2×2×2 sub-cube, preserving every line
+/// sum. From a proper state the move yields either another proper
+/// state or an *improper* state with a single −1 entry; from improper,
+/// the chain is biased to walk back to proper. Restricted to proper
+/// states, the stationary distribution is uniform on the set of n×n
+/// Latin squares.
+///
+/// We mix for `n³` steps and then continue until we land back in a
+/// proper state. The `n³` budget is the heuristic the original paper
+/// uses and is more than sufficient for the small sizes (`n ≤ ~10`)
+/// that KenKen puzzles call for.
+///
+/// Reference: Mark T. Jacobson and Peter Matthews, "Generating
+/// uniformly distributed random Latin squares", *Journal of
+/// Combinatorial Designs* 4(6), 1996, pp. 405–437.
+/// <https://doi.org/10.1002/(SICI)1520-6610(1996)4:6%3C405::AID-JCD3%3E3.0.CO;2-J>
+fn random_latin_square<R: RngCore>(n: usize, rng: &mut R) -> Vec<Vec<u32>> {
+    // Seed with the cyclic Latin square L[r][c] = ((r + c) mod n) + 1.
+    let mut m: Vec<Vec<Vec<i8>>> = vec![vec![vec![0i8; n]; n]; n];
+    for r in 0..n {
+        for c in 0..n {
+            m[r][c][(r + c) % n] = 1;
         }
     }
-}
 
-fn fill_latin_square<R: RngCore>(
-    grid: &mut Vec<Vec<u32>>,
-    row: usize,
-    col: usize,
-    size: usize,
-    rng: &mut R,
-    order: &mut Vec<u32>,
-) -> bool {
-    if row == size {
-        return true;
-    }
-    let (next_row, next_col) = next_cell(col, row, size);
-    order.shuffle(rng);
-    for i in 0..order.len() {
-        let val = order[i];
-        if is_valid_placement(grid, size, row, col, val) {
-            grid[row][col] = val;
-            if fill_latin_square(grid, next_row, next_col, size, rng, order) {
-                return true;
+    let mut improper: Option<(usize, usize, usize)> = None;
+    let target_moves = n * n * n;
+    let mut moves = 0usize;
+    while moves < target_moves || improper.is_some() {
+        let (i, j, k) = improper.unwrap_or_else(|| {
+            loop {
+                // Rejection-sample a 0-cell: n³ − n² of the n³ entries are
+                // zero, so a draw is accepted with probability ≥ (n−1)/n.
+                let r = rng.random_range(0..n);
+                let c = rng.random_range(0..n);
+                let v = rng.random_range(0..n);
+                if m[r][c][v] == 0 {
+                    break (r, c, v);
+                }
             }
-            grid[row][col] = 0;
+        });
+
+        // Pick a 1-cell on each of the three lines through (i,j,k). In
+        // the proper regime each line has a unique 1-cell; through an
+        // improper entry there are exactly two and we pick uniformly.
+        let pick_one = |rng: &mut R, line: &dyn Fn(usize) -> i8| -> usize {
+            let mut ones = [0usize; 2];
+            let mut count = 0;
+            for x in 0..n {
+                if line(x) == 1 {
+                    ones[count] = x;
+                    count += 1;
+                }
+            }
+            ones[rng.random_range(0..count)]
+        };
+        let ip = pick_one(rng, &|x| m[x][j][k]);
+        let jp = pick_one(rng, &|x| m[i][x][k]);
+        let kp = pick_one(rng, &|x| m[i][j][x]);
+
+        // ±1 perturbation around the (i,i')×(j,j')×(k,k') sub-cube: +1 at
+        // corners with an even number of primed coordinates, −1 at odd.
+        m[i][j][k] += 1;
+        m[ip][j][k] -= 1;
+        m[i][jp][k] -= 1;
+        m[i][j][kp] -= 1;
+        m[ip][jp][k] += 1;
+        m[ip][j][kp] += 1;
+        m[i][jp][kp] += 1;
+        m[ip][jp][kp] -= 1;
+
+        improper = (m[ip][jp][kp] == -1).then_some((ip, jp, kp));
+        moves += 1;
+    }
+
+    let mut grid = vec![vec![0u32; n]; n];
+    for r in 0..n {
+        for c in 0..n {
+            let v = (0..n).position(|v| m[r][c][v] == 1).unwrap();
+            grid[r][c] = (v + 1) as u32;
         }
     }
-    false
+    grid
 }
 
 #[cfg(test)]
