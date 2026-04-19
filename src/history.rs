@@ -1,8 +1,12 @@
 use crate::types::{Cage, Cell, Tuple, Value};
 
-// Placeholder — will be filled in by the solver issues
-#[derive(Debug, Clone, PartialEq)]
-pub struct DomainState;
+/// The domain state of a puzzle: maps each cell to its remaining possible values.
+/// An empty set for any cell means that cell has failed (no valid assignment).
+/// A singleton set means the cell is fully determined.
+#[derive(Debug, Clone, PartialEq, Default)]
+pub struct DomainState {
+    pub cell_domains: std::collections::HashMap<Cell, std::collections::BTreeSet<Value>>,
+}
 
 #[derive(Debug, Clone, PartialEq)]
 pub enum Variable {
@@ -164,9 +168,9 @@ mod tests {
 
     #[test]
     fn solve_result_variants_match() {
-        let unique = SolveResult::Unique(DomainState);
+        let unique = SolveResult::Unique(DomainState::default());
         let no_sol = SolveResult::NoSolution;
-        let non_unique = SolveResult::NonUnique(DomainState, DomainState);
+        let non_unique = SolveResult::NonUnique(DomainState::default(), DomainState::default());
 
         assert!(matches!(unique, SolveResult::Unique(_)));
         assert!(matches!(no_sol, SolveResult::NoSolution));
