@@ -1,3 +1,5 @@
+pub mod types;
+
 use rand::prelude::IndexedRandom;
 use rand::{Rng, RngCore, SeedableRng};
 use rand_chacha::ChaCha8Rng;
