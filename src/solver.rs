@@ -388,7 +388,7 @@ mod tests {
         let (result, _) = solve(&puzzle, &BacktrackingStrategy);
         match result {
             SolveResult::Unique(state) => {
-                let expected = vec![vec![2u8, 1, 3], vec![3, 2, 1], vec![1, 3, 2]];
+                let expected = [vec![2u8, 1, 3], vec![3, 2, 1], vec![1, 3, 2]];
                 for (r, row) in expected.iter().enumerate() {
                     for (c, &v) in row.iter().enumerate() {
                         let d = &state.cell_domains[&(r, c)];
