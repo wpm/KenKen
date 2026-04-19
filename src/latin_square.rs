@@ -1,5 +1,5 @@
 use crate::types::{LatinSquare, Value};
-use rand::Rng;
+use rand::{Rng, RngExt};
 
 /// Returns a uniformly random index `x` in `0..n` such that `line(x) == 1`.
 /// In a proper state each line has exactly one such entry; in an improper state

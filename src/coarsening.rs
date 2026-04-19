@@ -1,6 +1,6 @@
 use std::collections::HashSet;
 
-use rand::Rng;
+use rand::{Rng, RngExt};
 
 use crate::geometry::{adjacent_pairs, merge_cages, replace_with_merged, trivial_cages};
 use crate::history::{Event, History, SolveResult};
