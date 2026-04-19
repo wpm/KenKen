@@ -4,7 +4,7 @@ use crate::types::Puzzle;
 pub trait SolvingStrategy {
     fn initial_state(&self, puzzle: &Puzzle) -> DomainState;
     fn propagate(&self, state: DomainState) -> (DomainState, History);
-    fn branch(&self, state: &DomainState) -> (DomainState, DomainState);
+    fn branch(&self, _state: &DomainState) -> (DomainState, DomainState);
     fn is_solved(&self, state: &DomainState) -> bool;
     fn is_failed(&self, state: &DomainState) -> bool;
 }
@@ -187,7 +187,7 @@ mod tests {
                 (state, vec![])
             }
 
-            fn branch(&self, state: &DomainState) -> (DomainState, DomainState) {
+            fn branch(&self, _state: &DomainState) -> (DomainState, DomainState) {
                 let count = self.branch_count.fetch_add(1, Ordering::SeqCst);
                 assert!(
                     count < 2,
