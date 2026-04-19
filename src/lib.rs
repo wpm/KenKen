@@ -415,7 +415,10 @@ fn choose_op_for_values<R: RngCore>(values: &[u32], rng: &mut R) -> Op {
 
 fn random_latin_square<R: RngCore>(n: usize, rng: &mut R) -> Vec<Vec<u32>> {
     let ls = latin_square::generate_latin_square(n, rng);
-    ls.grid.into_iter().map(|row| row.into_iter().map(u32::from).collect()).collect()
+    ls.grid
+        .into_iter()
+        .map(|row| row.into_iter().map(u32::from).collect())
+        .collect()
 }
 
 #[cfg(test)]
