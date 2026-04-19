@@ -1,10 +1,14 @@
+use std::collections::HashSet;
+
 use rand::Rng;
 
 use crate::geometry::{adjacent_pairs, merge_cages, trivial_cages};
 use crate::history::{Event, History, SolveResult};
 use crate::operation::assign_operation;
 use crate::solver::{SolvingStrategy, solve};
-use crate::types::{Cage, Puzzle};
+use crate::types::{Cage, Cell, Puzzle};
+
+type CagePairKey = (Vec<Cell>, Vec<Cell>);
 
 pub struct Coarsening {
     pub stopping_threshold: usize,
@@ -19,18 +23,37 @@ impl Coarsening {
     ) -> (Option<Vec<Cage>>, History) {
         let mut current = trivial_cages(&puzzle.latin_square);
         let mut history: History = Vec::new();
+        let mut blacklist: HashSet<CagePairKey> = HashSet::new();
+        let mut pairs_cache: Option<Vec<(usize, usize)>> = None;
 
         loop {
-            let candidates = adjacent_pairs(&current);
+            let all_pairs = pairs_cache.get_or_insert_with(|| adjacent_pairs(&current));
+            let mut candidates: Vec<(usize, usize, CagePairKey)> = all_pairs
+                .iter()
+                .filter_map(|&(i, j)| {
+                    let key = cage_pair_key(&current[i], &current[j]);
+                    if blacklist.contains(&key) {
+                        None
+                    } else {
+                        Some((i, j, key))
+                    }
+                })
+                .collect();
+
             if candidates.is_empty() {
                 return (None, history);
             }
 
             let idx = rng.random_range(0..candidates.len());
-            let (i, j) = candidates[idx];
+            let (i, j, key) = candidates.swap_remove(idx);
 
-            let temp = merge_cages(&current[i], &current[j], crate::types::Operation::Add(0));
-            let op = assign_operation(&temp, &puzzle.latin_square);
+            let merged_cells: Vec<_> = current[i]
+                .cells
+                .iter()
+                .chain(current[j].cells.iter())
+                .copied()
+                .collect();
+            let op = assign_operation(&merged_cells, &puzzle.latin_square);
             let merged = merge_cages(&current[i], &current[j], op);
 
             let cages_prime: Vec<Cage> = current
@@ -58,38 +81,52 @@ impl Coarsening {
 
             if accepted {
                 current = puzzle_prime.cages;
+                pairs_cache = None;
                 if current.len() <= self.stopping_threshold {
                     return (Some(current), history);
                 }
+            } else {
+                blacklist.insert(key);
             }
         }
     }
 }
 
+fn cage_pair_key(a: &Cage, b: &Cage) -> CagePairKey {
+    let mut ka: Vec<Cell> = a.cells.clone();
+    let mut kb: Vec<Cell> = b.cells.clone();
+    ka.sort_unstable();
+    kb.sort_unstable();
+    if ka <= kb { (ka, kb) } else { (kb, ka) }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::domain::satisfies_operation;
+    use crate::geometry::is_cage_contiguous;
     use crate::history::{DomainState, HistorySummary};
     use crate::latin_square::generate_latin_square;
-    use crate::types::Puzzle;
+    use crate::solver::BacktrackingStrategy;
+    use crate::types::{LatinSquare, Puzzle};
     use rand::SeedableRng;
     use rand_chacha::ChaCha8Rng;
 
-    /// A strategy that always reports the puzzle as uniquely solved.
-    /// This lets us test the coarsening loop logic independently of any real solver.
-    struct AlwaysUniqueStrategy;
+    /// Accepts every merge (reports Unique unconditionally).
+    /// Isolates coarsening loop logic from real solver behaviour.
+    struct AlwaysAcceptStrategy;
 
-    impl SolvingStrategy for AlwaysUniqueStrategy {
+    impl SolvingStrategy for AlwaysAcceptStrategy {
         fn initial_state(&self, _puzzle: &Puzzle) -> DomainState {
             DomainState::default()
         }
 
-        fn propagate(&self, state: DomainState) -> (DomainState, History) {
-            (state, vec![])
+        fn propagate(&self, _puzzle: &Puzzle, state: DomainState) -> (DomainState, History, bool) {
+            (state, vec![], false)
         }
 
         fn branch(&self, _state: &DomainState) -> (DomainState, DomainState) {
-            panic!("AlwaysUniqueStrategy never needs branching")
+            panic!("AlwaysAcceptStrategy never needs branching")
         }
 
         fn is_solved(&self, _state: &DomainState) -> bool {
@@ -101,11 +138,39 @@ mod tests {
         }
     }
 
-    fn make_3x3_puzzle() -> Puzzle {
+    /// Rejects every merge (reports NoSolution unconditionally).
+    struct AlwaysRejectStrategy;
+
+    impl SolvingStrategy for AlwaysRejectStrategy {
+        fn initial_state(&self, _puzzle: &Puzzle) -> DomainState {
+            DomainState::default()
+        }
+
+        fn propagate(&self, _puzzle: &Puzzle, state: DomainState) -> (DomainState, History, bool) {
+            (state, vec![], true)
+        }
+
+        fn branch(&self, _state: &DomainState) -> (DomainState, DomainState) {
+            panic!("AlwaysRejectStrategy never needs branching")
+        }
+
+        fn is_solved(&self, _state: &DomainState) -> bool {
+            false
+        }
+
+        fn is_failed(&self, _state: &DomainState) -> bool {
+            true
+        }
+    }
+
+    fn make_3x3_latin_square() -> LatinSquare {
         let mut rng = ChaCha8Rng::seed_from_u64(42);
-        let ls = generate_latin_square(3, &mut rng);
+        generate_latin_square(3, &mut rng)
+    }
+
+    fn make_3x3_puzzle() -> Puzzle {
         Puzzle {
-            latin_square: ls,
+            latin_square: make_3x3_latin_square(),
             cages: vec![],
         }
     }
@@ -114,12 +179,10 @@ mod tests {
     fn coarsening_terminates_and_returns_some() {
         let puzzle = make_3x3_puzzle();
         let mut rng = ChaCha8Rng::seed_from_u64(0);
-        let (result, _history) = Coarsening {
+        let (result, _) = Coarsening {
             stopping_threshold: 4,
         }
-        .generate(&puzzle, &AlwaysUniqueStrategy, &mut rng);
-        // Either we reduced to <= 4 cages, or we ran out of adjacent pairs.
-        // Both outcomes are valid; we just assert it terminates and returns a result.
+        .generate(&puzzle, &AlwaysAcceptStrategy, &mut rng);
         if let Some(cages) = result {
             assert!(cages.len() <= 4);
         }
@@ -129,29 +192,26 @@ mod tests {
     fn history_contains_merge_attempted_events() {
         let puzzle = make_3x3_puzzle();
         let mut rng = ChaCha8Rng::seed_from_u64(0);
-        let (_result, history) = Coarsening {
+        let (_, history) = Coarsening {
             stopping_threshold: 4,
         }
-        .generate(&puzzle, &AlwaysUniqueStrategy, &mut rng);
+        .generate(&puzzle, &AlwaysAcceptStrategy, &mut rng);
         let summary = HistorySummary::from_history(&history);
-        assert!(
-            summary.merge_attempted >= 1,
-            "expected at least one MergeAttempted event"
-        );
+        assert!(summary.merge_attempted >= 1);
     }
 
     #[test]
     fn all_returned_cages_are_connected() {
         let puzzle = make_3x3_puzzle();
         let mut rng = ChaCha8Rng::seed_from_u64(0);
-        let (result, _history) = Coarsening {
+        let (result, _) = Coarsening {
             stopping_threshold: 4,
         }
-        .generate(&puzzle, &AlwaysUniqueStrategy, &mut rng);
+        .generate(&puzzle, &AlwaysAcceptStrategy, &mut rng);
         if let Some(cages) = result {
             for cage in &cages {
                 assert!(
-                    is_cage_connected(cage),
+                    is_cage_contiguous(cage),
                     "cage {:?} is not connected",
                     cage.cells
                 );
@@ -159,53 +219,127 @@ mod tests {
         }
     }
 
-    /// BFS connectivity check for `types::Cage`.
-    fn is_cage_connected(cage: &Cage) -> bool {
-        use std::collections::{HashSet, VecDeque};
-        if cage.cells.len() <= 1 {
-            return true;
-        }
-        let cell_set: HashSet<_> = cage.cells.iter().copied().collect();
-        let mut visited = HashSet::new();
-        let mut queue = VecDeque::new();
-        queue.push_back(cage.cells[0]);
-        visited.insert(cage.cells[0]);
-        while let Some((r, c)) = queue.pop_front() {
-            for nb in [
-                (r.wrapping_sub(1), c),
-                (r + 1, c),
-                (r, c.wrapping_sub(1)),
-                (r, c + 1),
-            ] {
-                if cell_set.contains(&nb) && visited.insert(nb) {
-                    queue.push_back(nb);
-                }
-            }
-        }
-        visited.len() == cage.cells.len()
-    }
-
     #[test]
     fn loop_emits_events_before_reaching_threshold() {
-        // With AlwaysUniqueStrategy every merge is accepted.
-        // Starting from 9 trivial cages for a 3x3, we should get multiple
-        // MergeAttempted events as the count decreases toward the threshold.
         let puzzle = make_3x3_puzzle();
         let mut rng = ChaCha8Rng::seed_from_u64(7);
-        let (_result, history) = Coarsening {
+        let (_, history) = Coarsening {
             stopping_threshold: 7,
         }
-        .generate(&puzzle, &AlwaysUniqueStrategy, &mut rng);
+        .generate(&puzzle, &AlwaysAcceptStrategy, &mut rng);
         let summary = HistorySummary::from_history(&history);
-        // At least 2 merges should have been attempted (9 → 8 → 7, then stop)
         assert!(
             summary.merge_attempted >= 2,
             "expected >= 2 MergeAttempted events, got {}",
             summary.merge_attempted
         );
-        assert_eq!(
-            summary.merge_accepted, summary.merge_attempted,
-            "AlwaysUniqueStrategy should accept every merge"
+        assert_eq!(summary.merge_accepted, summary.merge_attempted);
+    }
+
+    #[test]
+    fn rejected_merges_are_blacklisted_and_loop_terminates() {
+        let puzzle = make_3x3_puzzle();
+        let mut rng = ChaCha8Rng::seed_from_u64(0);
+        let (result, history) = Coarsening {
+            stopping_threshold: 1,
+        }
+        .generate(&puzzle, &AlwaysRejectStrategy, &mut rng);
+        assert!(result.is_none());
+        let summary = HistorySummary::from_history(&history);
+        assert_eq!(summary.merge_accepted, 0);
+        assert!(summary.merge_attempted > 0);
+    }
+
+    // ── Integration tests using BacktrackingStrategy ──────────────────────────
+
+    fn generate_puzzle(n: usize, seed: u64) -> (Option<Vec<Cage>>, LatinSquare) {
+        let mut rng = ChaCha8Rng::seed_from_u64(seed);
+        let ls = generate_latin_square(n, &mut rng);
+        let puzzle = Puzzle {
+            latin_square: ls.clone(),
+            cages: vec![],
+        };
+        let threshold = ((n * n) / 3).max(2);
+        let (cages, _) = Coarsening {
+            stopping_threshold: threshold,
+        }
+        .generate(&puzzle, &BacktrackingStrategy, &mut rng);
+        (cages, ls)
+    }
+
+    fn assert_generated_puzzle_is_valid(n: usize, seed: u64) {
+        let (cages, ls) = generate_puzzle(n, seed);
+        let cages = cages.expect("coarsening should produce Some cages");
+
+        let puzzle = Puzzle {
+            latin_square: ls.clone(),
+            cages: cages.clone(),
+        };
+
+        assert!(puzzle.validate(), "cages must partition all cells");
+
+        for cage in &cages {
+            assert!(
+                is_cage_contiguous(cage),
+                "cage {:?} is not connected",
+                cage.cells
+            );
+        }
+
+        let (result, _) = solve(&puzzle, &BacktrackingStrategy);
+        assert!(
+            matches!(result, SolveResult::Unique(_)),
+            "generated puzzle must be uniquely solvable"
         );
+
+        for cage in &cages {
+            let values: Vec<crate::types::Value> =
+                cage.cells.iter().map(|&cell| ls.get(cell)).collect();
+            assert!(
+                satisfies_operation(&cage.op, &values),
+                "cage {:?} op {:?} not satisfied by Latin square",
+                cage.cells,
+                cage.op
+            );
+        }
+    }
+
+    #[test]
+    fn generate_3x3_is_unique_and_valid() {
+        assert_generated_puzzle_is_valid(3, 42);
+    }
+
+    #[test]
+    fn generate_4x4_is_unique_and_valid() {
+        assert_generated_puzzle_is_valid(4, 42);
+    }
+
+    #[test]
+    fn generate_5x5_is_unique_and_valid() {
+        assert_generated_puzzle_is_valid(5, 42);
+    }
+
+    #[test]
+    fn generate_is_deterministic() {
+        let (cages_a, ls_a) = generate_puzzle(4, 123);
+        let (cages_b, ls_b) = generate_puzzle(4, 123);
+        assert_eq!(ls_a.grid, ls_b.grid);
+        assert_eq!(
+            cages_a.as_ref().map(|v| v.len()),
+            cages_b.as_ref().map(|v| v.len())
+        );
+        if let (Some(a), Some(b)) = (cages_a, cages_b) {
+            for (ca, cb) in a.iter().zip(b.iter()) {
+                assert_eq!(ca.cells, cb.cells);
+                assert_eq!(ca.op, cb.op);
+            }
+        }
+    }
+
+    #[test]
+    fn generate_produces_nontrivial_cages() {
+        let (cages, _) = generate_puzzle(5, 42);
+        let cages = cages.expect("expected Some cages");
+        assert!(cages.iter().any(|c| c.cells.len() >= 2));
     }
 }

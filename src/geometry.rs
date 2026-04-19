@@ -1,5 +1,5 @@
 use crate::types::{Cage, Cell, LatinSquare, Operation};
-use std::collections::{HashMap, HashSet};
+use std::collections::{HashMap, HashSet, VecDeque};
 
 /// Returns n² singleton Given cages, one per cell, in row-major order.
 pub fn trivial_cages(ls: &LatinSquare) -> Vec<Cage> {
@@ -11,6 +11,31 @@ pub fn trivial_cages(ls: &LatinSquare) -> Vec<Cage> {
             })
         })
         .collect()
+}
+
+/// Returns true if the cage's cells form a 4-connected polyomino.
+pub fn is_cage_contiguous(cage: &Cage) -> bool {
+    if cage.cells.len() <= 1 {
+        return true;
+    }
+    let cell_set: HashSet<Cell> = cage.cells.iter().copied().collect();
+    let mut visited = HashSet::new();
+    let mut queue = VecDeque::new();
+    queue.push_back(cage.cells[0]);
+    visited.insert(cage.cells[0]);
+    while let Some((r, c)) = queue.pop_front() {
+        for nb in [
+            (r.wrapping_sub(1), c),
+            (r + 1, c),
+            (r, c.wrapping_sub(1)),
+            (r, c + 1),
+        ] {
+            if cell_set.contains(&nb) && visited.insert(nb) {
+                queue.push_back(nb);
+            }
+        }
+    }
+    visited.len() == cage.cells.len()
 }
 
 /// Returns all pairs (i,j) with i<j where cage i and cage j share a border
@@ -188,5 +213,41 @@ mod tests {
         };
         let graph = conflict_graph(&cage);
         assert_eq!(graph, vec![(0, 1), (0, 2), (1, 2)]);
+    }
+
+    #[test]
+    fn contiguous_l_shape_is_contiguous() {
+        let cage = Cage {
+            cells: vec![(0, 0), (0, 1), (1, 1)],
+            op: Operation::Add(6),
+        };
+        assert!(is_cage_contiguous(&cage));
+    }
+
+    #[test]
+    fn single_cell_cage_is_contiguous() {
+        let cage = Cage {
+            cells: vec![(2, 2)],
+            op: Operation::Given(3),
+        };
+        assert!(is_cage_contiguous(&cage));
+    }
+
+    #[test]
+    fn diagonal_cage_is_not_contiguous() {
+        let cage = Cage {
+            cells: vec![(0, 0), (1, 1)],
+            op: Operation::Add(4),
+        };
+        assert!(!is_cage_contiguous(&cage));
+    }
+
+    #[test]
+    fn gap_cage_is_not_contiguous() {
+        let cage = Cage {
+            cells: vec![(0, 0), (0, 2)],
+            op: Operation::Add(4),
+        };
+        assert!(!is_cage_contiguous(&cage));
     }
 }

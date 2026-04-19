@@ -1,13 +1,13 @@
-use crate::types::{Cage, LatinSquare, Operation, Value};
+use crate::types::{Cell, LatinSquare, Operation, Value};
 
-/// Assigns the most constraining operation for a cage given the Latin square solution.
+/// Assigns the most constraining operation for a set of cells given the Latin square solution.
 ///
 /// Rules:
 /// - k=1: `Given(v)`
 /// - k=2: `Div(big/small)` if exactly divisible, else `Sub(|v0-v1|)`
 /// - k≥3: `Mul(product)` if product ≤ n², else `Add(sum)`
-pub fn assign_operation(cage: &Cage, ls: &LatinSquare) -> Operation {
-    let values: Vec<Value> = cage.cells.iter().map(|&cell| ls.get(cell)).collect();
+pub fn assign_operation(cells: &[Cell], ls: &LatinSquare) -> Operation {
+    let values: Vec<Value> = cells.iter().map(|&cell| ls.get(cell)).collect();
     match values.as_slice() {
         [v] => Operation::Given(*v),
         [a, b] => {
@@ -38,30 +38,20 @@ pub fn assign_operation(cage: &Cage, ls: &LatinSquare) -> Operation {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::types::Cell;
 
     fn make_latin_square(n: usize, grid: Vec<Vec<Value>>) -> LatinSquare {
         LatinSquare { n, grid }
     }
 
-    fn make_cage(cells: Vec<Cell>) -> Cage {
-        Cage {
-            cells,
-            op: Operation::Add(0), // placeholder; assign_operation ignores this
-        }
-    }
-
     #[test]
     fn singleton_gives_given_op() {
-        // cage with one cell (0,0) on ls where ls.get((0,0))=3 → Given(3)
         let ls = make_latin_square(3, vec![vec![3, 1, 2], vec![1, 2, 3], vec![2, 3, 1]]);
-        let cage = make_cage(vec![(0, 0)]);
-        assert_eq!(assign_operation(&cage, &ls), Operation::Given(3));
+        assert_eq!(assign_operation(&[(0, 0)], &ls), Operation::Given(3));
     }
 
     #[test]
     fn two_cell_divisible_gives_div() {
-        // cage cells [(0,0),(0,1)], ls values [2,6] → Div(3)
+        // values [2,6] → Div(3)
         let ls = make_latin_square(
             6,
             vec![
@@ -73,13 +63,12 @@ mod tests {
                 vec![6, 1, 2, 3, 4, 5],
             ],
         );
-        let cage = make_cage(vec![(0, 0), (0, 1)]);
-        assert_eq!(assign_operation(&cage, &ls), Operation::Div(3));
+        assert_eq!(assign_operation(&[(0, 0), (0, 1)], &ls), Operation::Div(3));
     }
 
     #[test]
     fn two_cell_non_divisible_gives_sub() {
-        // cage cells [(0,0),(0,1)], ls values [2,5] → Sub(3)
+        // values [2,5] → Sub(3)
         let ls = make_latin_square(
             5,
             vec![
@@ -90,13 +79,12 @@ mod tests {
                 vec![5, 3, 4, 2, 1],
             ],
         );
-        let cage = make_cage(vec![(0, 0), (0, 1)]);
-        assert_eq!(assign_operation(&cage, &ls), Operation::Sub(3));
+        assert_eq!(assign_operation(&[(0, 0), (0, 1)], &ls), Operation::Sub(3));
     }
 
     #[test]
     fn three_cell_small_product_gives_mul() {
-        // cage cells [(0,0),(0,1),(0,2)], ls values [1,2,3], n=4 → product=6 ≤ 16 → Mul(6)
+        // values [1,2,3], n=4 → product=6 ≤ 16 → Mul(6)
         let ls = make_latin_square(
             4,
             vec![
@@ -106,14 +94,15 @@ mod tests {
                 vec![4, 3, 2, 1],
             ],
         );
-        let cage = make_cage(vec![(0, 0), (0, 1), (0, 2)]);
-        assert_eq!(assign_operation(&cage, &ls), Operation::Mul(6));
+        assert_eq!(
+            assign_operation(&[(0, 0), (0, 1), (0, 2)], &ls),
+            Operation::Mul(6)
+        );
     }
 
     #[test]
     fn three_cell_large_product_gives_add() {
-        // cage cells [(0,0),(0,1),(0,2)], ls values [3,4,5], n=5
-        // product=60 > 25 (n²) → Add(12)
+        // values [3,4,5], n=5 → product=60 > 25 → Add(12)
         let ls = make_latin_square(
             5,
             vec![
@@ -124,7 +113,9 @@ mod tests {
                 vec![5, 1, 2, 3, 4],
             ],
         );
-        let cage = make_cage(vec![(0, 0), (0, 1), (0, 2)]);
-        assert_eq!(assign_operation(&cage, &ls), Operation::Add(12));
+        assert_eq!(
+            assign_operation(&[(0, 0), (0, 1), (0, 2)], &ls),
+            Operation::Add(12)
+        );
     }
 }
