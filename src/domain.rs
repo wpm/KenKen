@@ -79,11 +79,8 @@ pub(crate) fn satisfies_operation(op: &Operation, tuple: &[Value]) -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::test_fixtures::fixtures::make_cage;
     use crate::types::Operation;
-
-    fn make_cage(cells: Vec<(usize, usize)>, op: Operation) -> Cage {
-        Cage { cells, op }
-    }
 
     #[test]
     fn sub_cage_4x4() {

@@ -95,20 +95,14 @@ pub enum SolveResult {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::test_fixtures::fixtures::make_cage;
     use crate::types::Operation;
-
-    fn make_cage(cells: Vec<Cell>) -> Cage {
-        Cage {
-            cells,
-            op: Operation::Given(1),
-        }
-    }
 
     #[test]
     fn history_summary_counts() {
-        let cage_a = make_cage(vec![(0, 0)]);
-        let cage_b = make_cage(vec![(0, 1)]);
-        let cage_c = make_cage(vec![(1, 0)]);
+        let cage_a = make_cage(vec![(0, 0)], Operation::Given(1));
+        let cage_b = make_cage(vec![(0, 1)], Operation::Given(1));
+        let cage_c = make_cage(vec![(1, 0)], Operation::Given(1));
 
         let history: History = vec![
             // 2 CellValueRemoved

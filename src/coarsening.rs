@@ -105,72 +105,19 @@ mod tests {
     use super::*;
     use crate::domain::satisfies_operation;
     use crate::geometry::is_cage_contiguous;
-    use crate::history::{DomainState, HistorySummary};
+    use crate::history::HistorySummary;
     use crate::latin_square::generate_latin_square;
     use crate::solver::BacktrackingStrategy;
+    use crate::test_fixtures::fixtures::{AlwaysAcceptStrategy, AlwaysRejectStrategy};
     use crate::types::{LatinSquare, Puzzle};
     use rand::SeedableRng;
     use rand_chacha::ChaCha8Rng;
 
-    /// Accepts every merge (reports Unique unconditionally).
-    /// Isolates coarsening loop logic from real solver behaviour.
-    struct AlwaysAcceptStrategy;
-
-    impl SolvingStrategy for AlwaysAcceptStrategy {
-        fn initial_state(&self, _puzzle: &Puzzle) -> DomainState {
-            DomainState::default()
-        }
-
-        fn propagate(&self, _puzzle: &Puzzle, state: DomainState) -> (DomainState, History, bool) {
-            (state, vec![], false)
-        }
-
-        fn branch(&self, _state: &DomainState) -> (DomainState, DomainState) {
-            panic!("AlwaysAcceptStrategy never needs branching")
-        }
-
-        fn is_solved(&self, _state: &DomainState) -> bool {
-            true
-        }
-
-        fn is_failed(&self, _state: &DomainState) -> bool {
-            false
-        }
-    }
-
-    /// Rejects every merge (reports NoSolution unconditionally).
-    struct AlwaysRejectStrategy;
-
-    impl SolvingStrategy for AlwaysRejectStrategy {
-        fn initial_state(&self, _puzzle: &Puzzle) -> DomainState {
-            DomainState::default()
-        }
-
-        fn propagate(&self, _puzzle: &Puzzle, state: DomainState) -> (DomainState, History, bool) {
-            (state, vec![], true)
-        }
-
-        fn branch(&self, _state: &DomainState) -> (DomainState, DomainState) {
-            panic!("AlwaysRejectStrategy never needs branching")
-        }
-
-        fn is_solved(&self, _state: &DomainState) -> bool {
-            false
-        }
-
-        fn is_failed(&self, _state: &DomainState) -> bool {
-            true
-        }
-    }
-
-    fn make_3x3_latin_square() -> LatinSquare {
-        let mut rng = ChaCha8Rng::seed_from_u64(42);
-        generate_latin_square(3, &mut rng)
-    }
-
     fn make_3x3_puzzle() -> Puzzle {
+        let mut rng = ChaCha8Rng::seed_from_u64(42);
+        let latin_square = generate_latin_square(3, &mut rng);
         Puzzle {
-            latin_square: make_3x3_latin_square(),
+            latin_square,
             cages: vec![],
         }
     }

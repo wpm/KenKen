@@ -103,42 +103,7 @@ impl fmt::Display for Puzzle {
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    fn make_3x3_latin_square() -> LatinSquare {
-        LatinSquare {
-            n: 3,
-            grid: vec![vec![2, 1, 3], vec![3, 2, 1], vec![1, 3, 2]],
-        }
-    }
-
-    fn make_3x3_puzzle() -> Puzzle {
-        let ls = make_3x3_latin_square();
-        Puzzle {
-            cages: vec![
-                Cage {
-                    cells: vec![(0, 0), (1, 0)],
-                    op: Operation::Add(5),
-                },
-                Cage {
-                    cells: vec![(0, 1), (0, 2)],
-                    op: Operation::Add(4),
-                },
-                Cage {
-                    cells: vec![(1, 1)],
-                    op: Operation::Given(2),
-                },
-                Cage {
-                    cells: vec![(1, 2), (2, 2)],
-                    op: Operation::Mul(2),
-                },
-                Cage {
-                    cells: vec![(2, 0), (2, 1)],
-                    op: Operation::Sub(2),
-                },
-            ],
-            latin_square: ls,
-        }
-    }
+    use crate::test_fixtures::fixtures::{make_3x3_latin_square, make_3x3_unique_puzzle};
 
     #[test]
     fn latin_square_get() {
@@ -150,12 +115,12 @@ mod tests {
 
     #[test]
     fn puzzle_validate_valid() {
-        assert!(make_3x3_puzzle().validate());
+        assert!(make_3x3_unique_puzzle().validate());
     }
 
     #[test]
     fn puzzle_validate_duplicate_cell() {
-        let mut puzzle = make_3x3_puzzle();
+        let mut puzzle = make_3x3_unique_puzzle();
         puzzle.cages.push(Cage {
             cells: vec![(0, 0)],
             op: Operation::Given(2),
@@ -165,7 +130,7 @@ mod tests {
 
     #[test]
     fn puzzle_validate_missing_cell() {
-        let mut puzzle = make_3x3_puzzle();
+        let mut puzzle = make_3x3_unique_puzzle();
         puzzle.cages.retain(|c| c.op != Operation::Sub(2));
         assert!(!puzzle.validate());
     }

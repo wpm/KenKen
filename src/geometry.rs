@@ -98,6 +98,7 @@ pub fn conflict_graph(cage: &Cage) -> Vec<(usize, usize)> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::test_fixtures::fixtures::make_2x2_all_given_puzzle;
     use crate::types::Operation;
 
     fn make_3x3_latin_square() -> LatinSquare {
@@ -135,24 +136,7 @@ mod tests {
     fn adjacent_pairs_2x2() {
         // 4 singleton cages arranged in a 2x2 grid:
         // cage 0: (0,0), cage 1: (0,1), cage 2: (1,0), cage 3: (1,1)
-        let cages = vec![
-            Cage {
-                cells: vec![(0, 0)],
-                op: Operation::Given(1),
-            },
-            Cage {
-                cells: vec![(0, 1)],
-                op: Operation::Given(2),
-            },
-            Cage {
-                cells: vec![(1, 0)],
-                op: Operation::Given(2),
-            },
-            Cage {
-                cells: vec![(1, 1)],
-                op: Operation::Given(1),
-            },
-        ];
+        let cages = make_2x2_all_given_puzzle().cages;
         let pairs = adjacent_pairs(&cages);
         // (0,0)↔(0,1): (0,1); (0,0)↔(1,0): (0,2); (0,1)↔(1,1): (1,3); (1,0)↔(1,1): (2,3)
         assert_eq!(pairs, vec![(0, 1), (0, 2), (1, 3), (2, 3)]);
