@@ -1,3 +1,4 @@
+pub mod coarsening;
 pub mod domain;
 pub mod geometry;
 pub mod history;
