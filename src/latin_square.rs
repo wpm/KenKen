@@ -1,9 +1,9 @@
 use crate::types::{LatinSquare, Value};
 use rand::Rng;
 
-/// Returns a uniformly-random index `x` in `0..n` such that `line(x) == 1`.
+/// Returns a uniformly random index `x` in `0..n` such that `line(x) == 1`.
 /// In a proper state each line has exactly one such entry; in an improper state
-/// there are two and we pick uniformly between them.
+/// there are two, and we pick uniformly between them.
 fn pick_one_from_line(rng: &mut impl Rng, n: usize, line: impl Fn(usize) -> i8) -> usize {
     let mut ones = [0usize; 2];
     let mut count = 0;
@@ -16,7 +16,7 @@ fn pick_one_from_line(rng: &mut impl Rng, n: usize, line: impl Fn(usize) -> i8) 
     ones[rng.random_range(0..count)]
 }
 
-/// Generates a uniformly-random n×n Latin square using the Jacobson-Matthews Markov chain.
+/// Generates a uniformly random n×n Latin square using the Jacobson-Matthews Markov chain.
 ///
 /// The state is an n×n×n incidence cube `m` where, in the *proper* regime,
 /// `m[r][c][v] ∈ {0,1}` and `m[r][c][v] = 1` iff the underlying Latin square
