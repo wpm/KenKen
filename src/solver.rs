@@ -237,7 +237,7 @@ impl SolvingStrategy for BacktrackingStrategy {
 }
 
 /// Only works on puzzles where every cage is `Operation::Given`.
-/// Each cell's domain is initialised to the singleton `{given value}`.
+/// Each cell's domain is initialized to the singleton `{given value}`.
 pub struct TrivialStrategy;
 
 impl SolvingStrategy for TrivialStrategy {
