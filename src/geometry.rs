@@ -80,6 +80,17 @@ pub fn merge_cages(a: &Cage, b: &Cage, op: Operation) -> Cage {
     }
 }
 
+/// Replaces cages[i] and cages[j] with merged, returning the new cage list.
+pub fn replace_with_merged(cages: &[Cage], i: usize, j: usize, merged: Cage) -> Vec<Cage> {
+    cages
+        .iter()
+        .enumerate()
+        .filter(|&(k, _)| k != i && k != j)
+        .map(|(_, c)| c.clone())
+        .chain(std::iter::once(merged))
+        .collect()
+}
+
 /// Returns all pairs of positions (i,j) with i<j in cage.cells that share a
 /// row or column. Result is sorted.
 pub fn conflict_graph(cage: &Cage) -> Vec<(usize, usize)> {

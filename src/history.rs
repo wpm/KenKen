@@ -10,6 +10,16 @@ pub struct DomainState {
     pub cell_domains: std::collections::BTreeMap<Cell, std::collections::BTreeSet<Value>>,
 }
 
+impl DomainState {
+    pub fn is_solved(&self) -> bool {
+        !self.cell_domains.is_empty() && self.cell_domains.values().all(|d| d.len() == 1)
+    }
+
+    pub fn is_failed(&self) -> bool {
+        self.cell_domains.values().any(|d| d.is_empty())
+    }
+}
+
 #[derive(Debug, Clone, PartialEq)]
 pub enum Variable {
     Cell(Cell),

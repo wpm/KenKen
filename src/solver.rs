@@ -75,40 +75,21 @@ impl BacktrackingStrategy {
         loop {
             let mut changed = false;
 
-            for r in 0..n {
-                buf.clear();
-                buf.extend((0..n).filter_map(|c| {
-                    let d = state.cell_domains.get(&(r, c))?;
-                    if d.len() == 1 {
-                        d.iter().next().copied()
-                    } else {
-                        None
-                    }
-                }));
-                for &v in buf.iter() {
-                    for c in 0..n {
-                        let d = state.cell_domains.entry((r, c)).or_default();
-                        if d.len() > 1 && d.remove(&v) {
-                            changed = true;
-                        }
-                    }
-                }
-            }
-            for c in 0..n {
-                buf.clear();
-                buf.extend((0..n).filter_map(|r| {
-                    let d = state.cell_domains.get(&(r, c))?;
-                    if d.len() == 1 {
-                        d.iter().next().copied()
-                    } else {
-                        None
-                    }
-                }));
-                for &v in buf.iter() {
-                    for r in 0..n {
-                        let d = state.cell_domains.entry((r, c)).or_default();
-                        if d.len() > 1 && d.remove(&v) {
-                            changed = true;
+            for line in 0..n {
+                let cell_fns: [&dyn Fn(usize) -> (usize, usize); 2] =
+                    [&|i| (line, i), &|i| (i, line)];
+                for cell_fn in cell_fns {
+                    buf.clear();
+                    buf.extend((0..n).filter_map(|i| {
+                        let d = state.cell_domains.get(&cell_fn(i))?;
+                        if d.len() == 1 { d.iter().next().copied() } else { None }
+                    }));
+                    for &v in buf.iter() {
+                        for i in 0..n {
+                            let d = state.cell_domains.entry(cell_fn(i)).or_default();
+                            if d.len() > 1 && d.remove(&v) {
+                                changed = true;
+                            }
                         }
                     }
                 }
@@ -247,11 +228,11 @@ impl SolvingStrategy for BacktrackingStrategy {
     }
 
     fn is_solved(&self, state: &DomainState) -> bool {
-        !state.cell_domains.is_empty() && state.cell_domains.values().all(|d| d.len() == 1)
+        state.is_solved()
     }
 
     fn is_failed(&self, state: &DomainState) -> bool {
-        state.cell_domains.values().any(|d| d.is_empty())
+        state.is_failed()
     }
 }
 
@@ -282,11 +263,11 @@ impl SolvingStrategy for TrivialStrategy {
     }
 
     fn is_solved(&self, state: &DomainState) -> bool {
-        !state.cell_domains.is_empty() && state.cell_domains.values().all(|d| d.len() == 1)
+        state.is_solved()
     }
 
     fn is_failed(&self, state: &DomainState) -> bool {
-        state.cell_domains.values().any(|d| d.is_empty())
+        state.is_failed()
     }
 }
 
@@ -342,7 +323,7 @@ mod tests {
 
     #[test]
     fn backtracking_solves_4x4_after_one_merge() {
-        use crate::geometry::{adjacent_pairs, merge_cages, trivial_cages};
+        use crate::geometry::{adjacent_pairs, merge_cages, replace_with_merged, trivial_cages};
         use crate::latin_square::generate_latin_square;
         use crate::operation::assign_operation;
         use rand::SeedableRng;
@@ -362,13 +343,7 @@ mod tests {
             .collect();
         let op = assign_operation(&merged_cells, &ls);
         let merged = merge_cages(&cages[i], &cages[j], op);
-        let new_cages: Vec<crate::types::Cage> = cages
-            .iter()
-            .enumerate()
-            .filter(|&(k, _)| k != i && k != j)
-            .map(|(_, c)| c.clone())
-            .chain(std::iter::once(merged))
-            .collect();
+        let new_cages = replace_with_merged(&cages, i, j, merged);
 
         let puzzle = Puzzle {
             latin_square: ls,
@@ -426,7 +401,7 @@ mod tests {
                 false
             }
             fn is_failed(&self, state: &DomainState) -> bool {
-                state.cell_domains.values().any(|d| d.is_empty())
+                state.is_failed()
             }
         }
 
@@ -482,7 +457,7 @@ mod tests {
             }
 
             fn is_solved(&self, state: &DomainState) -> bool {
-                state.cell_domains.values().all(|d| d.len() == 1)
+                state.is_solved()
             }
 
             fn is_failed(&self, _state: &DomainState) -> bool {

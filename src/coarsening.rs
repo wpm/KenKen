@@ -2,7 +2,7 @@ use std::collections::HashSet;
 
 use rand::Rng;
 
-use crate::geometry::{adjacent_pairs, merge_cages, trivial_cages};
+use crate::geometry::{adjacent_pairs, merge_cages, replace_with_merged, trivial_cages};
 use crate::history::{Event, History, SolveResult};
 use crate::operation::assign_operation;
 use crate::solver::{SolvingStrategy, solve};
@@ -56,13 +56,7 @@ impl Coarsening {
             let op = assign_operation(&merged_cells, &puzzle.latin_square);
             let merged = merge_cages(&current[i], &current[j], op);
 
-            let cages_prime: Vec<Cage> = current
-                .iter()
-                .enumerate()
-                .filter(|&(k, _)| k != i && k != j)
-                .map(|(_, c)| c.clone())
-                .chain(std::iter::once(merged))
-                .collect();
+            let cages_prime = replace_with_merged(&current, i, j, merged);
 
             let puzzle_prime = Puzzle {
                 latin_square: puzzle.latin_square.clone(),
