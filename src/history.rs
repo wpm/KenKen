@@ -3,9 +3,11 @@ use crate::types::{Cage, Cell, Tuple, Value};
 /// The domain state of a puzzle: maps each cell to its remaining possible values.
 /// An empty set for any cell means that cell has failed (no valid assignment).
 /// A singleton set means the cell is fully determined.
+///
+/// Uses BTreeMap for deterministic iteration order (required for reproducible MRV branching).
 #[derive(Debug, Clone, PartialEq, Default)]
 pub struct DomainState {
-    pub cell_domains: std::collections::HashMap<Cell, std::collections::BTreeSet<Value>>,
+    pub cell_domains: std::collections::BTreeMap<Cell, std::collections::BTreeSet<Value>>,
 }
 
 #[derive(Debug, Clone, PartialEq)]

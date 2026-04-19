@@ -50,8 +50,7 @@ fn enumerate(
     }
 }
 
-/// Returns true if the operation is satisfied by the given tuple.
-fn satisfies_operation(op: &Operation, tuple: &[Value]) -> bool {
+pub(crate) fn satisfies_operation(op: &Operation, tuple: &[Value]) -> bool {
     match op {
         Operation::Given(v) => tuple.len() == 1 && tuple[0] == *v,
         Operation::Add(t) => {
