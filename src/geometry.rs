@@ -111,10 +111,22 @@ mod tests {
         // 4 singleton cages arranged in a 2x2 grid:
         // cage 0: (0,0), cage 1: (0,1), cage 2: (1,0), cage 3: (1,1)
         let cages = vec![
-            Cage { cells: vec![(0, 0)], op: Operation::Given(1) },
-            Cage { cells: vec![(0, 1)], op: Operation::Given(2) },
-            Cage { cells: vec![(1, 0)], op: Operation::Given(2) },
-            Cage { cells: vec![(1, 1)], op: Operation::Given(1) },
+            Cage {
+                cells: vec![(0, 0)],
+                op: Operation::Given(1),
+            },
+            Cage {
+                cells: vec![(0, 1)],
+                op: Operation::Given(2),
+            },
+            Cage {
+                cells: vec![(1, 0)],
+                op: Operation::Given(2),
+            },
+            Cage {
+                cells: vec![(1, 1)],
+                op: Operation::Given(1),
+            },
         ];
         let pairs = adjacent_pairs(&cages);
         // (0,0)↔(0,1): (0,1); (0,0)↔(1,0): (0,2); (0,1)↔(1,1): (1,3); (1,0)↔(1,1): (2,3)
@@ -125,8 +137,14 @@ mod tests {
     fn adjacent_pairs_no_diagonals() {
         // Two cages at diagonal positions only — should NOT be adjacent
         let cages = vec![
-            Cage { cells: vec![(0, 0)], op: Operation::Given(1) },
-            Cage { cells: vec![(1, 1)], op: Operation::Given(2) },
+            Cage {
+                cells: vec![(0, 0)],
+                op: Operation::Given(1),
+            },
+            Cage {
+                cells: vec![(1, 1)],
+                op: Operation::Given(2),
+            },
         ];
         let pairs = adjacent_pairs(&cages);
         assert!(pairs.is_empty(), "diagonal cages should not be adjacent");
@@ -134,8 +152,14 @@ mod tests {
 
     #[test]
     fn merge_cages_cells() {
-        let a = Cage { cells: vec![(0, 0)], op: Operation::Given(1) };
-        let b = Cage { cells: vec![(0, 1)], op: Operation::Given(2) };
+        let a = Cage {
+            cells: vec![(0, 0)],
+            op: Operation::Given(1),
+        };
+        let b = Cage {
+            cells: vec![(0, 1)],
+            op: Operation::Given(2),
+        };
         let merged = merge_cages(&a, &b, Operation::Add(3));
         assert_eq!(merged.cells, vec![(0, 0), (0, 1)]);
         assert_eq!(merged.op, Operation::Add(3));
