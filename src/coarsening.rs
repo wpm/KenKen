@@ -120,9 +120,8 @@ mod tests {
         .generate(&puzzle, &AlwaysUniqueStrategy, &mut rng);
         // Either we reduced to <= 4 cages, or we ran out of adjacent pairs.
         // Both outcomes are valid; we just assert it terminates and returns a result.
-        match result {
-            Some(cages) => assert!(cages.len() <= 4),
-            None => {} // ran out of pairs before hitting the threshold — also valid
+        if let Some(cages) = result {
+            assert!(cages.len() <= 4);
         }
     }
 
