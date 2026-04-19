@@ -1,3 +1,4 @@
+pub mod geometry;
 pub mod history;
 pub mod latin_square;
 pub mod types;
