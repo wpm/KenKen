@@ -179,14 +179,17 @@ impl Puzzle {
         let mut puzzle = self.clone();
         let mut removed: BTreeSet<(Cell, Value)> = BTreeSet::new();
 
-        let row_lines = rows
+        let line = |fixed, vary_in_col: bool| {
+            (0..puzzle.n)
+                .map(move |i| if vary_in_col { (fixed, i) } else { (i, fixed) })
+                .collect::<Vec<_>>()
+        };
+        let lines = rows
             .iter()
-            .map(|&r| (0..puzzle.n).map(|c| (r, c)).collect::<Vec<_>>());
-        let col_lines = cols
-            .iter()
-            .map(|&c| (0..puzzle.n).map(|r| (r, c)).collect::<Vec<_>>());
+            .map(|&r| line(r, true))
+            .chain(cols.iter().map(|&c| line(c, false)));
 
-        for cells in row_lines.chain(col_lines) {
+        for cells in lines {
             let cages: Vec<Option<Cage>> = cells
                 .iter()
                 .map(|&cell| puzzle.cages_containing(cell).ok().cloned())
