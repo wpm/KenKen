@@ -11,9 +11,22 @@ use std::fmt::Display;
 #[derive(Debug)]
 struct State {
     /// Remaining candidate values for each cell.
-    primal: Primal,
+    cell_values: Primal,
     /// Remaining candidate value assignments for each cage.
-    dual: Dual,
+    cage_tuples: Dual,
+}
+impl Display for State {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        writeln!(f, "Cells")?;
+        for (cell, domain) in &self.cell_values {
+            writeln!(f, "  ({cell:?}): {domain}")?;
+        }
+        writeln!(f, "Cages")?;
+        for (cage, tuples) in &self.cage_tuples {
+            writeln!(f, "  {cage}: {tuples:?}")?;
+        }
+        Ok(())
+    }
 }
 
 /// Maps each cell to the set of values still consistent with the constraints.
@@ -37,8 +50,8 @@ pub mod sealed {
 #[derive(Debug)]
 struct Domain<T: DomainContent>(T);
 
-impl<T: DomainContent + Display> Display for Domain<T> {
+impl<T: DomainContent + fmt::Debug> Display for Domain<T> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "{}", self.0)
+        write!(f, "{:?}", self.0)
     }
 }
