@@ -224,6 +224,35 @@ impl Puzzle {
         (puzzle, removed)
     }
 
+    /// Applies cage arithmetic constraints by removing the given `(cell, value)` pairs
+    /// from their respective cage states. Returns the updated puzzle and the set of
+    /// `(cell, value)` pairs that were removed as a consequence.
+    fn cage_constraints(
+        &self,
+        removals: &BTreeSet<(Cell, Value)>,
+    ) -> (Self, BTreeSet<(Cell, Value)>) {
+        let mut puzzle = self.clone();
+        let mut changed: BTreeSet<(Cell, Value)> = BTreeSet::new();
+
+        for &(cell, value) in removals {
+            let cage = puzzle.cage_for_cell(cell).cloned();
+            if let Some(cage) = cage
+                && let Some(affected_cells) = puzzle
+                    .states
+                    .get_mut(&cage)
+                    .and_then(|state| state.remove(value, cell, &cage))
+            {
+                for affected_cell in affected_cells {
+                    for v in puzzle.cell_domain(affected_cell) {
+                        changed.insert((affected_cell, v));
+                    }
+                }
+            }
+        }
+
+        (puzzle, changed)
+    }
+
     /// Propagates the removal of the given `(cell, value)` pairs through all
     /// cage arithmetic and all-different constraints until no further pruning is possible,
     /// the puzzle becomes invalid, or the puzzle is solved. Returns the pruned
@@ -238,26 +267,15 @@ impl Puzzle {
                 return puzzle;
             }
 
-            let mut changed_cells: BTreeSet<Cell> = BTreeSet::new();
-            for (cell, value) in &to_remove {
-                let cage = puzzle.cage_for_cell(*cell).cloned();
-                if let Some(cage) = cage
-                    && let Some(changed) = puzzle
-                        .states
-                        .get_mut(&cage)
-                        .and_then(|state| state.remove(*value, *cell, &cage))
-                {
-                    changed_cells.extend(changed);
-                }
-            }
-            to_remove.clear();
+            let (next, changed) = puzzle.cage_constraints(&to_remove);
+            puzzle = next;
 
-            if changed_cells.is_empty() || !puzzle.is_valid() || puzzle.is_solved() {
+            if changed.is_empty() || !puzzle.is_valid() || puzzle.is_solved() {
                 return puzzle;
             }
 
-            let rows = changed_cells.iter().map(|&(r, _)| r).collect();
-            let cols = changed_cells.iter().map(|&(_, c)| c).collect();
+            let rows = changed.iter().map(|&((r, _), _)| r).collect();
+            let cols = changed.iter().map(|&((_, c), _)| c).collect();
             let (next, regin_removed) = puzzle.all_different(&rows, &cols);
             puzzle = next;
             to_remove = regin_removed;
