@@ -1,3 +1,4 @@
+use crate::regin::regin;
 use crate::state::CageState;
 use std::cmp::Ordering;
 use std::collections::BTreeMap;
@@ -153,6 +154,88 @@ impl Puzzle {
     #[allow(clippy::expect_used)]
     pub fn state(&self, cage: &Cage) -> &CageState {
         self.states.get(cage).expect("cage not found in puzzle")
+    }
+
+    /// Returns true if every cage state is valid (no cage has an empty tuple set).
+    #[must_use]
+    pub fn is_valid(&self) -> bool {
+        self.states.values().all(CageState::is_valid)
+    }
+
+    /// Returns true if every cage state is solved (exactly one tuple per cage).
+    #[must_use]
+    pub fn is_solved(&self) -> bool {
+        self.states.values().all(CageState::is_solved)
+    }
+
+    fn cage_for_cell(&self, cell: Cell) -> Option<&Cage> {
+        self.states.keys().find(|cage| cage.cells.contains(&cell))
+    }
+
+    fn cell_domain(&self, cell: Cell) -> BTreeSet<Value> {
+        self.cage_for_cell(cell)
+            .map(|cage| {
+                self.states[cage]
+                    .values(cage)
+                    .remove(&cell)
+                    .unwrap_or_default()
+            })
+            .unwrap_or_default()
+    }
+
+    /// Propagates the removal of the given `(cell, value)` pairs through all
+    /// cage arithmetic and all-different constraints until no further pruning is possible,
+    /// the puzzle becomes invalid, or the puzzle is solved. Returns the pruned
+    /// puzzle.
+    #[must_use]
+    pub fn propagate(&self, removals: BTreeSet<(Cell, Value)>) -> Self {
+        let mut puzzle = self.clone();
+        let mut to_remove: BTreeSet<(Cell, Value)> = removals;
+
+        loop {
+            if to_remove.is_empty() || !puzzle.is_valid() || puzzle.is_solved() {
+                return puzzle;
+            }
+
+            let mut changed_cells: BTreeSet<Cell> = BTreeSet::new();
+            for (cell, value) in &to_remove {
+                let cage = puzzle.cage_for_cell(*cell).cloned();
+                if let Some(cage) = cage
+                    && let Some(changed) = puzzle
+                        .states
+                        .get_mut(&cage)
+                        .and_then(|state| state.remove(*value, *cell, &cage))
+                {
+                    changed_cells.extend(changed);
+                }
+            }
+            to_remove.clear();
+
+            if changed_cells.is_empty() || !puzzle.is_valid() || puzzle.is_solved() {
+                return puzzle;
+            }
+
+            let affected_rows: BTreeSet<usize> = changed_cells.iter().map(|&(r, _)| r).collect();
+            let affected_cols: BTreeSet<usize> = changed_cells.iter().map(|&(_, c)| c).collect();
+
+            let row_lines = affected_rows
+                .iter()
+                .map(|&r| (0..puzzle.n).map(|c| (r, c)).collect::<Vec<_>>());
+            let col_lines = affected_cols
+                .iter()
+                .map(|&c| (0..puzzle.n).map(|r| (r, c)).collect::<Vec<_>>());
+
+            for cells in row_lines.chain(col_lines) {
+                let domains: Vec<BTreeSet<Value>> =
+                    cells.iter().map(|&cell| puzzle.cell_domain(cell)).collect();
+                let pruned = regin(domains.clone());
+                for (i, cell) in cells.iter().enumerate() {
+                    for value in domains[i].difference(&pruned[i]) {
+                        to_remove.insert((*cell, *value));
+                    }
+                }
+            }
+        }
     }
 }
 
@@ -323,5 +406,38 @@ mod tests {
         let p = Puzzle::new(3, make_3x3_puzzle_cages());
         let cage = p.states.keys().next().unwrap();
         let _state = p.state(cage);
+    }
+
+    #[test]
+    fn propagate_empty_removals_unchanged() {
+        let p = Puzzle::new(3, make_3x3_puzzle_cages());
+        let p2 = p.propagate(BTreeSet::new());
+        assert!(p2.is_valid());
+    }
+
+    #[test]
+    fn propagate_given_cell_solves_puzzle() {
+        // The 3×3 fixture has a unique solution: 2 1 3 / 3 2 1 / 1 3 2.
+        // Cell (1,1) is Given(2), so 2 must be removed from every other cell in
+        // row 1 and col 1. Propagating those removals should cascade via Régin
+        // until the whole puzzle is solved.
+        let p = Puzzle::new(3, make_3x3_puzzle_cages());
+        let removals = BTreeSet::from([
+            ((0, 1), 2), // col 1 peers of (1,1)
+            ((2, 1), 2),
+            ((1, 0), 2), // row 1 peers of (1,1)
+            ((1, 2), 2),
+        ]);
+        let p2 = p.propagate(removals);
+        assert!(p2.is_solved());
+    }
+
+    #[test]
+    fn propagate_invalid_removal_yields_invalid_puzzle() {
+        // Remove the only valid value from a Given cage — no tuples remain.
+        let p = Puzzle::new(3, make_3x3_puzzle_cages());
+        let removals = BTreeSet::from([((1, 1), 2)]);
+        let p2 = p.propagate(removals);
+        assert!(!p2.is_valid());
     }
 }

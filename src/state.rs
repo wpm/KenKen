@@ -43,6 +43,11 @@ impl CageState {
         }
     }
 
+    /// Returns an iterator over all candidate tuples.
+    pub fn tuples(&self) -> impl Iterator<Item = &Tuple> {
+        self.tuples.iter()
+    }
+
     /// Returns a map from each cell in the cage to the set of values it can
     /// take across all remaining tuples, in cage-cell order.
     #[must_use]
@@ -71,49 +76,30 @@ impl CageState {
         !self.tuples.is_empty()
     }
 
-    /// Removes all tuples that assign `value` to `cell`, returning the pruned
-    /// state and the set of cells whose candidate value-sets changed as a result.
-    ///
-    /// A cell's value-set changes when every tuple that gave it some particular
-    /// value has been removed. Returns `None` if `cell` is not in `cage`.
-    #[must_use]
-    pub fn remove(&self, value: Value, cell: Cell, cage: &Cage) -> Option<(Self, BTreeSet<Cell>)> {
+    /// Removes all tuples that assign `value` to `cell`, mutating the state in
+    /// place. Returns the set of cells whose candidate value-sets changed, or
+    /// `None` if `cell` is not in `cage`.
+    pub fn remove(&mut self, value: Value, cell: Cell, cage: &Cage) -> Option<BTreeSet<Cell>> {
         let pos = cage.cells.iter().position(|&c| c == cell)?;
-        let new_tuples: BTreeSet<Tuple> = self
-            .tuples
-            .iter()
-            .filter(|t| t[pos] != value)
-            .cloned()
+
+        let before = self.values(cage);
+        self.tuples.retain(|t| t[pos] != value);
+        let after = self.values(cage);
+
+        let changed = before
+            .into_iter()
+            .filter(|(c, domain)| after[c] != *domain)
+            .map(|(c, _)| c)
             .collect();
 
-        // Collect cells whose domain shrinks: any cell that had a value exclusively
-        // supplied by the removed tuples.
-        let cells: Vec<Cell> = cage.cells.iter().copied().collect();
-        let changed = cells
-            .iter()
-            .enumerate()
-            .filter(|&(i, _)| {
-                let had: BTreeSet<Value> = self.tuples.iter().map(|t| t[i]).collect();
-                let now: BTreeSet<Value> = new_tuples.iter().map(|t| t[i]).collect();
-                now != had
-            })
-            .map(|(_, &c)| c)
-            .collect();
-
-        Some((
-            Self {
-                cage_size: self.cage_size,
-                tuples: new_tuples,
-            },
-            changed,
-        ))
+        Some(changed)
     }
 
     /// # Errors
     ///
     /// Returns `StateError::TupleLengthMismatch` if the `tuple` length differs from the cage size,
     /// or `StateError::TupleNotFound` if the tuple is not in the state.
-    pub fn remove_tuple(&self, tuple: &[Value]) -> Result<Self, StateError> {
+    pub fn remove_tuple(&mut self, tuple: &[Value]) -> Result<(), StateError> {
         if tuple.len() != self.cage_size {
             return Err(StateError::TupleLengthMismatch {
                 expected: self.cage_size,
@@ -123,12 +109,8 @@ impl CageState {
         if !self.tuples.contains(tuple as &[Value]) {
             return Err(StateError::TupleNotFound);
         }
-        let mut tuples = self.tuples.clone();
-        tuples.remove(tuple as &[Value]);
-        Ok(Self {
-            cage_size: self.cage_size,
-            tuples,
-        })
+        self.tuples.remove(tuple as &[Value]);
+        Ok(())
     }
 }
 
@@ -295,18 +277,19 @@ mod tests {
     #[test]
     fn remove_unknown_cell_returns_none() {
         let c = cage([(0, 0), (0, 1)], Operation::Add(3));
-        let s = CageState::new(&c, 3);
+        let mut s = CageState::new(&c, 3);
         assert!(s.remove(1, (9, 9), &c).is_none());
     }
 
     #[test]
     #[allow(clippy::expect_used)]
     fn remove_value_not_present_returns_unchanged() {
-        // (0,0) only ever holds 1 or 2 in a 3-cell Add(7) cage; removing 5 changes nothing.
+        // (0,0) only ever holds values ≤4 in an Add(7) 6×6 cage; removing 5 from it changes nothing.
         let c = cage([(0, 0), (1, 0), (1, 1)], Operation::Add(7));
-        let s = CageState::new(&c, 6);
-        let (s2, changed) = s.remove(5, (0, 0), &c).expect("cell in cage");
-        assert_eq!(s2.tuples, s.tuples);
+        let tuples_before = CageState::new(&c, 6).tuples;
+        let mut s = CageState::new(&c, 6);
+        let changed = s.remove(5, (0, 0), &c).expect("cell in cage");
+        assert_eq!(s.tuples, tuples_before);
         assert!(changed.is_empty());
     }
 
@@ -316,15 +299,14 @@ mod tests {
         // L-shaped +7, 6×6. Remove value 1 from cell (1,0) (pos1).
         // Tuples with t[1]==1: [2,1,4], [3,1,3], [4,1,2] are removed.
         // Remaining: [1,2,4],[1,4,2],[1,5,1],[2,3,2],[2,4,1],[4,2,1].
-        // Changed cells: (0,0) loses value 3 and 4 (only in removed tuples? check):
         //   pos0 before: {1,2,3,4}; after: {1,2,4} — 3 disappears → (0,0) changed.
         //   pos1 before: {1,2,3,4,5}; after: {2,3,4,5} — 1 disappears → (1,0) changed.
         //   pos2 before: {1,2,3,4}; after: {1,2,4} — 3 disappears → (1,1) changed.
         let c = cage([(0, 0), (1, 0), (1, 1)], Operation::Add(7));
-        let s = CageState::new(&c, 6);
-        let (s2, changed) = s.remove(1, (1, 0), &c).expect("cell in cage");
+        let mut s = CageState::new(&c, 6);
+        let changed = s.remove(1, (1, 0), &c).expect("cell in cage");
         assert_eq!(
-            s2.tuples,
+            s.tuples,
             BTreeSet::from([
                 vec![1, 2, 4],
                 vec![1, 4, 2],
@@ -346,10 +328,10 @@ mod tests {
         // pos1 before {1,2,3,4,5}, after {1,2,3,4} — 5 disappears → (1,0) changed.
         // pos2 before {1,2,3,4}, after {1,2,3,4} — unchanged.
         let c = cage([(0, 0), (1, 0), (1, 1)], Operation::Add(7));
-        let s = CageState::new(&c, 6);
-        let (s2, changed) = s.remove(5, (1, 0), &c).expect("cell in cage");
+        let mut s = CageState::new(&c, 6);
+        let changed = s.remove(5, (1, 0), &c).expect("cell in cage");
         assert_eq!(
-            s2.tuples,
+            s.tuples,
             BTreeSet::from([
                 vec![1, 2, 4],
                 vec![1, 4, 2],
@@ -434,16 +416,16 @@ mod tests {
     #[allow(clippy::unwrap_used)]
     fn remove_tuple_removes() {
         let c = cage([(0, 0)], Operation::Given(2));
-        let s = CageState::new(&c, 3);
-        let s2 = s.remove_tuple(&[2]).unwrap();
-        assert!(s2.tuples.is_empty());
+        let mut s = CageState::new(&c, 3);
+        s.remove_tuple(&[2]).unwrap();
+        assert!(s.tuples.is_empty());
     }
 
     #[test]
     #[allow(clippy::unwrap_used)]
     fn remove_tuple_not_found_error() {
         let c = cage([(0, 0)], Operation::Given(2));
-        let s = CageState::new(&c, 3);
+        let mut s = CageState::new(&c, 3);
         assert_eq!(s.remove_tuple(&[3]).unwrap_err(), StateError::TupleNotFound);
     }
 
@@ -451,7 +433,7 @@ mod tests {
     #[allow(clippy::unwrap_used)]
     fn remove_tuple_length_mismatch_error() {
         let c = cage([(0, 0)], Operation::Given(2));
-        let s = CageState::new(&c, 3);
+        let mut s = CageState::new(&c, 3);
         assert_eq!(
             s.remove_tuple(&[2, 1]).unwrap_err(),
             StateError::TupleLengthMismatch {
