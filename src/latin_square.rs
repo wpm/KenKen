@@ -98,7 +98,7 @@ pub fn generate_latin_square(n: usize, rng: &mut impl Rng) -> Grid {
         })
         .collect();
 
-    Grid { grid }
+    Grid::new(grid)
 }
 
 /// Returns true if `ls` is a valid n×n Latin square: each row and each column
@@ -140,9 +140,7 @@ mod tests {
     #[test]
     fn validate_rejects_invalid() {
         // Row 0 has a duplicate value (two 1s), so this is not a valid Latin square.
-        let ls = Grid {
-            grid: vec![vec![1, 1, 3], vec![2, 3, 1], vec![3, 2, 2]],
-        };
+        let ls = Grid::new(vec![vec![1, 1, 3], vec![2, 3, 1], vec![3, 2, 2]]);
         assert!(!validate_latin_square(&ls));
     }
 

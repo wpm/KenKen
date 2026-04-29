@@ -13,6 +13,19 @@ pub struct Grid {
 }
 
 impl Grid {
+    /// # Panics
+    ///
+    /// Panics if any row length differs from the number of rows.
+    #[must_use]
+    pub fn new(grid: Vec<Vec<Value>>) -> Self {
+        let n = grid.len();
+        assert!(
+            grid.iter().all(|row| row.len() == n),
+            "grid must be square (n={n})"
+        );
+        Self { grid }
+    }
+
     #[must_use]
     pub const fn n(&self) -> usize {
         self.grid.len()

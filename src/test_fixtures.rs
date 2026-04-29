@@ -3,9 +3,7 @@ pub mod fixtures {
     use std::collections::BTreeSet;
 
     pub fn make_3x3_latin_square() -> Grid {
-        Grid {
-            grid: vec![vec![2, 1, 3], vec![3, 2, 1], vec![1, 3, 2]],
-        }
+        Grid::new(vec![vec![2, 1, 3], vec![3, 2, 1], vec![1, 3, 2]])
     }
 
     /// 3x3 puzzle with unique solution \[2,1,3 / 3,2,1 / 1,3,2\].
