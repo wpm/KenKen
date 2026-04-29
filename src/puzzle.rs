@@ -245,20 +245,24 @@ impl Puzzle {
     /// cage arithmetic and all-different constraints until no further pruning is possible,
     /// the puzzle becomes invalid, or the puzzle is solved. Returns the pruned
     /// puzzle.
+    fn is_done(&self) -> bool {
+        !self.is_valid() || self.is_solved()
+    }
+
     #[must_use]
     pub fn propagate(&self, removals: BTreeSet<(Cell, Value)>) -> Self {
         let mut puzzle = self.clone();
         let mut to_remove: BTreeSet<(Cell, Value)> = removals;
 
         loop {
-            if to_remove.is_empty() || !puzzle.is_valid() || puzzle.is_solved() {
+            if to_remove.is_empty() || puzzle.is_done() {
                 return puzzle;
             }
 
             let (next, changed) = puzzle.cage_constraints(&to_remove);
             puzzle = next;
 
-            if changed.is_empty() || !puzzle.is_valid() || puzzle.is_solved() {
+            if changed.is_empty() || puzzle.is_done() {
                 return puzzle;
             }
 
