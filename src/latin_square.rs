@@ -1,4 +1,4 @@
-use crate::types::{LatinSquare, Value};
+use crate::puzzle::{Grid, Value};
 use rand::{Rng, RngExt};
 
 /// Returns a uniformly random index `x` in `0..n` such that `line(x) == 1`.
@@ -35,7 +35,7 @@ fn pick_one_from_line(rng: &mut impl Rng, n: usize, line: impl Fn(usize) -> i8) 
 /// distributed random Latin squares", *Journal of Combinatorial Designs* 4(6),
 /// 1996, pp. 405–437.
 #[allow(clippy::many_single_char_names)]
-pub fn generate_latin_square(n: usize, rng: &mut impl Rng) -> LatinSquare {
+pub fn generate_latin_square(n: usize, rng: &mut impl Rng) -> Grid {
     // Seed with the cyclic Latin square: L[r][c] = ((r + c) mod n) + 1.
     let mut m: Vec<Vec<Vec<i8>>> = vec![vec![vec![0i8; n]; n]; n];
     for r in 0..n {
@@ -98,15 +98,15 @@ pub fn generate_latin_square(n: usize, rng: &mut impl Rng) -> LatinSquare {
         })
         .collect();
 
-    LatinSquare { n, grid }
+    Grid { grid }
 }
 
 /// Returns true if `ls` is a valid n×n Latin square: each row and each column
 /// contains each value in `1..=n` exactly once.
 #[must_use]
 #[allow(clippy::cast_possible_truncation)]
-pub fn validate_latin_square(ls: &LatinSquare) -> bool {
-    let n = ls.n;
+pub fn validate_latin_square(ls: &Grid) -> bool {
+    let n = ls.n();
     let expected: std::collections::HashSet<Value> = (1..=(n as Value)).collect();
 
     for r in 0..n {
@@ -140,8 +140,7 @@ mod tests {
     #[test]
     fn validate_rejects_invalid() {
         // Row 0 has a duplicate value (two 1s), so this is not a valid Latin square.
-        let ls = LatinSquare {
-            n: 3,
+        let ls = Grid {
             grid: vec![vec![1, 1, 3], vec![2, 3, 1], vec![3, 2, 2]],
         };
         assert!(!validate_latin_square(&ls));

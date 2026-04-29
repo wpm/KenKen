@@ -1,9 +1,9 @@
 pub mod fixtures {
-    use crate::types::{Cage, LatinSquare, Operation, Puzzle};
+    use crate::puzzle::{Cage, Grid, Operation, Puzzle};
+    use std::collections::BTreeSet;
 
-    pub fn make_3x3_latin_square() -> LatinSquare {
-        LatinSquare {
-            n: 3,
+    pub fn make_3x3_latin_square() -> Grid {
+        Grid {
             grid: vec![vec![2, 1, 3], vec![3, 2, 1], vec![1, 3, 2]],
         }
     }
@@ -22,28 +22,28 @@ pub mod fixtures {
     pub fn make_3x3_unique_puzzle() -> Puzzle {
         Puzzle {
             latin_square: make_3x3_latin_square(),
-            cages: vec![
+            cages: BTreeSet::from([
                 Cage {
-                    cells: vec![(0, 0), (1, 0)],
+                    cells: BTreeSet::from([(0, 0), (1, 0)]),
                     op: Operation::Add(5),
                 },
                 Cage {
-                    cells: vec![(0, 1), (0, 2)],
+                    cells: BTreeSet::from([(0, 1), (0, 2)]),
                     op: Operation::Add(4),
                 },
                 Cage {
-                    cells: vec![(1, 1)],
+                    cells: BTreeSet::from([(1, 1)]),
                     op: Operation::Given(2),
                 },
                 Cage {
-                    cells: vec![(1, 2), (2, 2)],
+                    cells: BTreeSet::from([(1, 2), (2, 2)]),
                     op: Operation::Mul(2),
                 },
                 Cage {
-                    cells: vec![(2, 0), (2, 1)],
+                    cells: BTreeSet::from([(2, 0), (2, 1)]),
                     op: Operation::Sub(2),
                 },
-            ],
+            ]),
         }
     }
 }
