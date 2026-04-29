@@ -1,4 +1,6 @@
+use crate::state::State;
 use std::cmp::Ordering;
+use std::collections::BTreeMap;
 pub(crate) use std::collections::BTreeSet;
 use std::fmt;
 use std::fmt::Display;
@@ -6,6 +8,11 @@ use std::fmt::Display;
 pub type Value = u8;
 pub type Cell = (usize, usize);
 pub type Tuple = Vec<Value>;
+
+#[derive(Debug, PartialEq, Eq)]
+pub enum PuzzleError {
+    CellOutOfBounds(Cell),
+}
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Grid {
@@ -96,32 +103,74 @@ impl Display for Cage {
     }
 }
 
+/// A `KenKen` puzzle: an n×n grid partitioned into cages, each with a solver state.
 #[derive(Debug, Clone)]
 pub struct Puzzle {
-    pub latin_square: Grid,
-    pub cages: BTreeSet<Cage>,
+    pub n: usize,
+    states: BTreeMap<Cage, State>,
 }
 
 impl Puzzle {
-    /// Returns true if cages exactly partition all n² cells with no overlaps or gaps.
+    /// Creates a new puzzle from a grid size and a set of cages.
+    ///
+    /// # Panics
+    ///
+    /// Panics if the cages do not exactly partition all n² cells.
     #[must_use]
-    pub fn validate(&self) -> bool {
-        let n = self.latin_square.n();
-        let mut seen = vec![false; n * n];
-        for cage in &self.cages {
-            for &(r, c) in &cage.cells {
-                if r >= n || c >= n {
-                    return false;
-                }
-                let idx = r * n + c;
-                if seen[idx] {
-                    return false;
-                }
-                seen[idx] = true;
-            }
-        }
-        seen.iter().all(|&x| x)
+    pub fn new(n: usize, cages: BTreeSet<Cage>) -> Self {
+        assert!(
+            cages_partition_grid(&cages, n),
+            "cages must exactly partition all {n}×{n} cells"
+        );
+        let states = cages
+            .into_iter()
+            .map(|cage| {
+                let state = State::new(&cage, n);
+                (cage, state)
+            })
+            .collect();
+        Self { n, states }
     }
+
+    /// Returns the cage that contains `cell`.
+    ///
+    /// # Errors
+    ///
+    /// Returns `PuzzleError::CellOutOfBounds` if `cell` is not in any cage.
+    pub fn cages_containing(&self, cell: Cell) -> Result<&Cage, PuzzleError> {
+        self.states
+            .keys()
+            .find(|cage| cage.cells.contains(&cell))
+            .ok_or(PuzzleError::CellOutOfBounds(cell))
+    }
+
+    /// Returns the state for the given cage.
+    ///
+    /// # Panics
+    ///
+    /// Panics if the cage is not part of this puzzle.
+    #[must_use]
+    #[allow(clippy::expect_used)]
+    pub fn state(&self, cage: &Cage) -> &State {
+        self.states.get(cage).expect("cage not found in puzzle")
+    }
+}
+
+fn cages_partition_grid(cages: &BTreeSet<Cage>, n: usize) -> bool {
+    let mut seen = vec![false; n * n];
+    for cage in cages {
+        for &(r, c) in &cage.cells {
+            if r >= n || c >= n {
+                return false;
+            }
+            let idx = r * n + c;
+            if seen[idx] {
+                return false;
+            }
+            seen[idx] = true;
+        }
+    }
+    seen.iter().all(|&x| x)
 }
 
 impl Display for Puzzle {
@@ -129,11 +178,11 @@ impl Display for Puzzle {
         writeln!(
             f,
             "{}x{} KenKen ({} cages)",
-            self.latin_square.n(),
-            self.latin_square.n(),
-            self.cages.len()
+            self.n,
+            self.n,
+            self.states.len()
         )?;
-        for cage in &self.cages {
+        for cage in self.states.keys() {
             writeln!(f, "  {cage}")?;
         }
         Ok(())
@@ -143,7 +192,7 @@ impl Display for Puzzle {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::test_fixtures::fixtures::{make_3x3_latin_square, make_3x3_unique_puzzle};
+    use crate::test_fixtures::fixtures::{make_3x3_latin_square, make_3x3_puzzle_cages};
 
     #[test]
     fn grid_new_square() {
@@ -218,41 +267,61 @@ mod tests {
     }
 
     #[test]
+    fn puzzle_new_valid() {
+        let p = Puzzle::new(3, make_3x3_puzzle_cages());
+        assert_eq!(p.n, 3);
+        assert_eq!(p.states.len(), 5);
+    }
+
+    #[test]
+    #[should_panic(expected = "cages must exactly partition")]
+    fn puzzle_new_duplicate_cell_panics() {
+        let mut cages = make_3x3_puzzle_cages();
+        cages.insert(Cage {
+            op: Operation::Given(2),
+            cells: BTreeSet::from([(0, 0)]),
+        });
+        let _ = Puzzle::new(3, cages);
+    }
+
+    #[test]
+    #[should_panic(expected = "cages must exactly partition")]
+    fn puzzle_new_missing_cell_panics() {
+        let mut cages = make_3x3_puzzle_cages();
+        cages.retain(|c| c.op != Operation::Sub(2));
+        let _ = Puzzle::new(3, cages);
+    }
+
+    #[test]
     fn puzzle_display() {
-        let s = make_3x3_unique_puzzle().to_string();
+        let p = Puzzle::new(3, make_3x3_puzzle_cages());
+        let s = p.to_string();
         assert!(s.contains("3x3 KenKen"));
         assert!(s.contains("5 cages"));
     }
 
     #[test]
-    fn puzzle_validate_valid() {
-        assert!(make_3x3_unique_puzzle().validate());
+    #[allow(clippy::unwrap_used)]
+    fn cages_containing_returns_cage_for_cell() {
+        let p = Puzzle::new(3, make_3x3_puzzle_cages());
+        assert_eq!(p.cages_containing((0, 0)).unwrap().op, Operation::Add(5));
+        assert_eq!(p.cages_containing((0, 1)).unwrap().op, Operation::Add(4));
     }
 
     #[test]
-    fn puzzle_validate_duplicate_cell() {
-        let mut puzzle = make_3x3_unique_puzzle();
-        puzzle.cages.insert(Cage {
-            op: Operation::Given(2),
-            cells: BTreeSet::from([(0, 0)]),
-        });
-        assert!(!puzzle.validate());
+    fn cages_containing_out_of_bounds_returns_error() {
+        let p = Puzzle::new(3, make_3x3_puzzle_cages());
+        assert_eq!(
+            p.cages_containing((5, 5)),
+            Err(PuzzleError::CellOutOfBounds((5, 5)))
+        );
     }
 
     #[test]
-    fn puzzle_validate_missing_cell() {
-        let mut puzzle = make_3x3_unique_puzzle();
-        puzzle.cages.retain(|c| c.op != Operation::Sub(2));
-        assert!(!puzzle.validate());
-    }
-
-    #[test]
-    fn puzzle_validate_out_of_bounds_cell() {
-        let mut puzzle = make_3x3_unique_puzzle();
-        puzzle.cages.insert(Cage {
-            op: Operation::Given(1),
-            cells: BTreeSet::from([(5, 5)]),
-        });
-        assert!(!puzzle.validate());
+    #[allow(clippy::unwrap_used)]
+    fn puzzle_state_returns_state() {
+        let p = Puzzle::new(3, make_3x3_puzzle_cages());
+        let cage = p.states.keys().next().unwrap();
+        let _state = p.state(cage);
     }
 }

@@ -1,337 +1,319 @@
-use crate::puzzle::{Cage, Cell, Tuple, Value};
-use sealed::DomainContent;
+use crate::puzzle::{Cage, Cell, Operation, Tuple, Value};
 use std::collections::{BTreeMap, BTreeSet};
 use std::fmt;
 use std::fmt::Display;
 
 #[derive(Debug, PartialEq, Eq)]
 pub enum StateError {
-    UnknownCage,
     TupleLengthMismatch { expected: usize, got: usize },
     TupleNotFound,
     TupleAlreadyPresent,
 }
 
-#[allow(unused)]
-/// Solver state for a `KenKen` puzzle. Holds the current primal and dual
-/// domains, which are refined during constraint propagation until a solution
-/// is found or the search backtracks.
-#[derive(Debug)]
-struct State {
-    /// Remaining candidate values for each cell.
-    cell_values: Primal,
-    /// Remaining candidate value assignments for each cage.
-    cage_tuples: Dual,
+/// Solver state for a single cage. Holds the set of candidate tuples consistent
+/// with the cage's operation and the current constraints.
+#[derive(Debug, Clone)]
+pub struct State {
+    cage_size: usize,
+    tuples: BTreeSet<Tuple>,
 }
 
-#[allow(dead_code)]
 impl State {
-    fn is_valid(&self) -> bool {
-        self.cell_values.values().all(|v| !v.is_empty())
-    }
-    fn is_solved(&self) -> bool {
-        self.cell_values.values().all(Domain::is_singleton)
+    /// Initializes a cage state with all tuples from `1..=n` that satisfy
+    /// the cage's operation.
+    #[must_use]
+    pub fn new(cage: &Cage, n: usize) -> Self {
+        let size = cage.cells.len();
+        let tuples = enumerate_tuples(size, n)
+            .into_iter()
+            .filter(|t| satisfies(&cage.op, t))
+            .collect();
+        Self {
+            cage_size: size,
+            tuples,
+        }
     }
 
-    fn tuples_for(
-        &mut self,
-        cage: &Cage,
-        tuple_len: usize,
-    ) -> Result<&mut BTreeSet<Tuple>, StateError> {
-        if tuple_len != cage.cells.len() {
+    /// Returns a map from each cell in the cage to the set of values it can
+    /// take across all remaining tuples, in cage-cell order.
+    #[must_use]
+    pub fn values(&self, cage: &Cage) -> BTreeMap<Cell, BTreeSet<Value>> {
+        let mut map: BTreeMap<Cell, BTreeSet<Value>> =
+            cage.cells.iter().map(|&c| (c, BTreeSet::new())).collect();
+        for tuple in &self.tuples {
+            for (&cell, &val) in cage.cells.iter().zip(tuple.iter()) {
+                if let Some(s) = map.get_mut(&cell) {
+                    s.insert(val);
+                }
+            }
+        }
+        map
+    }
+
+    /// Returns true if every cell has exactly one candidate value.
+    #[must_use]
+    pub fn is_solved(&self) -> bool {
+        self.tuples.len() == 1
+    }
+
+    /// Returns true if every cell has at least one candidate value.
+    #[must_use]
+    pub fn is_valid(&self) -> bool {
+        !self.tuples.is_empty()
+    }
+
+    /// # Errors
+    ///
+    /// Returns `StateError::TupleLengthMismatch` if `tuple` length differs from the cage size,
+    /// or `StateError::TupleAlreadyPresent` if the tuple is already in the state.
+    pub fn add_tuple(&self, tuple: &[Value]) -> Result<Self, StateError> {
+        if tuple.len() != self.cage_size {
             return Err(StateError::TupleLengthMismatch {
-                expected: cage.cells.len(),
-                got: tuple_len,
+                expected: self.cage_size,
+                got: tuple.len(),
             });
         }
-        self.cage_tuples
-            .get_mut(cage)
-            .ok_or(StateError::UnknownCage)
-    }
-
-    fn add_tuple(&mut self, cage: &Cage, tuple: &Tuple) -> Result<(), StateError> {
-        if !self.tuples_for(cage, tuple.len())?.insert(tuple.clone()) {
+        if self.tuples.contains(tuple as &[Value]) {
             return Err(StateError::TupleAlreadyPresent);
         }
-        for (cell, &val) in cage.cells.iter().zip(tuple.iter()) {
-            if let Some(domain) = self.cell_values.get_mut(cell) {
-                domain.0.insert(val);
-            }
-        }
-        Ok(())
+        let mut tuples = self.tuples.clone();
+        tuples.insert(tuple.to_vec());
+        Ok(Self {
+            cage_size: self.cage_size,
+            tuples,
+        })
     }
 
-    fn remove_tuple(&mut self, cage: &Cage, tuple: &Tuple) -> Result<(), StateError> {
-        if !self.tuples_for(cage, tuple.len())?.remove(tuple) {
+    /// # Errors
+    ///
+    /// Returns `StateError::TupleLengthMismatch` if `tuple` length differs from the cage size,
+    /// or `StateError::TupleNotFound` if the tuple is not in the state.
+    pub fn remove_tuple(&self, tuple: &[Value]) -> Result<Self, StateError> {
+        if tuple.len() != self.cage_size {
+            return Err(StateError::TupleLengthMismatch {
+                expected: self.cage_size,
+                got: tuple.len(),
+            });
+        }
+        if !self.tuples.contains(tuple as &[Value]) {
             return Err(StateError::TupleNotFound);
         }
-        let tuples: Vec<&Tuple> = self.cage_tuples[cage].iter().collect();
-        let new_domains: Vec<BTreeSet<Value>> = (0..cage.cells.len())
-            .map(|i| tuples.iter().map(|t| t[i]).collect())
-            .collect();
-        for (cell, new_domain) in cage.cells.iter().zip(new_domains) {
-            if let Some(domain) = self.cell_values.get_mut(cell) {
-                domain.0 = new_domain;
-            }
-        }
-        Ok(())
+        let mut tuples = self.tuples.clone();
+        tuples.remove(tuple as &[Value]);
+        Ok(Self {
+            cage_size: self.cage_size,
+            tuples,
+        })
     }
 }
 
 impl Display for State {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        writeln!(f, "Cells")?;
-        for (cell, domain) in &self.cell_values {
-            writeln!(f, "  ({cell:?}): {domain}")?;
+        let inner: Vec<String> = self.tuples.iter().map(|t| format!("{t:?}")).collect();
+        write!(f, "{{{}}}", inner.join(", "))
+    }
+}
+
+/// Enumerates all tuples of length `size` with values in `1..=n`.
+/// Tuple positions correspond to cells in BTree-sorted order.
+fn enumerate_tuples(size: usize, n: usize) -> Vec<Tuple> {
+    if size == 0 {
+        return vec![vec![]];
+    }
+    let sub = enumerate_tuples(size - 1, n);
+    let mut result = Vec::with_capacity(sub.len() * n);
+    for rest in sub {
+        #[allow(clippy::cast_possible_truncation)]
+        for v in 1..=(n as Value) {
+            let mut t = rest.clone();
+            t.push(v);
+            result.push(t);
         }
-        writeln!(f, "Cages")?;
-        for (cage, tuples) in &self.cage_tuples {
-            writeln!(f, "  {cage}: {tuples:?}")?;
+    }
+    result
+}
+
+/// Returns true if `tuple` satisfies `op`.
+fn satisfies(op: &Operation, tuple: &Tuple) -> bool {
+    match op {
+        Operation::Given(v) => tuple.len() == 1 && tuple[0] == *v,
+        Operation::Add(target) => tuple.iter().map(|&x| u32::from(x)).sum::<u32>() == *target,
+        Operation::Mul(target) => tuple.iter().map(|&x| u32::from(x)).product::<u32>() == *target,
+        Operation::Sub(target) => {
+            if tuple.len() != 2 {
+                return false;
+            }
+            let (a, b) = (u32::from(tuple[0]), u32::from(tuple[1]));
+            a.abs_diff(b) == *target
         }
-        Ok(())
-    }
-}
-
-/// Maps each cell to the set of values still consistent with the constraints.
-type Primal = BTreeMap<Cell, Domain<BTreeSet<Value>>>;
-
-/// Maps each cage to the set of candidate value assignments.
-type Dual = BTreeMap<Cage, BTreeSet<Tuple>>;
-
-/// Seals `DomainContent` so only `BTreeSet<Value>` and `BTreeSet<Tuple>` can
-/// be used as domain contents.
-pub mod sealed {
-    use crate::puzzle::{BTreeSet, Tuple, Value};
-    pub trait DomainContent {}
-    impl DomainContent for BTreeSet<Value> {}
-    impl DomainContent for BTreeSet<Tuple> {}
-}
-
-/// A typed domain: either a set of candidate values (primal) or a set of
-/// candidate tuples (dual). The type parameter is sealed to those two cases.
-#[derive(Debug)]
-struct Domain<T: DomainContent>(T);
-
-#[allow(dead_code)]
-impl Domain<BTreeSet<Value>> {
-    fn is_empty(&self) -> bool {
-        self.0.is_empty()
-    }
-
-    fn is_singleton(&self) -> bool {
-        self.0.len() == 1
-    }
-}
-
-impl<T: DomainContent + fmt::Debug> Display for Domain<T> {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "{:?}", self.0)
+        Operation::Div(target) => {
+            if tuple.len() != 2 {
+                return false;
+            }
+            let (a, b) = (u32::from(tuple[0]), u32::from(tuple[1]));
+            a * *target == b || b * *target == a
+        }
     }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::puzzle::{BTreeSet, Operation};
+    use crate::puzzle::Operation;
 
-    fn cell(r: usize, c: usize) -> Cell {
-        (r, c)
-    }
-
-    fn domain(values: impl IntoIterator<Item = Value>) -> Domain<BTreeSet<Value>> {
-        Domain(values.into_iter().collect())
-    }
-
-    fn make_cage(cells: impl IntoIterator<Item = Cell>, op: Operation) -> Cage {
+    fn cage(cells: impl IntoIterator<Item = Cell>, op: Operation) -> Cage {
         Cage {
             op,
             cells: cells.into_iter().collect(),
         }
     }
 
-    fn solved_state() -> State {
-        State {
-            cell_values: BTreeMap::from([(cell(0, 0), domain([1])), (cell(0, 1), domain([2]))]),
-            cage_tuples: BTreeMap::new(),
+    #[test]
+    fn new_given_cage() {
+        let c = cage([(0, 0)], Operation::Given(2));
+        let s = State::new(&c, 3);
+        assert_eq!(s.tuples, BTreeSet::from([vec![2]]));
+    }
+
+    #[test]
+    fn new_add_cage() {
+        let c = cage([(0, 0), (0, 1)], Operation::Add(3));
+        let s = State::new(&c, 3);
+        assert!(s.tuples.contains(&vec![1, 2]));
+        assert!(s.tuples.contains(&vec![2, 1]));
+        assert!(!s.tuples.contains(&vec![3, 0]));
+    }
+
+    #[test]
+    fn new_sub_cage() {
+        let c = cage([(0, 0), (1, 0)], Operation::Sub(1));
+        let s = State::new(&c, 3);
+        for t in &s.tuples {
+            let diff = (i32::from(t[0]) - i32::from(t[1])).unsigned_abs();
+            assert_eq!(diff, 1);
         }
     }
 
-    fn unsolved_state() -> State {
-        State {
-            cell_values: BTreeMap::from([(cell(0, 0), domain([1, 2])), (cell(0, 1), domain([2]))]),
-            cage_tuples: BTreeMap::new(),
-        }
-    }
-
-    fn invalid_state() -> State {
-        State {
-            cell_values: BTreeMap::from([(cell(0, 0), domain([])), (cell(0, 1), domain([2]))]),
-            cage_tuples: BTreeMap::new(),
-        }
-    }
-
-    fn empty_state() -> State {
-        State {
-            cell_values: BTreeMap::new(),
-            cage_tuples: BTreeMap::new(),
+    #[test]
+    fn new_mul_cage() {
+        let c = cage([(0, 0), (0, 1)], Operation::Mul(6));
+        let s = State::new(&c, 3);
+        for t in &s.tuples {
+            assert_eq!(u32::from(t[0]) * u32::from(t[1]), 6);
         }
     }
 
     #[test]
-    fn is_valid_when_solved() {
-        assert!(solved_state().is_valid());
+    fn new_div_cage() {
+        let c = cage([(0, 0), (0, 1)], Operation::Div(2));
+        let s = State::new(&c, 4);
+        for t in &s.tuples {
+            let (a, b) = (u32::from(t[0]), u32::from(t[1]));
+            assert!(a * 2 == b || b * 2 == a);
+        }
     }
 
     #[test]
-    fn is_valid_when_unsolved() {
-        assert!(unsolved_state().is_valid());
+    fn values_reflects_tuples() {
+        let c = cage([(0, 0), (0, 1)], Operation::Add(3));
+        let s = State::new(&c, 2);
+        let vals = s.values(&c);
+        assert_eq!(vals[&(0, 0)], BTreeSet::from([1, 2]));
+        assert_eq!(vals[&(0, 1)], BTreeSet::from([1, 2]));
     }
 
     #[test]
-    fn is_valid_empty_domain() {
-        assert!(!invalid_state().is_valid());
+    fn is_solved_single_tuple() {
+        let c = cage([(0, 0)], Operation::Given(3));
+        let s = State::new(&c, 3);
+        assert!(s.is_solved());
     }
 
     #[test]
-    fn is_valid_empty_state() {
-        assert!(empty_state().is_valid());
+    fn is_solved_multiple_tuples() {
+        let c = cage([(0, 0), (0, 1)], Operation::Add(3));
+        let s = State::new(&c, 3);
+        assert!(!s.is_solved());
     }
 
     #[test]
-    fn is_solved_all_singleton() {
-        assert!(solved_state().is_solved());
+    fn is_valid_nonempty() {
+        let c = cage([(0, 0)], Operation::Given(2));
+        let s = State::new(&c, 3);
+        assert!(s.is_valid());
     }
 
     #[test]
-    fn is_solved_multiple_candidates() {
-        assert!(!unsolved_state().is_solved());
+    fn is_valid_empty_tuples() {
+        let c = cage([(0, 0)], Operation::Given(5));
+        let s = State::new(&c, 3);
+        assert!(!s.is_valid());
     }
 
     #[test]
-    fn is_solved_empty_state() {
-        assert!(empty_state().is_solved());
-    }
-
-    #[test]
-    fn domain_display() {
-        assert_eq!(domain([1, 2, 3]).to_string(), "{1, 2, 3}");
-        assert_eq!(domain([]).to_string(), "{}");
-        assert_eq!(domain([5]).to_string(), "{5}");
-    }
-
-    #[test]
-    fn state_display_cells_and_cages() {
-        let cage = make_cage([cell(0, 0)], Operation::Given(1));
-        let state = State {
-            cell_values: BTreeMap::from([(cell(0, 0), domain([1]))]),
-            cage_tuples: BTreeMap::from([(cage, BTreeSet::from([vec![1]]))]),
+    #[allow(clippy::unwrap_used)]
+    fn add_tuple_inserts() {
+        let s = State {
+            cage_size: 2,
+            tuples: BTreeSet::new(),
         };
-        let s = state.to_string();
-        assert!(s.contains("Cells"));
-        assert!(s.contains("(0, 0)"));
-        assert!(s.contains("Cages"));
+        let s2 = s.add_tuple(&[2, 3]).unwrap();
+        assert!(s2.tuples.contains(&vec![2, 3]));
     }
 
     #[test]
-    fn state_display_empty() {
-        let state = State {
-            cell_values: BTreeMap::new(),
-            cage_tuples: BTreeMap::new(),
-        };
-        let s = state.to_string();
-        assert!(s.contains("Cells"));
-        assert!(s.contains("Cages"));
-    }
-
-    fn cage_state() -> (Cage, State) {
-        let cage = make_cage([cell(0, 0), cell(0, 1)], Operation::Add(3));
-        let state = State {
-            cell_values: BTreeMap::from([(cell(0, 0), domain([])), (cell(0, 1), domain([]))]),
-            cage_tuples: BTreeMap::from([(cage.clone(), BTreeSet::new())]),
-        };
-        (cage, state)
-    }
-
-    #[test]
-    fn add_tuple_updates_cage_and_cells() {
-        let (cage, mut state) = cage_state();
-        assert!(state.add_tuple(&cage, &vec![1, 2]).is_ok());
-        assert!(state.cage_tuples[&cage].contains(&vec![1, 2]));
-        assert!(state.cell_values[&cell(0, 0)].0.contains(&1));
-        assert!(state.cell_values[&cell(0, 1)].0.contains(&2));
-    }
-
-    #[test]
-    fn add_tuple_duplicate_returns_error() {
-        let (cage, mut state) = cage_state();
-        assert!(state.add_tuple(&cage, &vec![1, 2]).is_ok());
+    #[allow(clippy::unwrap_used)]
+    fn add_tuple_duplicate_error() {
+        let c = cage([(0, 0)], Operation::Given(1));
+        let s = State::new(&c, 3);
         assert_eq!(
-            state.add_tuple(&cage, &vec![1, 2]),
-            Err(StateError::TupleAlreadyPresent)
+            s.add_tuple(&[1]).unwrap_err(),
+            StateError::TupleAlreadyPresent
         );
     }
 
     #[test]
-    fn add_tuple_length_mismatch_returns_error() {
-        let (cage, mut state) = cage_state();
+    #[allow(clippy::unwrap_used)]
+    fn add_tuple_length_mismatch_error() {
+        let c = cage([(0, 0), (0, 1)], Operation::Add(3));
+        let s = State::new(&c, 3);
         assert_eq!(
-            state.add_tuple(&cage, &vec![1]),
-            Err(StateError::TupleLengthMismatch {
+            s.add_tuple(&[1]).unwrap_err(),
+            StateError::TupleLengthMismatch {
                 expected: 2,
                 got: 1
-            })
+            }
         );
     }
 
     #[test]
-    fn add_tuple_unknown_cage_returns_error() {
-        let other_cage = make_cage([cell(1, 1)], Operation::Given(5));
-        let (_, mut state) = cage_state();
-        assert_eq!(
-            state.add_tuple(&other_cage, &vec![5]),
-            Err(StateError::UnknownCage)
-        );
+    #[allow(clippy::unwrap_used)]
+    fn remove_tuple_removes() {
+        let c = cage([(0, 0)], Operation::Given(2));
+        let s = State::new(&c, 3);
+        let s2 = s.remove_tuple(&[2]).unwrap();
+        assert!(s2.tuples.is_empty());
     }
 
     #[test]
-    fn remove_tuple_updates_cage_and_cells() {
-        let (cage, mut state) = cage_state();
-        assert!(state.add_tuple(&cage, &vec![1, 2]).is_ok());
-        assert!(state.add_tuple(&cage, &vec![2, 1]).is_ok());
-        assert!(state.remove_tuple(&cage, &vec![1, 2]).is_ok());
-        assert!(!state.cage_tuples[&cage].contains(&vec![1, 2]));
-        assert!(!state.cell_values[&cell(0, 0)].0.contains(&1));
-        assert!(state.cell_values[&cell(0, 0)].0.contains(&2));
+    #[allow(clippy::unwrap_used)]
+    fn remove_tuple_not_found_error() {
+        let c = cage([(0, 0)], Operation::Given(2));
+        let s = State::new(&c, 3);
+        assert_eq!(s.remove_tuple(&[3]).unwrap_err(), StateError::TupleNotFound);
     }
 
     #[test]
-    fn remove_tuple_not_found_returns_error() {
-        let (cage, mut state) = cage_state();
+    #[allow(clippy::unwrap_used)]
+    fn remove_tuple_length_mismatch_error() {
+        let c = cage([(0, 0)], Operation::Given(2));
+        let s = State::new(&c, 3);
         assert_eq!(
-            state.remove_tuple(&cage, &vec![1, 2]),
-            Err(StateError::TupleNotFound)
-        );
-    }
-
-    #[test]
-    fn remove_tuple_length_mismatch_returns_error() {
-        let (cage, mut state) = cage_state();
-        assert_eq!(
-            state.remove_tuple(&cage, &vec![1, 2, 3]),
-            Err(StateError::TupleLengthMismatch {
-                expected: 2,
-                got: 3
-            })
-        );
-    }
-
-    #[test]
-    fn remove_tuple_unknown_cage_returns_error() {
-        let other_cage = make_cage([cell(1, 1)], Operation::Given(5));
-        let (_, mut state) = cage_state();
-        assert_eq!(
-            state.remove_tuple(&other_cage, &vec![5]),
-            Err(StateError::UnknownCage)
+            s.remove_tuple(&[2, 1]).unwrap_err(),
+            StateError::TupleLengthMismatch {
+                expected: 1,
+                got: 2
+            }
         );
     }
 }
