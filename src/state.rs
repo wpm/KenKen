@@ -71,6 +71,44 @@ impl CageState {
         !self.tuples.is_empty()
     }
 
+    /// Removes all tuples that assign `value` to `cell`, returning the pruned
+    /// state and the set of cells whose candidate value-sets changed as a result.
+    ///
+    /// A cell's value-set changes when every tuple that gave it some particular
+    /// value has been removed. Returns `None` if `cell` is not in `cage`.
+    #[must_use]
+    pub fn remove(&self, value: Value, cell: Cell, cage: &Cage) -> Option<(Self, BTreeSet<Cell>)> {
+        let pos = cage.cells.iter().position(|&c| c == cell)?;
+        let new_tuples: BTreeSet<Tuple> = self
+            .tuples
+            .iter()
+            .filter(|t| t[pos] != value)
+            .cloned()
+            .collect();
+
+        // Collect cells whose domain shrinks: any cell that had a value exclusively
+        // supplied by the removed tuples.
+        let cells: Vec<Cell> = cage.cells.iter().copied().collect();
+        let changed = cells
+            .iter()
+            .enumerate()
+            .filter(|&(i, _)| {
+                let had: BTreeSet<Value> = self.tuples.iter().map(|t| t[i]).collect();
+                let now: BTreeSet<Value> = new_tuples.iter().map(|t| t[i]).collect();
+                now != had
+            })
+            .map(|(_, &c)| c)
+            .collect();
+
+        Some((
+            Self {
+                cage_size: self.cage_size,
+                tuples: new_tuples,
+            },
+            changed,
+        ))
+    }
+
     /// # Errors
     ///
     /// Returns `StateError::TupleLengthMismatch` if the `tuple` length differs from the cage size,
@@ -252,6 +290,78 @@ mod tests {
                 vec![4, 2, 1],
             ])
         );
+    }
+
+    #[test]
+    fn remove_unknown_cell_returns_none() {
+        let c = cage([(0, 0), (0, 1)], Operation::Add(3));
+        let s = CageState::new(&c, 3);
+        assert!(s.remove(1, (9, 9), &c).is_none());
+    }
+
+    #[test]
+    #[allow(clippy::expect_used)]
+    fn remove_value_not_present_returns_unchanged() {
+        // (0,0) only ever holds 1 or 2 in a 3-cell Add(7) cage; removing 5 changes nothing.
+        let c = cage([(0, 0), (1, 0), (1, 1)], Operation::Add(7));
+        let s = CageState::new(&c, 6);
+        let (s2, changed) = s.remove(5, (0, 0), &c).expect("cell in cage");
+        assert_eq!(s2.tuples, s.tuples);
+        assert!(changed.is_empty());
+    }
+
+    #[test]
+    #[allow(clippy::expect_used)]
+    fn remove_affects_only_tuples_at_that_position() {
+        // L-shaped +7, 6×6. Remove value 1 from cell (1,0) (pos1).
+        // Tuples with t[1]==1: [2,1,4], [3,1,3], [4,1,2] are removed.
+        // Remaining: [1,2,4],[1,4,2],[1,5,1],[2,3,2],[2,4,1],[4,2,1].
+        // Changed cells: (0,0) loses value 3 and 4 (only in removed tuples? check):
+        //   pos0 before: {1,2,3,4}; after: {1,2,4} — 3 disappears → (0,0) changed.
+        //   pos1 before: {1,2,3,4,5}; after: {2,3,4,5} — 1 disappears → (1,0) changed.
+        //   pos2 before: {1,2,3,4}; after: {1,2,4} — 3 disappears → (1,1) changed.
+        let c = cage([(0, 0), (1, 0), (1, 1)], Operation::Add(7));
+        let s = CageState::new(&c, 6);
+        let (s2, changed) = s.remove(1, (1, 0), &c).expect("cell in cage");
+        assert_eq!(
+            s2.tuples,
+            BTreeSet::from([
+                vec![1, 2, 4],
+                vec![1, 4, 2],
+                vec![1, 5, 1],
+                vec![2, 3, 2],
+                vec![2, 4, 1],
+                vec![4, 2, 1],
+            ])
+        );
+        assert_eq!(changed, BTreeSet::from([(0, 0), (1, 0), (1, 1)]));
+    }
+
+    #[test]
+    #[allow(clippy::expect_used)]
+    fn remove_with_no_domain_change_at_other_cells() {
+        // L-shaped +7, 6×6. Remove value 5 from cell (1,0) (pos1).
+        // Only tuple with t[1]==5 is [1,5,1].
+        // pos0 before {1,2,3,4}, after {1,2,3,4} — unchanged (1 still supplied by others).
+        // pos1 before {1,2,3,4,5}, after {1,2,3,4} — 5 disappears → (1,0) changed.
+        // pos2 before {1,2,3,4}, after {1,2,3,4} — unchanged.
+        let c = cage([(0, 0), (1, 0), (1, 1)], Operation::Add(7));
+        let s = CageState::new(&c, 6);
+        let (s2, changed) = s.remove(5, (1, 0), &c).expect("cell in cage");
+        assert_eq!(
+            s2.tuples,
+            BTreeSet::from([
+                vec![1, 2, 4],
+                vec![1, 4, 2],
+                vec![2, 1, 4],
+                vec![2, 3, 2],
+                vec![2, 4, 1],
+                vec![3, 1, 3],
+                vec![4, 1, 2],
+                vec![4, 2, 1],
+            ])
+        );
+        assert_eq!(changed, BTreeSet::from([(1, 0)]));
     }
 
     #[test]
