@@ -64,7 +64,7 @@ impl State {
 
     /// # Errors
     ///
-    /// Returns `StateError::TupleLengthMismatch` if `tuple` length differs from the cage size,
+    /// Returns `StateError::TupleLengthMismatch` if the `tuple` length differs from the cage size,
     /// or `StateError::TupleAlreadyPresent` if the tuple is already in the state.
     pub fn add_tuple(&self, tuple: &[Value]) -> Result<Self, StateError> {
         if tuple.len() != self.cage_size {
@@ -86,7 +86,7 @@ impl State {
 
     /// # Errors
     ///
-    /// Returns `StateError::TupleLengthMismatch` if `tuple` length differs from the cage size,
+    /// Returns `StateError::TupleLengthMismatch` if the `tuple` length differs from the cage size,
     /// or `StateError::TupleNotFound` if the tuple is not in the state.
     pub fn remove_tuple(&self, tuple: &[Value]) -> Result<Self, StateError> {
         if tuple.len() != self.cage_size {
