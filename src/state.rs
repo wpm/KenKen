@@ -48,6 +48,19 @@ impl CageState {
         self.tuples.iter()
     }
 
+    /// Returns the number of distinct values each cell can take across remaining tuples.
+    pub fn domain_sizes(&self, cage: &Cage) -> impl Iterator<Item = (Cell, usize)> + '_ {
+        let cells: Vec<Cell> = cage.cells.iter().copied().collect();
+        let size = cells.len();
+        let mut seen: Vec<BTreeSet<Value>> = vec![BTreeSet::new(); size];
+        for tuple in &self.tuples {
+            for (i, &val) in tuple.iter().enumerate() {
+                seen[i].insert(val);
+            }
+        }
+        cells.into_iter().zip(seen.into_iter().map(|s| s.len()))
+    }
+
     /// Returns a map from each cell in the cage to the set of values it can
     /// take across all remaining tuples, in cage-cell order.
     #[must_use]

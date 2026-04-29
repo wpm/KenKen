@@ -225,7 +225,10 @@ impl Puzzle {
     /// Applies cage arithmetic constraints by removing the given `(cell, value)` pairs
     /// from their respective cage states. Returns the updated puzzle and the set of
     /// `(cell, value)` pairs that were removed as a consequence.
-    fn cage_constraints(&self, removals: &BTreeSet<(Cell, Value)>) -> (Self, BTreeSet<Cell>) {
+    pub(crate) fn cage_constraints(
+        &self,
+        removals: &BTreeSet<(Cell, Value)>,
+    ) -> (Self, BTreeSet<Cell>) {
         let mut puzzle = self.clone();
         let mut changed: BTreeSet<Cell> = BTreeSet::new();
 
@@ -279,6 +282,19 @@ impl Puzzle {
             rows = changed.iter().map(|&(r, _)| r).collect();
             cols = changed.iter().map(|&(_, c)| c).collect();
         }
+    }
+
+    /// Returns the unfixed cell with the smallest remaining domain (Minimum Remaining
+    /// Values), breaking ties by `Cell` ordering for determinism. Returns `None` if every
+    /// cell already has a singleton domain.
+    #[must_use]
+    pub fn mrv_cell(&self) -> Option<Cell> {
+        self.states
+            .iter()
+            .flat_map(|(cage, state)| state.domain_sizes(cage))
+            .filter(|&(_, len)| len > 1)
+            .min_by(|a, b| a.1.cmp(&b.1).then_with(|| a.0.cmp(&b.0)))
+            .map(|(cell, _)| cell)
     }
 
     /// Returns one puzzle per value in `cell`'s domain, each with all other
