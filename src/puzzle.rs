@@ -276,6 +276,36 @@ impl Puzzle {
             to_remove = regin_removed;
         }
     }
+
+    /// Returns one puzzle per value in `cell`'s domain, each with all other
+    /// values in that cell removed and constraints propagated.
+    #[must_use]
+    pub fn branch(&self, cell: Cell) -> Vec<Self> {
+        let domain: Vec<Value> = self
+            .cages_containing(cell)
+            .ok()
+            .map(|cage| {
+                self.states[cage]
+                    .values(cage)
+                    .remove(&cell)
+                    .unwrap_or_default()
+                    .into_iter()
+                    .collect()
+            })
+            .unwrap_or_default();
+
+        domain
+            .iter()
+            .map(|&keep| {
+                let removals = domain
+                    .iter()
+                    .filter(|&&v| v != keep)
+                    .map(|&v| (cell, v))
+                    .collect();
+                self.propagate(removals)
+            })
+            .collect()
+    }
 }
 
 fn cages_partition_grid(cages: &BTreeSet<Cage>, n: usize) -> bool {
@@ -478,5 +508,64 @@ mod tests {
         let removals = BTreeSet::from([((1, 1), 2)]);
         let p2 = p.propagate(removals);
         assert!(!p2.is_valid());
+    }
+
+    #[test]
+    fn branch_produces_one_puzzle_per_domain_value() {
+        // Cell (0,0) is in the 5+ cage with (1,0). In a 3×3 puzzle its domain
+        // is {2,3} (values that can sum to 5 with a distinct partner). So
+        // branching on (0,0) yields 2 puzzles.
+        let p = Puzzle::new(3, make_3x3_puzzle_cages());
+        let branches = p.branch((0, 0));
+        assert_eq!(branches.len(), 2);
+    }
+
+    #[test]
+    #[allow(clippy::unwrap_used)]
+    fn branch_each_puzzle_has_single_value_at_cell() {
+        // After branching on (0,0), each resulting puzzle should have exactly
+        // one candidate value at that cell.
+        let p = Puzzle::new(3, make_3x3_puzzle_cages());
+        for b in p.branch((0, 0)) {
+            let cage = b.cages_containing((0, 0)).unwrap();
+            let domain = b.states[cage]
+                .values(cage)
+                .remove(&(0, 0))
+                .unwrap_or_default();
+            assert_eq!(domain.len(), 1);
+        }
+    }
+
+    #[test]
+    #[allow(clippy::unwrap_used)]
+    fn branch_values_are_disjoint() {
+        // The values kept across all branches should be exactly the original domain.
+        let p = Puzzle::new(3, make_3x3_puzzle_cages());
+        let kept: BTreeSet<Value> = p
+            .branch((0, 0))
+            .into_iter()
+            .map(|b| {
+                let cage = b.cages_containing((0, 0)).unwrap();
+                *b.states[cage]
+                    .values(cage)
+                    .remove(&(0, 0))
+                    .unwrap_or_default()
+                    .iter()
+                    .next()
+                    .unwrap()
+            })
+            .collect();
+        let cage = p.cages_containing((0, 0)).unwrap();
+        let original = p.states[cage]
+            .values(cage)
+            .remove(&(0, 0))
+            .unwrap_or_default();
+        assert_eq!(kept, original);
+    }
+
+    #[test]
+    fn branch_unknown_cell_returns_empty() {
+        let p = Puzzle::new(3, make_3x3_puzzle_cages());
+        assert!(p.branch((9, 9)).is_empty());
     }
 }
