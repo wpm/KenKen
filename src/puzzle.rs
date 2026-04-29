@@ -107,18 +107,20 @@ impl Puzzle {
     #[must_use]
     pub fn validate(&self) -> bool {
         let n = self.latin_square.n();
-        let mut seen = std::collections::HashSet::new();
+        let mut seen = vec![false; n * n];
         for cage in &self.cages {
-            for &cell in &cage.cells {
-                if cell.0 >= n || cell.1 >= n {
+            for &(r, c) in &cage.cells {
+                if r >= n || c >= n {
                     return false;
                 }
-                if !seen.insert(cell) {
+                let idx = r * n + c;
+                if seen[idx] {
                     return false;
                 }
+                seen[idx] = true;
             }
         }
-        seen.len() == n * n
+        seen.iter().all(|&x| x)
     }
 }
 
@@ -144,11 +146,82 @@ mod tests {
     use crate::test_fixtures::fixtures::{make_3x3_latin_square, make_3x3_unique_puzzle};
 
     #[test]
+    fn grid_new_square() {
+        let g = Grid::new(vec![vec![1, 2], vec![3, 4]]);
+        assert_eq!(g.n(), 2);
+    }
+
+    #[test]
+    #[should_panic(expected = "grid must be square")]
+    fn grid_new_non_square_panics() {
+        let _ = Grid::new(vec![vec![1, 2, 3], vec![4, 5]]);
+    }
+
+    #[test]
     fn latin_square_get() {
         let ls = make_3x3_latin_square();
         assert_eq!(ls.get((0, 0)), 2);
         assert_eq!(ls.get((1, 2)), 1);
         assert_eq!(ls.get((2, 1)), 3);
+    }
+
+    #[test]
+    fn latin_square_display() {
+        assert_eq!(make_3x3_latin_square().to_string(), "2 1 3\n3 2 1\n1 3 2\n");
+    }
+
+    #[test]
+    fn operation_display_all_variants() {
+        assert_eq!(Operation::Add(6).to_string(), "6+");
+        assert_eq!(Operation::Sub(2).to_string(), "2-");
+        assert_eq!(Operation::Mul(12).to_string(), "12×");
+        assert_eq!(Operation::Div(3).to_string(), "3÷");
+        assert_eq!(Operation::Given(4).to_string(), "4");
+    }
+
+    #[test]
+    fn cage_display() {
+        let cage = Cage {
+            op: Operation::Add(5),
+            cells: BTreeSet::from([(0, 0), (1, 0)]),
+        };
+        let s = cage.to_string();
+        assert!(s.contains("5+"));
+        assert!(s.contains("(0, 0)"));
+        assert!(s.contains("(1, 0)"));
+    }
+
+    #[test]
+    fn cage_ordering_by_min_cell() {
+        let top_left = Cage {
+            op: Operation::Given(1),
+            cells: BTreeSet::from([(0, 0)]),
+        };
+        let bottom_right = Cage {
+            op: Operation::Given(2),
+            cells: BTreeSet::from([(2, 2)]),
+        };
+        assert!(top_left < bottom_right);
+    }
+
+    #[test]
+    fn cage_ordering_same_min_cell_differs_by_cells() {
+        let small = Cage {
+            op: Operation::Given(1),
+            cells: BTreeSet::from([(0, 0)]),
+        };
+        let large = Cage {
+            op: Operation::Given(1),
+            cells: BTreeSet::from([(0, 0), (0, 1)]),
+        };
+        assert!(small < large);
+    }
+
+    #[test]
+    fn puzzle_display() {
+        let s = make_3x3_unique_puzzle().to_string();
+        assert!(s.contains("3x3 KenKen"));
+        assert!(s.contains("5 cages"));
     }
 
     #[test]
@@ -174,15 +247,12 @@ mod tests {
     }
 
     #[test]
-    fn operation_display() {
-        assert_eq!(Operation::Add(5).to_string(), "5+");
-        assert_eq!(Operation::Given(3).to_string(), "3");
-    }
-
-    #[test]
-    fn latin_square_display() {
-        let ls = make_3x3_latin_square();
-        let s = ls.to_string();
-        assert!(s.contains("2 1 3"));
+    fn puzzle_validate_out_of_bounds_cell() {
+        let mut puzzle = make_3x3_unique_puzzle();
+        puzzle.cages.insert(Cage {
+            op: Operation::Given(1),
+            cells: BTreeSet::from([(5, 5)]),
+        });
+        assert!(!puzzle.validate());
     }
 }
