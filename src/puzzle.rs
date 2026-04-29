@@ -183,6 +183,46 @@ impl Puzzle {
             .unwrap_or_default()
     }
 
+    /// Runs Régin's algorithm over the specified rows and columns, applying
+    /// any pruning implied by the all-different constraint. Returns the updated
+    /// puzzle and the set of cells whose domains changed.
+    fn all_different(
+        &self,
+        rows: &BTreeSet<usize>,
+        cols: &BTreeSet<usize>,
+    ) -> (Self, BTreeSet<Cell>) {
+        let mut puzzle = self.clone();
+        let mut changed_cells: BTreeSet<Cell> = BTreeSet::new();
+
+        let row_lines = rows
+            .iter()
+            .map(|&r| (0..puzzle.n).map(|c| (r, c)).collect::<Vec<_>>());
+        let col_lines = cols
+            .iter()
+            .map(|&c| (0..puzzle.n).map(|r| (r, c)).collect::<Vec<_>>());
+
+        for cells in row_lines.chain(col_lines) {
+            let domains: Vec<BTreeSet<Value>> =
+                cells.iter().map(|&cell| puzzle.cell_domain(cell)).collect();
+            let pruned = regin(domains.clone());
+            for (i, &cell) in cells.iter().enumerate() {
+                for value in domains[i].difference(&pruned[i]) {
+                    let cage = puzzle.cage_for_cell(cell).cloned();
+                    if let Some(cage) = cage
+                        && let Some(changed) = puzzle
+                            .states
+                            .get_mut(&cage)
+                            .and_then(|state| state.remove(*value, cell, &cage))
+                    {
+                        changed_cells.extend(changed);
+                    }
+                }
+            }
+        }
+
+        (puzzle, changed_cells)
+    }
+
     /// Propagates the removal of the given `(cell, value)` pairs through all
     /// cage arithmetic and all-different constraints until no further pruning is possible,
     /// the puzzle becomes invalid, or the puzzle is solved. Returns the pruned
@@ -215,26 +255,15 @@ impl Puzzle {
                 return puzzle;
             }
 
-            let affected_rows: BTreeSet<usize> = changed_cells.iter().map(|&(r, _)| r).collect();
-            let affected_cols: BTreeSet<usize> = changed_cells.iter().map(|&(_, c)| c).collect();
+            let rows = changed_cells.iter().map(|&(r, _)| r).collect();
+            let cols = changed_cells.iter().map(|&(_, c)| c).collect();
+            let (next, regin_changed) = puzzle.all_different(&rows, &cols);
+            puzzle = next;
 
-            let row_lines = affected_rows
+            to_remove = regin_changed
                 .iter()
-                .map(|&r| (0..puzzle.n).map(|c| (r, c)).collect::<Vec<_>>());
-            let col_lines = affected_cols
-                .iter()
-                .map(|&c| (0..puzzle.n).map(|r| (r, c)).collect::<Vec<_>>());
-
-            for cells in row_lines.chain(col_lines) {
-                let domains: Vec<BTreeSet<Value>> =
-                    cells.iter().map(|&cell| puzzle.cell_domain(cell)).collect();
-                let pruned = regin(domains.clone());
-                for (i, cell) in cells.iter().enumerate() {
-                    for value in domains[i].difference(&pruned[i]) {
-                        to_remove.insert((*cell, *value));
-                    }
-                }
-            }
+                .flat_map(|&cell| puzzle.cell_domain(cell).into_iter().map(move |v| (cell, v)))
+                .collect();
         }
     }
 }
