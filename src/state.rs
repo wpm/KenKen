@@ -7,7 +7,6 @@ use std::fmt::Display;
 pub enum StateError {
     TupleLengthMismatch { expected: usize, got: usize },
     TupleNotFound,
-    TupleAlreadyPresent,
 }
 
 /// Solver state for a single cage. Holds the set of candidate tuples consistent
@@ -20,13 +19,23 @@ pub struct State {
 
 impl State {
     /// Initializes a cage state with all tuples from `1..=n` that satisfy
-    /// the cage's operation.
+    /// the cage's operation and assign distinct values to collinear cell pairs
+    /// (cells sharing a row or column).
     #[must_use]
     pub fn new(cage: &Cage, n: usize) -> Self {
-        let size = cage.cells.len();
+        let cells: Vec<_> = cage.cells.iter().copied().collect();
+        let size = cells.len();
+
+        // Precompute which index-pairs must have distinct values (same row or col).
+        let collinear_pairs: Vec<(usize, usize)> = (0..size)
+            .flat_map(|i| (i + 1..size).map(move |j| (i, j)))
+            .filter(|&(i, j)| cells[i].0 == cells[j].0 || cells[i].1 == cells[j].1)
+            .collect();
+
         let tuples = enumerate_tuples(size, n)
             .into_iter()
             .filter(|t| satisfies(&cage.op, t))
+            .filter(|t| collinear_pairs.iter().all(|&(i, j)| t[i] != t[j]))
             .collect();
         Self {
             cage_size: size,
@@ -60,28 +69,6 @@ impl State {
     #[must_use]
     pub fn is_valid(&self) -> bool {
         !self.tuples.is_empty()
-    }
-
-    /// # Errors
-    ///
-    /// Returns `StateError::TupleLengthMismatch` if the `tuple` length differs from the cage size,
-    /// or `StateError::TupleAlreadyPresent` if the tuple is already in the state.
-    pub fn add_tuple(&self, tuple: &[Value]) -> Result<Self, StateError> {
-        if tuple.len() != self.cage_size {
-            return Err(StateError::TupleLengthMismatch {
-                expected: self.cage_size,
-                got: tuple.len(),
-            });
-        }
-        if self.tuples.contains(tuple as &[Value]) {
-            return Err(StateError::TupleAlreadyPresent);
-        }
-        let mut tuples = self.tuples.clone();
-        tuples.insert(tuple.to_vec());
-        Ok(Self {
-            cage_size: self.cage_size,
-            tuples,
-        })
     }
 
     /// # Errors
@@ -185,6 +172,89 @@ mod tests {
     }
 
     #[test]
+    fn new_collinear_same_row_no_duplicate_values() {
+        // Two cells in the same row: values must differ.
+        let c = cage([(0, 0), (0, 1)], Operation::Add(4));
+        let s = State::new(&c, 3);
+        for t in &s.tuples {
+            assert_ne!(t[0], t[1], "same-row cells must have distinct values");
+        }
+    }
+
+    #[test]
+    fn new_collinear_same_col_no_duplicate_values() {
+        // Two cells in the same column: values must differ.
+        let c = cage([(0, 0), (1, 0)], Operation::Add(4));
+        let s = State::new(&c, 3);
+        for t in &s.tuples {
+            assert_ne!(t[0], t[1], "same-col cells must have distinct values");
+        }
+    }
+
+    #[test]
+    fn new_l_shaped_cage_partial_collinear_filtering() {
+        // L-shaped cage: (0,0), (1,0), (1,1).
+        // BTree order: (0,0) < (1,0) < (1,1), so tuple positions are 0, 1, 2.
+        // Colinear pairs: (0,0)&(1,0) share col 0 → positions 0 & 1 must differ.
+        //                 (1,0)&(1,1) share row 1 → positions 1 & 2 must differ.
+        //                 (0,0)&(1,1) share neither → no constraint between pos 0 & 2.
+        let c = cage([(0, 0), (1, 0), (1, 1)], Operation::Add(6));
+        let s = State::new(&c, 3);
+        for t in &s.tuples {
+            assert_ne!(t[0], t[1], "(0,0) and (1,0) share col 0");
+            assert_ne!(t[1], t[2], "(1,0) and (1,1) share row 1");
+        }
+    }
+
+    #[test]
+    fn new_l_shaped_mul6() {
+        // L-shaped cage: (0,0) pos0, (1,0) pos1, (1,1) pos2 — 6×6 grid.
+        // Collinear: pos0&pos1 (col 0), pos1&pos2 (row 1). No constraint pos0&pos2.
+        // Product 6: multisets {1,1,6} → only [1,6,1] survives (pos0=pos2 ok);
+        //            {1,2,3} → all 6 distinct permutations pass.
+        let c = cage([(0, 0), (1, 0), (1, 1)], Operation::Mul(6));
+        let s = State::new(&c, 6);
+        assert_eq!(
+            s.tuples,
+            BTreeSet::from([
+                vec![1, 2, 3],
+                vec![1, 3, 2],
+                vec![1, 6, 1],
+                vec![2, 1, 3],
+                vec![2, 3, 1],
+                vec![3, 1, 2],
+                vec![3, 2, 1],
+            ])
+        );
+    }
+
+    #[test]
+    fn new_l_shaped_add7() {
+        // L-shaped cage: (0,0) pos0, (1,0) pos1, (1,1) pos2 — 6×6 grid.
+        // Collinear: pos0&pos1 (col 0), pos1&pos2 (row 1). No constraint pos0&pos2.
+        // Sum 7: {1,1,5} → only [1,5,1] survives;
+        //        {1,2,4} → all 6 distinct permutations pass;
+        //        {1,3,3} → only [3,1,3] survives;
+        //        {2,2,3} → only [2,3,2] survives.
+        let c = cage([(0, 0), (1, 0), (1, 1)], Operation::Add(7));
+        let s = State::new(&c, 6);
+        assert_eq!(
+            s.tuples,
+            BTreeSet::from([
+                vec![1, 2, 4],
+                vec![1, 4, 2],
+                vec![1, 5, 1],
+                vec![2, 1, 4],
+                vec![2, 3, 2],
+                vec![2, 4, 1],
+                vec![3, 1, 3],
+                vec![4, 1, 2],
+                vec![4, 2, 1],
+            ])
+        );
+    }
+
+    #[test]
     fn new_sub_cage() {
         let c = cage([(0, 0), (1, 0)], Operation::Sub(1));
         let s = State::new(&c, 3);
@@ -248,42 +318,6 @@ mod tests {
         let c = cage([(0, 0)], Operation::Given(5));
         let s = State::new(&c, 3);
         assert!(!s.is_valid());
-    }
-
-    #[test]
-    #[allow(clippy::unwrap_used)]
-    fn add_tuple_inserts() {
-        let s = State {
-            cage_size: 2,
-            tuples: BTreeSet::new(),
-        };
-        let s2 = s.add_tuple(&[2, 3]).unwrap();
-        assert!(s2.tuples.contains(&vec![2, 3]));
-    }
-
-    #[test]
-    #[allow(clippy::unwrap_used)]
-    fn add_tuple_duplicate_error() {
-        let c = cage([(0, 0)], Operation::Given(1));
-        let s = State::new(&c, 3);
-        assert_eq!(
-            s.add_tuple(&[1]).unwrap_err(),
-            StateError::TupleAlreadyPresent
-        );
-    }
-
-    #[test]
-    #[allow(clippy::unwrap_used)]
-    fn add_tuple_length_mismatch_error() {
-        let c = cage([(0, 0), (0, 1)], Operation::Add(3));
-        let s = State::new(&c, 3);
-        assert_eq!(
-            s.add_tuple(&[1]).unwrap_err(),
-            StateError::TupleLengthMismatch {
-                expected: 2,
-                got: 1
-            }
-        );
     }
 
     #[test]
