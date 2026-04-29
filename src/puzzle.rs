@@ -168,21 +168,6 @@ impl Puzzle {
         self.states.values().all(CageState::is_solved)
     }
 
-    fn cage_for_cell(&self, cell: Cell) -> Option<&Cage> {
-        self.states.keys().find(|cage| cage.cells.contains(&cell))
-    }
-
-    fn cell_domain(&self, cell: Cell) -> BTreeSet<Value> {
-        self.cage_for_cell(cell)
-            .map(|cage| {
-                self.states[cage]
-                    .values(cage)
-                    .remove(&cell)
-                    .unwrap_or_default()
-            })
-            .unwrap_or_default()
-    }
-
     /// Runs Régin's algorithm over the specified rows and columns, applying
     /// any pruning implied by the all-different constraint. Returns the updated
     /// puzzle and the set of (cell, value) pairs that were removed.
@@ -202,17 +187,27 @@ impl Puzzle {
             .map(|&c| (0..puzzle.n).map(|r| (r, c)).collect::<Vec<_>>());
 
         for cells in row_lines.chain(col_lines) {
-            let domains: Vec<BTreeSet<Value>> =
-                cells.iter().map(|&cell| puzzle.cell_domain(cell)).collect();
-            let pruned = regin(domains.clone());
+            let cages: Vec<Option<Cage>> = cells
+                .iter()
+                .map(|&cell| puzzle.cages_containing(cell).ok().cloned())
+                .collect();
+            let domains: Vec<BTreeSet<Value>> = cells
+                .iter()
+                .zip(&cages)
+                .map(|(&cell, cage)| {
+                    cage.as_ref()
+                        .and_then(|c| puzzle.states[c].values(c).remove(&cell))
+                        .unwrap_or_default()
+                })
+                .collect();
+            let pruned = regin(&domains);
             for (i, &cell) in cells.iter().enumerate() {
                 for &value in domains[i].difference(&pruned[i]) {
-                    let cage = puzzle.cage_for_cell(cell).cloned();
-                    if let Some(cage) = cage
+                    if let Some(cage) = &cages[i]
                         && puzzle
                             .states
-                            .get_mut(&cage)
-                            .and_then(|state| state.remove(value, cell, &cage))
+                            .get_mut(cage)
+                            .and_then(|state| state.remove(value, cell, cage))
                             .is_some()
                     {
                         removed.insert((cell, value));
@@ -235,16 +230,19 @@ impl Puzzle {
         let mut changed: BTreeSet<(Cell, Value)> = BTreeSet::new();
 
         for &(cell, value) in removals {
-            let cage = puzzle.cage_for_cell(cell).cloned();
+            let cage = puzzle.cages_containing(cell).ok().cloned();
             if let Some(cage) = cage
                 && let Some(affected_cells) = puzzle
                     .states
                     .get_mut(&cage)
                     .and_then(|state| state.remove(value, cell, &cage))
             {
+                let domains = puzzle.states[&cage].values(&cage);
                 for affected_cell in affected_cells {
-                    for v in puzzle.cell_domain(affected_cell) {
-                        changed.insert((affected_cell, v));
+                    if let Some(domain) = domains.get(&affected_cell) {
+                        for &v in domain {
+                            changed.insert((affected_cell, v));
+                        }
                     }
                 }
             }

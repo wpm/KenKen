@@ -15,16 +15,16 @@ use std::collections::{BTreeSet, HashMap};
 
 #[must_use]
 #[allow(clippy::similar_names)]
-pub fn regin(domains: Vec<BTreeSet<Value>>) -> Vec<BTreeSet<Value>> {
+pub fn regin(domains: &[BTreeSet<Value>]) -> Vec<BTreeSet<Value>> {
     let n = domains.len();
     if n == 0 {
-        return domains;
+        return vec![];
     }
 
     // Collect all values that appear in at least one domain.
     let all_values: Vec<Value> = {
         let mut s: BTreeSet<Value> = BTreeSet::new();
-        for d in &domains {
+        for d in domains {
             s.extend(d);
         }
         s.into_iter().collect()
@@ -84,7 +84,7 @@ pub fn regin(domains: Vec<BTreeSet<Value>>) -> Vec<BTreeSet<Value>> {
 
     // An unmatched edge (var → value) is consistent iff both endpoints are in
     // the same SCC. Remove all others.
-    let mut result: Vec<BTreeSet<Value>> = domains;
+    let mut result: Vec<BTreeSet<Value>> = domains.to_vec();
 
     for var in 0..n {
         let matched_vi = var_match[var];
@@ -196,13 +196,13 @@ mod tests {
 
     #[test]
     fn empty_input() {
-        assert_eq!(regin(vec![]), vec![]);
+        assert_eq!(regin(&[]), vec![]);
     }
 
     #[test]
     fn singleton_domains_unchanged() {
         let domains = vec![domain(&[1]), domain(&[2]), domain(&[3])];
-        let result = regin(domains.clone());
+        let result = regin(&domains);
         assert_eq!(result, domains);
     }
 
@@ -213,7 +213,7 @@ mod tests {
         // Var0 must then be 1, so 1 is pruned from Var2, leaving Var2:{3}.
         // Valid assignment: Var0=1, Var1=2, Var2=3.
         let domains = vec![domain(&[1, 2]), domain(&[2]), domain(&[1, 3])];
-        let result = regin(domains);
+        let result = regin(&domains);
         assert_eq!(result[0], domain(&[1]));
         assert_eq!(result[1], domain(&[2]));
         assert_eq!(result[2], domain(&[3]));
@@ -223,7 +223,7 @@ mod tests {
     fn full_overlap_no_pruning() {
         // 3 variables each with domain {1,2,3}: any permutation is valid, no pruning.
         let domains = vec![domain(&[1, 2, 3]), domain(&[1, 2, 3]), domain(&[1, 2, 3])];
-        let result = regin(domains.clone());
+        let result = regin(&domains);
         assert_eq!(result, domains);
     }
 
@@ -231,7 +231,7 @@ mod tests {
     fn fixed_third_var_no_pruning_on_pair() {
         // Var2 is fixed to 3, not in Var0/Var1 domains — no pruning occurs.
         let domains = vec![domain(&[1, 2]), domain(&[1, 2]), domain(&[3])];
-        let result = regin(domains.clone());
+        let result = regin(&domains);
         assert_eq!(result, domains);
     }
 
@@ -240,7 +240,7 @@ mod tests {
         // Var0:{1,3}, Var1:{2,3}, Var2:{1,2}
         // Valid: 0=3,1=2,2=1; 0=1,1=3,2=2. All values participate in some solution.
         let domains = vec![domain(&[1, 3]), domain(&[2, 3]), domain(&[1, 2])];
-        let result = regin(domains.clone());
+        let result = regin(&domains);
         assert_eq!(result, domains);
     }
 }
