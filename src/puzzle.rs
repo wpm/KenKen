@@ -222,12 +222,9 @@ impl Puzzle {
     /// Applies cage arithmetic constraints by removing the given `(cell, value)` pairs
     /// from their respective cage states. Returns the updated puzzle and the set of
     /// `(cell, value)` pairs that were removed as a consequence.
-    fn cage_constraints(
-        &self,
-        removals: &BTreeSet<(Cell, Value)>,
-    ) -> (Self, BTreeSet<(Cell, Value)>) {
+    fn cage_constraints(&self, removals: &BTreeSet<(Cell, Value)>) -> (Self, BTreeSet<Cell>) {
         let mut puzzle = self.clone();
-        let mut changed: BTreeSet<(Cell, Value)> = BTreeSet::new();
+        let mut changed: BTreeSet<Cell> = BTreeSet::new();
 
         for &(cell, value) in removals {
             let cage = puzzle.cages_containing(cell).ok().cloned();
@@ -237,14 +234,7 @@ impl Puzzle {
                     .get_mut(&cage)
                     .and_then(|state| state.remove(value, cell, &cage))
             {
-                let domains = puzzle.states[&cage].values(&cage);
-                for affected_cell in affected_cells {
-                    if let Some(domain) = domains.get(&affected_cell) {
-                        for &v in domain {
-                            changed.insert((affected_cell, v));
-                        }
-                    }
-                }
+                changed.extend(affected_cells);
             }
         }
 
@@ -272,8 +262,8 @@ impl Puzzle {
                 return puzzle;
             }
 
-            let rows = changed.iter().map(|&((r, _), _)| r).collect();
-            let cols = changed.iter().map(|&((_, c), _)| c).collect();
+            let rows = changed.iter().map(|&(r, _)| r).collect();
+            let cols = changed.iter().map(|&(_, c)| c).collect();
             let (next, regin_removed) = puzzle.all_different(&rows, &cols);
             puzzle = next;
             to_remove = regin_removed;
