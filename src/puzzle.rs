@@ -1,6 +1,5 @@
+use crate::cage::{Cage, CageState};
 use crate::regin::regin;
-use crate::state::CageState;
-use std::cmp::Ordering;
 use std::collections::BTreeMap;
 pub(crate) use std::collections::BTreeSet;
 use std::fmt;
@@ -52,55 +51,6 @@ impl Display for Grid {
             writeln!(f, "{}", s.join(" "))?;
         }
         Ok(())
-    }
-}
-
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub enum Operation {
-    Add(u32),
-    Sub(u32),
-    Mul(u32),
-    Div(u32),
-    Given(Value),
-}
-
-impl Display for Operation {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self {
-            Self::Add(t) => write!(f, "{t}+"),
-            Self::Sub(t) => write!(f, "{t}-"),
-            Self::Mul(t) => write!(f, "{t}×"),
-            Self::Div(t) => write!(f, "{t}÷"),
-            Self::Given(v) => write!(f, "{v}"),
-        }
-    }
-}
-
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct Cage {
-    pub op: Operation,
-    pub cells: BTreeSet<Cell>,
-}
-
-impl PartialOrd for Cage {
-    fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
-        Some(self.cmp(other))
-    }
-}
-
-impl Ord for Cage {
-    fn cmp(&self, other: &Self) -> Ordering {
-        self.cells
-            .iter()
-            .min()
-            .cmp(&other.cells.iter().min())
-            .then_with(|| self.cells.iter().cmp(other.cells.iter()))
-    }
-}
-
-impl Display for Cage {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "{} {:?}", self.op, self.cells)
     }
 }
 
@@ -367,6 +317,7 @@ impl Display for Puzzle {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::cage::Operation;
     use crate::test_fixtures::fixtures::{make_3x3_latin_square, make_3x3_puzzle_cages};
 
     #[test]

@@ -1,7 +1,57 @@
-use crate::puzzle::{Cage, Cell, Operation, Tuple, Value};
+use crate::puzzle::{Cell, Tuple, Value};
+use std::cmp::Ordering;
 use std::collections::{BTreeMap, BTreeSet};
 use std::fmt;
 use std::fmt::Display;
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum Operation {
+    Add(u32),
+    Sub(u32),
+    Mul(u32),
+    Div(u32),
+    Given(Value),
+}
+
+impl Display for Operation {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::Add(t) => write!(f, "{t}+"),
+            Self::Sub(t) => write!(f, "{t}-"),
+            Self::Mul(t) => write!(f, "{t}×"),
+            Self::Div(t) => write!(f, "{t}÷"),
+            Self::Given(v) => write!(f, "{v}"),
+        }
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Cage {
+    pub op: Operation,
+    pub cells: BTreeSet<Cell>,
+}
+
+impl PartialOrd for Cage {
+    fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
+        Some(self.cmp(other))
+    }
+}
+
+impl Ord for Cage {
+    fn cmp(&self, other: &Self) -> Ordering {
+        self.cells
+            .iter()
+            .min()
+            .cmp(&other.cells.iter().min())
+            .then_with(|| self.cells.iter().cmp(other.cells.iter()))
+    }
+}
+
+impl Display for Cage {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "{} {:?}", self.op, self.cells)
+    }
+}
 
 #[derive(Debug, PartialEq, Eq)]
 pub enum StateError {
@@ -179,7 +229,6 @@ fn satisfies(op: &Operation, tuple: &Tuple) -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::puzzle::Operation;
 
     fn cage(cells: impl IntoIterator<Item = Cell>, op: Operation) -> Cage {
         Cage {

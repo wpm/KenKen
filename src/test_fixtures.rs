@@ -1,5 +1,6 @@
 pub mod fixtures {
-    use crate::puzzle::{Cage, Grid, Operation};
+    use crate::cage::{Cage, Operation};
+    use crate::puzzle::Grid;
     use std::collections::BTreeSet;
 
     pub fn make_3x3_latin_square() -> Grid {
