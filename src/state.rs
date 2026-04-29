@@ -12,12 +12,12 @@ pub enum StateError {
 /// Solver state for a single cage. Holds the set of candidate tuples consistent
 /// with the cage's operation and the current constraints.
 #[derive(Debug, Clone)]
-pub struct State {
+pub struct CageState {
     cage_size: usize,
     tuples: BTreeSet<Tuple>,
 }
 
-impl State {
+impl CageState {
     /// Initializes a cage state with all tuples from `1..=n` that satisfy
     /// the cage's operation and assign distinct values to collinear cell pairs
     /// (cells sharing a row or column).
@@ -94,7 +94,7 @@ impl State {
     }
 }
 
-impl Display for State {
+impl Display for CageState {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         let inner: Vec<String> = self.tuples.iter().map(|t| format!("{t:?}")).collect();
         write!(f, "{{{}}}", inner.join(", "))
@@ -158,14 +158,14 @@ mod tests {
     #[test]
     fn new_given_cage() {
         let c = cage([(0, 0)], Operation::Given(2));
-        let s = State::new(&c, 3);
+        let s = CageState::new(&c, 3);
         assert_eq!(s.tuples, BTreeSet::from([vec![2]]));
     }
 
     #[test]
     fn new_add_cage() {
         let c = cage([(0, 0), (0, 1)], Operation::Add(3));
-        let s = State::new(&c, 3);
+        let s = CageState::new(&c, 3);
         assert!(s.tuples.contains(&vec![1, 2]));
         assert!(s.tuples.contains(&vec![2, 1]));
         assert!(!s.tuples.contains(&vec![3, 0]));
@@ -175,7 +175,7 @@ mod tests {
     fn new_collinear_same_row_no_duplicate_values() {
         // Two cells in the same row: values must differ.
         let c = cage([(0, 0), (0, 1)], Operation::Add(4));
-        let s = State::new(&c, 3);
+        let s = CageState::new(&c, 3);
         for t in &s.tuples {
             assert_ne!(t[0], t[1], "same-row cells must have distinct values");
         }
@@ -185,7 +185,7 @@ mod tests {
     fn new_collinear_same_col_no_duplicate_values() {
         // Two cells in the same column: values must differ.
         let c = cage([(0, 0), (1, 0)], Operation::Add(4));
-        let s = State::new(&c, 3);
+        let s = CageState::new(&c, 3);
         for t in &s.tuples {
             assert_ne!(t[0], t[1], "same-col cells must have distinct values");
         }
@@ -199,7 +199,7 @@ mod tests {
         //                 (1,0)&(1,1) share row 1 → positions 1 & 2 must differ.
         //                 (0,0)&(1,1) share neither → no constraint between pos 0 & 2.
         let c = cage([(0, 0), (1, 0), (1, 1)], Operation::Add(6));
-        let s = State::new(&c, 3);
+        let s = CageState::new(&c, 3);
         for t in &s.tuples {
             assert_ne!(t[0], t[1], "(0,0) and (1,0) share col 0");
             assert_ne!(t[1], t[2], "(1,0) and (1,1) share row 1");
@@ -213,7 +213,7 @@ mod tests {
         // Product 6: multisets {1,1,6} → only [1,6,1] survives (pos0=pos2 ok);
         //            {1,2,3} → all 6 distinct permutations pass.
         let c = cage([(0, 0), (1, 0), (1, 1)], Operation::Mul(6));
-        let s = State::new(&c, 6);
+        let s = CageState::new(&c, 6);
         assert_eq!(
             s.tuples,
             BTreeSet::from([
@@ -237,7 +237,7 @@ mod tests {
         //        {1,3,3} → only [3,1,3] survives;
         //        {2,2,3} → only [2,3,2] survives.
         let c = cage([(0, 0), (1, 0), (1, 1)], Operation::Add(7));
-        let s = State::new(&c, 6);
+        let s = CageState::new(&c, 6);
         assert_eq!(
             s.tuples,
             BTreeSet::from([
@@ -257,7 +257,7 @@ mod tests {
     #[test]
     fn new_sub_cage() {
         let c = cage([(0, 0), (1, 0)], Operation::Sub(1));
-        let s = State::new(&c, 3);
+        let s = CageState::new(&c, 3);
         for t in &s.tuples {
             let diff = (i32::from(t[0]) - i32::from(t[1])).unsigned_abs();
             assert_eq!(diff, 1);
@@ -267,7 +267,7 @@ mod tests {
     #[test]
     fn new_mul_cage() {
         let c = cage([(0, 0), (0, 1)], Operation::Mul(6));
-        let s = State::new(&c, 3);
+        let s = CageState::new(&c, 3);
         for t in &s.tuples {
             assert_eq!(u32::from(t[0]) * u32::from(t[1]), 6);
         }
@@ -276,7 +276,7 @@ mod tests {
     #[test]
     fn new_div_cage() {
         let c = cage([(0, 0), (0, 1)], Operation::Div(2));
-        let s = State::new(&c, 4);
+        let s = CageState::new(&c, 4);
         for t in &s.tuples {
             let (a, b) = (u32::from(t[0]), u32::from(t[1]));
             assert!(a * 2 == b || b * 2 == a);
@@ -286,7 +286,7 @@ mod tests {
     #[test]
     fn values_reflects_tuples() {
         let c = cage([(0, 0), (0, 1)], Operation::Add(3));
-        let s = State::new(&c, 2);
+        let s = CageState::new(&c, 2);
         let vals = s.values(&c);
         assert_eq!(vals[&(0, 0)], BTreeSet::from([1, 2]));
         assert_eq!(vals[&(0, 1)], BTreeSet::from([1, 2]));
@@ -295,28 +295,28 @@ mod tests {
     #[test]
     fn is_solved_single_tuple() {
         let c = cage([(0, 0)], Operation::Given(3));
-        let s = State::new(&c, 3);
+        let s = CageState::new(&c, 3);
         assert!(s.is_solved());
     }
 
     #[test]
     fn is_solved_multiple_tuples() {
         let c = cage([(0, 0), (0, 1)], Operation::Add(3));
-        let s = State::new(&c, 3);
+        let s = CageState::new(&c, 3);
         assert!(!s.is_solved());
     }
 
     #[test]
     fn is_valid_nonempty() {
         let c = cage([(0, 0)], Operation::Given(2));
-        let s = State::new(&c, 3);
+        let s = CageState::new(&c, 3);
         assert!(s.is_valid());
     }
 
     #[test]
     fn is_valid_empty_tuples() {
         let c = cage([(0, 0)], Operation::Given(5));
-        let s = State::new(&c, 3);
+        let s = CageState::new(&c, 3);
         assert!(!s.is_valid());
     }
 
@@ -324,7 +324,7 @@ mod tests {
     #[allow(clippy::unwrap_used)]
     fn remove_tuple_removes() {
         let c = cage([(0, 0)], Operation::Given(2));
-        let s = State::new(&c, 3);
+        let s = CageState::new(&c, 3);
         let s2 = s.remove_tuple(&[2]).unwrap();
         assert!(s2.tuples.is_empty());
     }
@@ -333,7 +333,7 @@ mod tests {
     #[allow(clippy::unwrap_used)]
     fn remove_tuple_not_found_error() {
         let c = cage([(0, 0)], Operation::Given(2));
-        let s = State::new(&c, 3);
+        let s = CageState::new(&c, 3);
         assert_eq!(s.remove_tuple(&[3]).unwrap_err(), StateError::TupleNotFound);
     }
 
@@ -341,7 +341,7 @@ mod tests {
     #[allow(clippy::unwrap_used)]
     fn remove_tuple_length_mismatch_error() {
         let c = cage([(0, 0)], Operation::Given(2));
-        let s = State::new(&c, 3);
+        let s = CageState::new(&c, 3);
         assert_eq!(
             s.remove_tuple(&[2, 1]).unwrap_err(),
             StateError::TupleLengthMismatch {

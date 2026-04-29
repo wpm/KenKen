@@ -1,4 +1,4 @@
-use crate::state::State;
+use crate::state::CageState;
 use std::cmp::Ordering;
 use std::collections::BTreeMap;
 pub(crate) use std::collections::BTreeSet;
@@ -107,7 +107,7 @@ impl Display for Cage {
 #[derive(Debug, Clone)]
 pub struct Puzzle {
     pub n: usize,
-    states: BTreeMap<Cage, State>,
+    states: BTreeMap<Cage, CageState>,
 }
 
 impl Puzzle {
@@ -125,7 +125,7 @@ impl Puzzle {
         let states = cages
             .into_iter()
             .map(|cage| {
-                let state = State::new(&cage, n);
+                let state = CageState::new(&cage, n);
                 (cage, state)
             })
             .collect();
@@ -151,7 +151,7 @@ impl Puzzle {
     /// Panics if the cage is not part of this puzzle.
     #[must_use]
     #[allow(clippy::expect_used)]
-    pub fn state(&self, cage: &Cage) -> &State {
+    pub fn state(&self, cage: &Cage) -> &CageState {
         self.states.get(cage).expect("cage not found in puzzle")
     }
 }
