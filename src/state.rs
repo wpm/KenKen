@@ -33,11 +33,11 @@ impl State {
         self.cell_values.values().all(Domain::is_singleton)
     }
 
-    fn buckets_for(
+    fn tuples_for(
         &mut self,
         cage: &Cage,
         tuple_len: usize,
-    ) -> Result<&mut Vec<(Value, BTreeSet<Tuple>)>, StateError> {
+    ) -> Result<&mut BTreeSet<Tuple>, StateError> {
         if tuple_len != cage.cells.len() {
             return Err(StateError::TupleLengthMismatch {
                 expected: cage.cells.len(),
@@ -50,20 +50,8 @@ impl State {
     }
 
     fn add_tuple(&mut self, cage: &Cage, tuple: &Tuple) -> Result<(), StateError> {
-        let buckets = self.buckets_for(cage, tuple.len())?;
-        let anchor = *tuple.first().ok_or(StateError::TupleLengthMismatch {
-            expected: cage.cells.len(),
-            got: 0,
-        })?;
-        match buckets.iter_mut().find(|(a, _)| *a == anchor) {
-            Some((_, ts)) => {
-                if !ts.insert(tuple.clone()) {
-                    return Err(StateError::TupleAlreadyPresent);
-                }
-            }
-            None => {
-                buckets.push((anchor, BTreeSet::from([tuple.clone()])));
-            }
+        if !self.tuples_for(cage, tuple.len())?.insert(tuple.clone()) {
+            return Err(StateError::TupleAlreadyPresent);
         }
         for (cell, &val) in cage.cells.iter().zip(tuple.iter()) {
             if let Some(domain) = self.cell_values.get_mut(cell) {
@@ -74,18 +62,12 @@ impl State {
     }
 
     fn remove_tuple(&mut self, cage: &Cage, tuple: &Tuple) -> Result<(), StateError> {
-        let buckets = self.buckets_for(cage, tuple.len())?;
-        if !buckets.iter_mut().any(|(_, ts)| ts.remove(tuple)) {
+        if !self.tuples_for(cage, tuple.len())?.remove(tuple) {
             return Err(StateError::TupleNotFound);
         }
+        let tuples: Vec<&Tuple> = self.cage_tuples[cage].iter().collect();
         let new_domains: Vec<BTreeSet<Value>> = (0..cage.cells.len())
-            .map(|i| {
-                buckets
-                    .iter()
-                    .flat_map(|(_, ts)| ts.iter())
-                    .map(|t| t[i])
-                    .collect()
-            })
+            .map(|i| tuples.iter().map(|t| t[i]).collect())
             .collect();
         for (cell, new_domain) in cage.cells.iter().zip(new_domains) {
             if let Some(domain) = self.cell_values.get_mut(cell) {
@@ -113,9 +95,8 @@ impl Display for State {
 /// Maps each cell to the set of values still consistent with the constraints.
 type Primal = BTreeMap<Cell, Domain<BTreeSet<Value>>>;
 
-/// Maps each cage to the candidate assignments: pairs of (anchor value, tuple
-/// of remaining values) that satisfy the cage's operation.
-type Dual = BTreeMap<Cage, Vec<(Value, BTreeSet<Tuple>)>>;
+/// Maps each cage to the set of candidate value assignments.
+type Dual = BTreeMap<Cage, BTreeSet<Tuple>>;
 
 /// Seals `DomainContent` so only `BTreeSet<Value>` and `BTreeSet<Tuple>` can
 /// be used as domain contents.
@@ -243,7 +224,7 @@ mod tests {
         let cage = make_cage([cell(0, 0)], Operation::Given(1));
         let state = State {
             cell_values: BTreeMap::from([(cell(0, 0), domain([1]))]),
-            cage_tuples: BTreeMap::from([(cage, vec![(1, BTreeSet::from([vec![1]]))])]),
+            cage_tuples: BTreeMap::from([(cage, BTreeSet::from([vec![1]]))]),
         };
         let s = state.to_string();
         assert!(s.contains("Cells"));
@@ -266,7 +247,7 @@ mod tests {
         let cage = make_cage([cell(0, 0), cell(0, 1)], Operation::Add(3));
         let state = State {
             cell_values: BTreeMap::from([(cell(0, 0), domain([])), (cell(0, 1), domain([]))]),
-            cage_tuples: BTreeMap::from([(cage.clone(), vec![(1, BTreeSet::new())])]),
+            cage_tuples: BTreeMap::from([(cage.clone(), BTreeSet::new())]),
         };
         (cage, state)
     }
@@ -275,8 +256,7 @@ mod tests {
     fn add_tuple_updates_cage_and_cells() {
         let (cage, mut state) = cage_state();
         assert!(state.add_tuple(&cage, &vec![1, 2]).is_ok());
-        let buckets = &state.cage_tuples[&cage];
-        assert!(buckets.iter().any(|(_, ts)| ts.contains(&vec![1, 2])));
+        assert!(state.cage_tuples[&cage].contains(&vec![1, 2]));
         assert!(state.cell_values[&cell(0, 0)].0.contains(&1));
         assert!(state.cell_values[&cell(0, 1)].0.contains(&2));
     }
@@ -319,8 +299,7 @@ mod tests {
         assert!(state.add_tuple(&cage, &vec![1, 2]).is_ok());
         assert!(state.add_tuple(&cage, &vec![2, 1]).is_ok());
         assert!(state.remove_tuple(&cage, &vec![1, 2]).is_ok());
-        let buckets = &state.cage_tuples[&cage];
-        assert!(!buckets.iter().any(|(_, ts)| ts.contains(&vec![1, 2])));
+        assert!(!state.cage_tuples[&cage].contains(&vec![1, 2]));
         assert!(!state.cell_values[&cell(0, 0)].0.contains(&1));
         assert!(state.cell_values[&cell(0, 0)].0.contains(&2));
     }
