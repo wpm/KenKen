@@ -185,14 +185,14 @@ impl Puzzle {
 
     /// Runs Régin's algorithm over the specified rows and columns, applying
     /// any pruning implied by the all-different constraint. Returns the updated
-    /// puzzle and the set of cells whose domains changed.
+    /// puzzle and the set of (cell, value) pairs that were removed.
     fn all_different(
         &self,
         rows: &BTreeSet<usize>,
         cols: &BTreeSet<usize>,
-    ) -> (Self, BTreeSet<Cell>) {
+    ) -> (Self, BTreeSet<(Cell, Value)>) {
         let mut puzzle = self.clone();
-        let mut changed_cells: BTreeSet<Cell> = BTreeSet::new();
+        let mut removed: BTreeSet<(Cell, Value)> = BTreeSet::new();
 
         let row_lines = rows
             .iter()
@@ -206,21 +206,22 @@ impl Puzzle {
                 cells.iter().map(|&cell| puzzle.cell_domain(cell)).collect();
             let pruned = regin(domains.clone());
             for (i, &cell) in cells.iter().enumerate() {
-                for value in domains[i].difference(&pruned[i]) {
+                for &value in domains[i].difference(&pruned[i]) {
                     let cage = puzzle.cage_for_cell(cell).cloned();
                     if let Some(cage) = cage
-                        && let Some(changed) = puzzle
+                        && puzzle
                             .states
                             .get_mut(&cage)
-                            .and_then(|state| state.remove(*value, cell, &cage))
+                            .and_then(|state| state.remove(value, cell, &cage))
+                            .is_some()
                     {
-                        changed_cells.extend(changed);
+                        removed.insert((cell, value));
                     }
                 }
             }
         }
 
-        (puzzle, changed_cells)
+        (puzzle, removed)
     }
 
     /// Propagates the removal of the given `(cell, value)` pairs through all
@@ -257,13 +258,9 @@ impl Puzzle {
 
             let rows = changed_cells.iter().map(|&(r, _)| r).collect();
             let cols = changed_cells.iter().map(|&(_, c)| c).collect();
-            let (next, regin_changed) = puzzle.all_different(&rows, &cols);
+            let (next, regin_removed) = puzzle.all_different(&rows, &cols);
             puzzle = next;
-
-            to_remove = regin_changed
-                .iter()
-                .flat_map(|&cell| puzzle.cell_domain(cell).into_iter().map(move |v| (cell, v)))
-                .collect();
+            to_remove = regin_removed;
         }
     }
 }
