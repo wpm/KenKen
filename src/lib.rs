@@ -1,7 +1,11 @@
-pub mod cage;
-pub mod latin_square;
+pub mod arithmetic;
+pub mod constraints;
+pub mod grid;
+mod latin_square;
 pub mod puzzle;
-pub mod regin;
-pub mod search;
-#[cfg(test)]
-mod test_fixtures;
+mod regin;
+pub mod shape;
+mod types;
+pub use grid::Grid;
+pub use shape::{Column, Polyomino, Row};
+pub use types::*;

@@ -1,546 +1,244 @@
-use crate::cage::{Cage, CageState};
-use crate::regin::regin;
-use std::collections::BTreeMap;
-pub(crate) use std::collections::BTreeSet;
-use std::fmt;
-use std::fmt::Display;
+#![allow(dead_code)]
+use crate::constraints::{AllDifferent, Cage};
+use crate::grid::Grid;
+use crate::{Cell, Error, Index, Polyomino};
+use std::collections::HashMap;
 
-pub type Value = u8;
-pub type Cell = (usize, usize);
-pub type Tuple = Vec<Value>;
-
-#[derive(Debug, PartialEq, Eq)]
-pub enum PuzzleError {
-    CellOutOfBounds(Cell),
-}
-
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct Grid {
-    pub grid: Vec<Vec<Value>>,
-}
-
-impl Grid {
-    /// # Panics
-    ///
-    /// Panics if any row length differs from the number of rows.
-    #[must_use]
-    pub fn new(grid: Vec<Vec<Value>>) -> Self {
-        let n = grid.len();
-        assert!(
-            grid.iter().all(|row| row.len() == n),
-            "grid must be square (n={n})"
-        );
-        Self { grid }
-    }
-
-    #[must_use]
-    pub const fn n(&self) -> usize {
-        self.grid.len()
-    }
-
-    #[must_use]
-    pub fn get(&self, cell: Cell) -> Value {
-        self.grid[cell.0][cell.1]
-    }
-}
-
-impl Display for Grid {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        for row in &self.grid {
-            let s: Vec<String> = row.iter().map(ToString::to_string).collect();
-            writeln!(f, "{}", s.join(" "))?;
-        }
-        Ok(())
-    }
-}
-
-/// A `KenKen` puzzle: an n×n grid partitioned into cages, each with a solver state.
+/// A `KenKen` puzzle is a `Grid` along with a set of `Constraint`s.
+#[must_use]
 #[derive(Debug, Clone)]
 pub struct Puzzle {
-    pub n: usize,
-    states: BTreeMap<Cage, CageState>,
+    grid: Grid,
+    rows: Vec<AllDifferent>,
+    columns: Vec<AllDifferent>,
+    /// Maps each cell to the polyomino of the cage that covers it.
+    cage_cell: HashMap<Cell, Polyomino>,
+    /// One entry per cage, keyed by its polyomino.
+    cages: HashMap<Polyomino, Cage>,
 }
 
 impl Puzzle {
-    /// Creates a new puzzle from a grid size and a set of cages.
-    ///
-    /// # Panics
-    ///
-    /// Panics if the cages do not exactly partition all n² cells.
-    #[must_use]
-    pub fn new(n: usize, cages: BTreeSet<Cage>) -> Self {
-        assert!(
-            cages_partition_grid(&cages, n),
-            "cages must exactly partition all {n}×{n} cells"
-        );
-        let states = cages
-            .into_iter()
-            .map(|cage| {
-                let state = CageState::new(&cage, n);
-                (cage, state)
-            })
-            .collect();
-        Self { n, states }
-    }
-
-    /// Returns the cage that contains `cell`.
-    ///
     /// # Errors
+    /// Returns `Err` if `n` is not in `1..=9`.
+    pub fn new(n: Index) -> Result<Self, Error> {
+        Ok(Self {
+            grid: Grid::new(n)?,
+            rows: (0..n).map(|row| AllDifferent::row(n, row)).collect(),
+            columns: (0..n)
+                .map(|column| AllDifferent::column(n, column))
+                .collect(),
+            cage_cell: HashMap::new(),
+            cages: HashMap::new(),
+        })
+    }
+
+    #[must_use]
+    pub const fn n(&self) -> Index {
+        self.grid.n()
+    }
+
+    /// Returns a new puzzle with the cage inserted.
     ///
-    /// Returns `PuzzleError::CellOutOfBounds` if `cell` is not in any cage.
-    pub fn cages_containing(&self, cell: Cell) -> Result<&Cage, PuzzleError> {
-        self.states
-            .keys()
-            .find(|cage| cage.cells.contains(&cell))
-            .ok_or(PuzzleError::CellOutOfBounds(cell))
+    /// Idempotent: if the exact same cage (by polyomino) is already present, returns a clone unchanged.
+    /// # Errors
+    /// Returns `Err` if any cell in the cage is already claimed by a *different* cage.
+    pub fn insert_cage(mut self, cage: Cage) -> Result<Self, Error> {
+        if self.cages.contains_key(cage.polyomino()) {
+            return Ok(self);
+        }
+        let existing = cage.cells().into_iter().find_map(|cell| {
+            self.cage_cell
+                .get(&cell)
+                .and_then(|poly| self.cages.get(poly))
+        });
+        if let Some(existing) = existing {
+            return Err(Error::CageConflict(
+                Box::new(cage),
+                Box::new(existing.clone()),
+            ));
+        }
+        let poly = cage.polyomino().clone();
+        for cell in cage.cells() {
+            self.cage_cell.insert(cell, poly.clone());
+        }
+        self.cages.insert(poly, cage);
+        Ok(self)
     }
 
-    /// Returns the state for the given cage.
+    /// Returns a new puzzle with the cage removed.
     ///
-    /// # Panics
-    ///
-    /// Panics if the cage is not part of this puzzle.
-    #[must_use]
-    #[allow(clippy::expect_used)]
-    pub fn state(&self, cage: &Cage) -> &CageState {
-        self.states.get(cage).expect("cage not found in puzzle")
-    }
-
-    /// Returns true if every cage state is valid (no cage has an empty tuple set).
-    #[must_use]
-    pub fn is_valid(&self) -> bool {
-        self.states.values().all(CageState::is_valid)
-    }
-
-    /// Returns true if every cage state is solved (exactly one tuple per cage).
-    #[must_use]
-    pub fn is_solved(&self) -> bool {
-        self.states.values().all(CageState::is_solved)
-    }
-
-    /// Runs Régin's algorithm over the specified rows and columns, applying
-    /// any pruning implied by the all-different constraint. Returns the updated
-    /// puzzle and the set of (cell, value) pairs that were removed.
-    fn all_different(
-        &self,
-        rows: &BTreeSet<usize>,
-        cols: &BTreeSet<usize>,
-    ) -> (Self, BTreeSet<(Cell, Value)>) {
-        let mut puzzle = self.clone();
-        let mut removed: BTreeSet<(Cell, Value)> = BTreeSet::new();
-
-        let line = |fixed, vary_in_col: bool| {
-            (0..puzzle.n)
-                .map(move |i| if vary_in_col { (fixed, i) } else { (i, fixed) })
-                .collect::<Vec<_>>()
-        };
-        let lines = rows
-            .iter()
-            .map(|&r| line(r, true))
-            .chain(cols.iter().map(|&c| line(c, false)));
-
-        for cells in lines {
-            let cages: Vec<Option<Cage>> = cells
-                .iter()
-                .map(|&cell| puzzle.cages_containing(cell).ok().cloned())
-                .collect();
-            let domains: Vec<BTreeSet<Value>> = cells
-                .iter()
-                .zip(&cages)
-                .map(|(&cell, cage)| {
-                    cage.as_ref()
-                        .and_then(|c| puzzle.states[c].values(c).remove(&cell))
-                        .unwrap_or_default()
-                })
-                .collect();
-            let pruned = regin(&domains);
-            for (i, &cell) in cells.iter().enumerate() {
-                for &value in domains[i].difference(&pruned[i]) {
-                    if let Some(cage) = &cages[i]
-                        && puzzle
-                            .states
-                            .get_mut(cage)
-                            .and_then(|state| state.remove(value, cell, cage))
-                            .is_some()
-                    {
-                        removed.insert((cell, value));
-                    }
-                }
+    /// Idempotent: if no such cage exists, returns unchanged.
+    pub fn remove_cage(mut self, polyomino: &Polyomino) -> Self {
+        if let Some(cage) = self.cages.remove(polyomino) {
+            for cell in cage.cells() {
+                self.cage_cell.remove(&cell);
             }
         }
-
-        (puzzle, removed)
-    }
-
-    /// Applies cage arithmetic constraints by removing the given `(cell, value)` pairs
-    /// from their respective cage states. Returns the updated puzzle and the set of
-    /// `(cell, value)` pairs that were removed as a consequence.
-    pub(crate) fn cage_constraints(
-        &self,
-        removals: &BTreeSet<(Cell, Value)>,
-    ) -> (Self, BTreeSet<Cell>) {
-        let mut puzzle = self.clone();
-        let mut changed: BTreeSet<Cell> = BTreeSet::new();
-
-        for &(cell, value) in removals {
-            let cage = puzzle.cages_containing(cell).ok().cloned();
-            if let Some(cage) = cage
-                && let Some(affected_cells) = puzzle
-                    .states
-                    .get_mut(&cage)
-                    .and_then(|state| state.remove(value, cell, &cage))
-            {
-                changed.extend(affected_cells);
-            }
-        }
-
-        (puzzle, changed)
-    }
-
-    fn is_done(&self) -> bool {
-        !self.is_valid() || self.is_solved()
-    }
-
-    /// Propagates constraints over the specified rows and columns until no
-    /// further pruning is possible, the puzzle becomes invalid, or the puzzle
-    /// is solved. Returns the pruned puzzle.
-    #[must_use]
-    pub fn propagate(&self, rows: BTreeSet<usize>, cols: BTreeSet<usize>) -> Self {
-        let mut puzzle = self.clone();
-        let mut rows = rows;
-        let mut cols = cols;
-
-        loop {
-            if (rows.is_empty() && cols.is_empty()) || puzzle.is_done() {
-                return puzzle;
-            }
-
-            let (next, removed) = puzzle.all_different(&rows, &cols);
-            puzzle = next;
-
-            if removed.is_empty() || puzzle.is_done() {
-                return puzzle;
-            }
-
-            let (next, changed) = puzzle.cage_constraints(&removed);
-            puzzle = next;
-
-            if changed.is_empty() || puzzle.is_done() {
-                return puzzle;
-            }
-
-            rows = changed.iter().map(|&(r, _)| r).collect();
-            cols = changed.iter().map(|&(_, c)| c).collect();
-        }
-    }
-
-    /// Returns the unfixed cell with the smallest remaining domain (Minimum Remaining
-    /// Values), breaking ties by `Cell` ordering for determinism. Returns `None` if every
-    /// cell already has a singleton domain.
-    #[must_use]
-    pub fn mrv_cell(&self) -> Option<Cell> {
-        self.states
-            .iter()
-            .flat_map(|(cage, state)| state.domain_sizes(cage))
-            .filter(|&(_, len)| len > 1)
-            .min_by(|a, b| a.1.cmp(&b.1).then_with(|| a.0.cmp(&b.0)))
-            .map(|(cell, _)| cell)
-    }
-
-    /// Returns one puzzle per value in `cell`'s domain, each with all other
-    /// values in that cell removed and constraints propagated.
-    #[must_use]
-    pub fn branch(&self, cell: Cell) -> Vec<Self> {
-        let domain: Vec<Value> = self
-            .cages_containing(cell)
-            .ok()
-            .map(|cage| {
-                self.states[cage]
-                    .values(cage)
-                    .remove(&cell)
-                    .unwrap_or_default()
-                    .into_iter()
-                    .collect()
-            })
-            .unwrap_or_default();
-
-        domain
-            .iter()
-            .map(|&keep| {
-                let removals = domain
-                    .iter()
-                    .filter(|&&v| v != keep)
-                    .map(|&v| (cell, v))
-                    .collect();
-                let (pruned, changed) = self.cage_constraints(&removals);
-                let rows = changed.iter().map(|&(r, _)| r).collect();
-                let cols = changed.iter().map(|&(_, c)| c).collect();
-                pruned.propagate(rows, cols)
-            })
-            .collect()
-    }
-}
-
-fn cages_partition_grid(cages: &BTreeSet<Cage>, n: usize) -> bool {
-    let mut seen = vec![false; n * n];
-    for cage in cages {
-        for &(r, c) in &cage.cells {
-            if r >= n || c >= n {
-                return false;
-            }
-            let idx = r * n + c;
-            if seen[idx] {
-                return false;
-            }
-            seen[idx] = true;
-        }
-    }
-    seen.iter().all(|&x| x)
-}
-
-impl Display for Puzzle {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        writeln!(
-            f,
-            "{}x{} KenKen ({} cages)",
-            self.n,
-            self.n,
-            self.states.len()
-        )?;
-        for cage in self.states.keys() {
-            writeln!(f, "  {cage}")?;
-        }
-        Ok(())
+        self
     }
 }
 
 #[cfg(test)]
+#[allow(clippy::unwrap_used)]
 mod tests {
     use super::*;
-    use crate::cage::Operation;
-    use crate::test_fixtures::fixtures::{make_3x3_latin_square, make_3x3_puzzle_cages};
+    use crate::constraints::Operation;
+
+    fn make_cage(cells: &[(usize, usize)], n: u8) -> Cage {
+        let cells: Vec<Cell> = cells.iter().map(|&(r, c)| Cell::new(r, c)).collect();
+        Cage::new(n, Polyomino::new(&cells), Operation::Add(n))
+    }
+
+    fn poly(cells: &[(usize, usize)]) -> Polyomino {
+        Polyomino::new(
+            &cells
+                .iter()
+                .map(|&(r, c)| Cell::new(r, c))
+                .collect::<Vec<_>>(),
+        )
+    }
+
+    // --- Puzzle::new ---
 
     #[test]
-    fn grid_new_square() {
-        let g = Grid::new(vec![vec![1, 2], vec![3, 4]]);
-        assert_eq!(g.n(), 2);
+    fn new_returns_err_for_invalid_size() {
+        assert!(Puzzle::new(0).is_err());
+        assert!(Puzzle::new(10).is_err());
     }
 
     #[test]
-    #[should_panic(expected = "grid must be square")]
-    fn grid_new_non_square_panics() {
-        let _ = Grid::new(vec![vec![1, 2, 3], vec![4, 5]]);
+    fn new_n_matches_size() {
+        assert_eq!(Puzzle::new(4).unwrap().n(), 4);
     }
 
     #[test]
-    fn latin_square_get() {
-        let ls = make_3x3_latin_square();
-        assert_eq!(ls.get((0, 0)), 2);
-        assert_eq!(ls.get((1, 2)), 1);
-        assert_eq!(ls.get((2, 1)), 3);
+    fn new_has_no_cages() {
+        let puzzle = Puzzle::new(4).unwrap();
+        assert!(puzzle.cages.is_empty());
+        assert!(puzzle.cage_cell.is_empty());
+    }
+
+    // --- Puzzle::insert_cage ---
+
+    #[test]
+    fn insert_cage_adds_cage_and_cells() {
+        let cage = make_cage(&[(0, 0), (0, 1)], 4);
+        let poly = cage.polyomino().clone();
+        let puzzle = Puzzle::new(4).unwrap().insert_cage(cage).unwrap();
+        assert!(puzzle.cages.contains_key(&poly));
+        assert!(puzzle.cage_cell.contains_key(&Cell::new(0, 0)));
+        assert!(puzzle.cage_cell.contains_key(&Cell::new(0, 1)));
     }
 
     #[test]
-    fn latin_square_display() {
-        assert_eq!(make_3x3_latin_square().to_string(), "2 1 3\n3 2 1\n1 3 2\n");
+    fn insert_cage_cell_points_to_correct_polyomino() {
+        let cage = make_cage(&[(0, 0), (0, 1)], 4);
+        let poly = cage.polyomino().clone();
+        let puzzle = Puzzle::new(4).unwrap().insert_cage(cage).unwrap();
+        assert_eq!(puzzle.cage_cell[&Cell::new(0, 0)], poly);
+        assert_eq!(puzzle.cage_cell[&Cell::new(0, 1)], poly);
     }
 
     #[test]
-    fn operation_display_all_variants() {
-        assert_eq!(Operation::Add(6).to_string(), "6+");
-        assert_eq!(Operation::Sub(2).to_string(), "2-");
-        assert_eq!(Operation::Mul(12).to_string(), "12×");
-        assert_eq!(Operation::Div(3).to_string(), "3÷");
-        assert_eq!(Operation::Given(4).to_string(), "4");
+    fn insert_two_non_overlapping_cages() {
+        let puzzle = Puzzle::new(4)
+            .unwrap()
+            .insert_cage(make_cage(&[(0, 0), (0, 1)], 4))
+            .unwrap()
+            .insert_cage(make_cage(&[(1, 0), (1, 1)], 4))
+            .unwrap();
+        assert_eq!(puzzle.cages.len(), 2);
+        assert_eq!(puzzle.cage_cell.len(), 4);
     }
 
     #[test]
-    fn cage_display() {
-        let cage = Cage {
-            op: Operation::Add(5),
-            cells: BTreeSet::from([(0, 0), (1, 0)]),
-        };
-        let s = cage.to_string();
-        assert!(s.contains("5+"));
-        assert!(s.contains("(0, 0)"));
-        assert!(s.contains("(1, 0)"));
+    fn insert_cage_idempotent() {
+        let puzzle = Puzzle::new(4)
+            .unwrap()
+            .insert_cage(make_cage(&[(0, 0), (0, 1)], 4))
+            .unwrap()
+            .insert_cage(make_cage(&[(0, 0), (0, 1)], 4))
+            .unwrap();
+        assert_eq!(puzzle.cages.len(), 1);
+        assert_eq!(puzzle.cage_cell.len(), 2);
     }
 
     #[test]
-    fn cage_ordering_by_min_cell() {
-        let top_left = Cage {
-            op: Operation::Given(1),
-            cells: BTreeSet::from([(0, 0)]),
-        };
-        let bottom_right = Cage {
-            op: Operation::Given(2),
-            cells: BTreeSet::from([(2, 2)]),
-        };
-        assert!(top_left < bottom_right);
+    fn insert_cage_conflict_returns_err() {
+        let puzzle = Puzzle::new(4)
+            .unwrap()
+            .insert_cage(make_cage(&[(0, 0), (0, 1)], 4))
+            .unwrap();
+        let result = puzzle.insert_cage(make_cage(&[(0, 1), (0, 2)], 4));
+        assert!(matches!(result, Err(Error::CageConflict(_, _))));
     }
 
     #[test]
-    fn cage_ordering_same_min_cell_differs_by_cells() {
-        let small = Cage {
-            op: Operation::Given(1),
-            cells: BTreeSet::from([(0, 0)]),
-        };
-        let large = Cage {
-            op: Operation::Given(1),
-            cells: BTreeSet::from([(0, 0), (0, 1)]),
-        };
-        assert!(small < large);
-    }
-
-    #[test]
-    fn puzzle_new_valid() {
-        let p = Puzzle::new(3, make_3x3_puzzle_cages());
-        assert_eq!(p.n, 3);
-        assert_eq!(p.states.len(), 5);
-    }
-
-    #[test]
-    #[should_panic(expected = "cages must exactly partition")]
-    fn puzzle_new_duplicate_cell_panics() {
-        let mut cages = make_3x3_puzzle_cages();
-        cages.insert(Cage {
-            op: Operation::Given(2),
-            cells: BTreeSet::from([(0, 0)]),
-        });
-        let _ = Puzzle::new(3, cages);
-    }
-
-    #[test]
-    #[should_panic(expected = "cages must exactly partition")]
-    fn puzzle_new_missing_cell_panics() {
-        let mut cages = make_3x3_puzzle_cages();
-        cages.retain(|c| c.op != Operation::Sub(2));
-        let _ = Puzzle::new(3, cages);
-    }
-
-    #[test]
-    fn puzzle_display() {
-        let p = Puzzle::new(3, make_3x3_puzzle_cages());
-        let s = p.to_string();
-        assert!(s.contains("3x3 KenKen"));
-        assert!(s.contains("5 cages"));
-    }
-
-    #[test]
-    #[allow(clippy::unwrap_used)]
-    fn cages_containing_returns_cage_for_cell() {
-        let p = Puzzle::new(3, make_3x3_puzzle_cages());
-        assert_eq!(p.cages_containing((0, 0)).unwrap().op, Operation::Add(5));
-        assert_eq!(p.cages_containing((0, 1)).unwrap().op, Operation::Add(4));
-    }
-
-    #[test]
-    fn cages_containing_out_of_bounds_returns_error() {
-        let p = Puzzle::new(3, make_3x3_puzzle_cages());
-        assert_eq!(
-            p.cages_containing((5, 5)),
-            Err(PuzzleError::CellOutOfBounds((5, 5)))
-        );
-    }
-
-    #[test]
-    #[allow(clippy::unwrap_used)]
-    fn puzzle_state_returns_state() {
-        let p = Puzzle::new(3, make_3x3_puzzle_cages());
-        let cage = p.states.keys().next().unwrap();
-        let _state = p.state(cage);
-    }
-
-    #[test]
-    fn propagate_empty_rows_cols_unchanged() {
-        let p = Puzzle::new(3, make_3x3_puzzle_cages());
-        let p2 = p.propagate(BTreeSet::new(), BTreeSet::new());
-        assert!(p2.is_valid());
-    }
-
-    #[test]
-    fn propagate_given_cell_solves_puzzle() {
-        // The 3×3 fixture has a unique solution: 2 1 3 / 3 2 1 / 1 3 2.
-        // Cell (1,1) is Given(2), so 2 must be removed from every other cell in
-        // row 1 and col 1. Apply those removals via cage_constraints, then
-        // propagate over the affected rows and columns until solved.
-        let p = Puzzle::new(3, make_3x3_puzzle_cages());
-        let removals = BTreeSet::from([((0, 1), 2), ((2, 1), 2), ((1, 0), 2), ((1, 2), 2)]);
-        let (p, changed) = p.cage_constraints(&removals);
-        let rows = changed.iter().map(|&(r, _)| r).collect();
-        let cols = changed.iter().map(|&(_, c)| c).collect();
-        let p2 = p.propagate(rows, cols);
-        assert!(p2.is_solved());
-    }
-
-    #[test]
-    fn propagate_invalid_removal_yields_invalid_puzzle() {
-        // Remove the only valid value from a Given cage — no tuples remain.
-        let p = Puzzle::new(3, make_3x3_puzzle_cages());
-        let removals = BTreeSet::from([((1, 1), 2)]);
-        let (p, changed) = p.cage_constraints(&removals);
-        let rows = changed.iter().map(|&(r, _)| r).collect();
-        let cols = changed.iter().map(|&(_, c)| c).collect();
-        let p2 = p.propagate(rows, cols);
-        assert!(!p2.is_valid());
-    }
-
-    #[test]
-    fn branch_produces_one_puzzle_per_domain_value() {
-        // Cell (0,0) is in the 5+ cage with (1,0). In a 3×3 puzzle its domain
-        // is {2,3} (values that can sum to 5 with a distinct partner). So
-        // branching on (0,0) yields 2 puzzles.
-        let p = Puzzle::new(3, make_3x3_puzzle_cages());
-        let branches = p.branch((0, 0));
-        assert_eq!(branches.len(), 2);
-    }
-
-    #[test]
-    #[allow(clippy::unwrap_used)]
-    fn branch_each_puzzle_has_single_value_at_cell() {
-        // After branching on (0,0), each resulting puzzle should have exactly
-        // one candidate value at that cell.
-        let p = Puzzle::new(3, make_3x3_puzzle_cages());
-        for b in p.branch((0, 0)) {
-            let cage = b.cages_containing((0, 0)).unwrap();
-            let domain = b.states[cage]
-                .values(cage)
-                .remove(&(0, 0))
-                .unwrap_or_default();
-            assert_eq!(domain.len(), 1);
+    fn insert_cage_conflict_carries_new_and_existing_cage() {
+        let existing = make_cage(&[(0, 0), (0, 1)], 4);
+        let new = make_cage(&[(0, 1), (0, 2)], 4);
+        let existing_poly = existing.polyomino().clone();
+        let new_poly = new.polyomino().clone();
+        let puzzle = Puzzle::new(4).unwrap().insert_cage(existing).unwrap();
+        if let Err(Error::CageConflict(got_new, got_existing)) = puzzle.insert_cage(new) {
+            assert_eq!(got_new.polyomino(), &new_poly);
+            assert_eq!(got_existing.polyomino(), &existing_poly);
+        } else {
+            unreachable!("expected CageConflict");
         }
     }
 
+    // --- Puzzle::remove_cage ---
+
     #[test]
-    #[allow(clippy::unwrap_used)]
-    fn branch_values_are_disjoint() {
-        // The values kept across all branches should be exactly the original domain.
-        let p = Puzzle::new(3, make_3x3_puzzle_cages());
-        let kept: BTreeSet<Value> = p
-            .branch((0, 0))
-            .into_iter()
-            .map(|b| {
-                let cage = b.cages_containing((0, 0)).unwrap();
-                *b.states[cage]
-                    .values(cage)
-                    .remove(&(0, 0))
-                    .unwrap_or_default()
-                    .iter()
-                    .next()
-                    .unwrap()
-            })
-            .collect();
-        let cage = p.cages_containing((0, 0)).unwrap();
-        let original = p.states[cage]
-            .values(cage)
-            .remove(&(0, 0))
-            .unwrap_or_default();
-        assert_eq!(kept, original);
+    fn remove_cage_removes_cage_and_cells() {
+        let cage = make_cage(&[(0, 0), (0, 1)], 4);
+        let poly = cage.polyomino().clone();
+        let puzzle = Puzzle::new(4)
+            .unwrap()
+            .insert_cage(cage)
+            .unwrap()
+            .remove_cage(&poly);
+        assert!(!puzzle.cages.contains_key(&poly));
+        assert!(!puzzle.cage_cell.contains_key(&Cell::new(0, 0)));
+        assert!(!puzzle.cage_cell.contains_key(&Cell::new(0, 1)));
     }
 
     #[test]
-    fn branch_unknown_cell_returns_empty() {
-        let p = Puzzle::new(3, make_3x3_puzzle_cages());
-        assert!(p.branch((9, 9)).is_empty());
+    fn remove_cage_leaves_other_cages_intact() {
+        let a = make_cage(&[(0, 0), (0, 1)], 4);
+        let b = make_cage(&[(1, 0), (1, 1)], 4);
+        let poly_a = a.polyomino().clone();
+        let poly_b = b.polyomino().clone();
+        let puzzle = Puzzle::new(4)
+            .unwrap()
+            .insert_cage(a)
+            .unwrap()
+            .insert_cage(b)
+            .unwrap()
+            .remove_cage(&poly_a);
+        assert!(!puzzle.cages.contains_key(&poly_a));
+        assert!(puzzle.cages.contains_key(&poly_b));
+        assert!(puzzle.cage_cell.contains_key(&Cell::new(1, 0)));
+    }
+
+    #[test]
+    fn remove_cage_idempotent() {
+        let p = poly(&[(0, 0), (0, 1)]);
+        let _ = Puzzle::new(4).unwrap().remove_cage(&p).remove_cage(&p);
+    }
+
+    #[test]
+    fn remove_then_insert_succeeds() {
+        let cage = make_cage(&[(0, 0), (0, 1)], 4);
+        let poly = cage.polyomino().clone();
+        let puzzle = Puzzle::new(4)
+            .unwrap()
+            .insert_cage(cage)
+            .unwrap()
+            .remove_cage(&poly)
+            .insert_cage(make_cage(&[(0, 0), (0, 1)], 4))
+            .unwrap();
+        assert!(puzzle.cages.contains_key(&poly));
     }
 }

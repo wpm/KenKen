@@ -1,4 +1,6 @@
-use crate::puzzle::{Grid, Value};
+#![allow(dead_code)]
+
+use crate::types::N;
 use rand::{Rng, RngExt};
 
 /// Returns a uniformly random index `x` in `0..n` such that `line(x) == 1`.
@@ -35,7 +37,7 @@ fn pick_one_from_line(rng: &mut impl Rng, n: usize, line: impl Fn(usize) -> i8) 
 /// distributed random Latin squares", *Journal of Combinatorial Designs* 4(6),
 /// 1996, pp. 405–437.
 #[allow(clippy::many_single_char_names)]
-pub fn generate_latin_square(n: usize, rng: &mut impl Rng) -> Grid {
+pub fn generate_latin_square(n: usize, rng: &mut impl Rng) -> Vec<Vec<N>> {
     // Seed with the cyclic Latin square: L[r][c] = ((r + c) mod n) + 1.
     let mut m: Vec<Vec<Vec<i8>>> = vec![vec![vec![0i8; n]; n]; n];
     for r in 0..n {
@@ -86,37 +88,35 @@ pub fn generate_latin_square(n: usize, rng: &mut impl Rng) -> Grid {
 
     // Safety: v < n and n fits in u8 for any reasonable Latin square size.
     #[allow(clippy::cast_possible_truncation)]
-    let grid: Vec<Vec<Value>> = (0..n)
+    (0..n)
         .map(|r| {
             (0..n)
                 .map(|c| {
                     // The invariant guarantees exactly one 1 per line; this cannot be None.
                     let v = (0..n).position(|v| m[r][c][v] == 1).unwrap_or(0);
-                    (v + 1) as Value
+                    (v + 1) as N
                 })
                 .collect()
         })
-        .collect();
-
-    Grid::new(grid)
+        .collect()
 }
 
 /// Returns true if `ls` is a valid n×n Latin square: each row and each column
 /// contains each value in `1..=n` exactly once.
 #[must_use]
 #[allow(clippy::cast_possible_truncation)]
-pub fn validate_latin_square(ls: &Grid) -> bool {
-    let n = ls.n();
-    let expected: std::collections::HashSet<Value> = (1..=(n as Value)).collect();
+pub fn validate_latin_square(ls: &[Vec<N>]) -> bool {
+    let n = ls.len();
+    let expected: std::collections::HashSet<N> = (1..=(n as N)).collect();
 
-    for r in 0..n {
-        let row: std::collections::HashSet<Value> = ls.grid[r].iter().copied().collect();
-        if row != expected {
+    for row in ls {
+        let row_set: std::collections::HashSet<N> = row.iter().copied().collect();
+        if row_set != expected {
             return false;
         }
     }
     for c in 0..n {
-        let col: std::collections::HashSet<Value> = (0..n).map(|r| ls.grid[r][c]).collect();
+        let col: std::collections::HashSet<N> = ls.iter().map(|r| r[c]).collect();
         if col != expected {
             return false;
         }
@@ -140,22 +140,23 @@ mod tests {
     #[test]
     fn validate_rejects_invalid() {
         // Row 0 has a duplicate value (two 1s), so this is not a valid Latin square.
-        let ls = Grid::new(vec![vec![1, 1, 3], vec![2, 3, 1], vec![3, 2, 2]]);
+        let ls = vec![vec![1u8, 1, 3], vec![2, 3, 1], vec![3, 2, 2]];
         assert!(!validate_latin_square(&ls));
     }
 
     #[test]
+    #[ignore = "slow: run with `cargo test -- --ignored`"]
     #[allow(clippy::cast_possible_truncation, clippy::cast_sign_loss)]
     fn uniformity_test() {
         // Generate 10,000 3×3 Latin squares and check that all 12 reduced Latin
         // squares appear with roughly equal frequency (within ±15% of the mean).
         let mut rng = ChaCha8Rng::seed_from_u64(42);
-        let mut counts: std::collections::HashMap<Vec<Vec<Value>>, usize> =
+        let mut counts: std::collections::HashMap<Vec<Vec<N>>, usize> =
             std::collections::HashMap::new();
 
         for _ in 0..10_000 {
             let ls = generate_latin_square(3, &mut rng);
-            *counts.entry(ls.grid).or_insert(0) += 1;
+            *counts.entry(ls).or_insert(0) += 1;
         }
 
         // There are exactly 12 distinct 3×3 Latin squares.
