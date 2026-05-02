@@ -22,11 +22,13 @@ impl<S: State + Clone> Iterator for Solver<S> {
     fn next(&mut self) -> Option<S> {
         while let Some(state) = self.stack.pop() {
             if let Some(state) = state.propagate() {
-                let branches: Vec<S> = state.clone().branch().collect();
-                if branches.is_empty() {
+                let mut branches = state.clone().branch();
+                if let Some(first) = branches.next() {
+                    self.stack.push(first);
+                    self.stack.extend(branches);
+                } else {
                     return Some(state);
                 }
-                self.stack.extend(branches);
             }
         }
         None
@@ -57,9 +59,6 @@ mod tests {
     }
 
     impl State for Factoring {
-        /// Divide out all copies of `candidate` from `remaining`.
-        /// Also folds in the final prime when candidate² > remaining.
-        /// Returns `None` if the state is already invalid (remaining == 0).
         fn propagate(mut self) -> Option<Self> {
             if self.remaining == 0 {
                 return None;
@@ -68,7 +67,7 @@ mod tests {
                 self.factors.push(self.candidate);
                 self.remaining /= self.candidate;
             }
-            // If no larger candidate can divide remaining, it must be prime.
+            // Any factor of remaining must be > candidate, so remaining itself is prime.
             if (self.candidate + 1) * (self.candidate + 1) > self.remaining && self.remaining > 1 {
                 self.factors.push(self.remaining);
                 self.remaining = 1;
@@ -76,7 +75,6 @@ mod tests {
             Some(self)
         }
 
-        /// Try the next candidate factor.
         fn branch(self) -> impl Iterator<Item = Self> {
             if self.remaining == 1 {
                 return itertools::Either::Left(std::iter::empty());

@@ -195,9 +195,8 @@ impl PuzzleConstraints {
     /// # Errors
     /// Returns `Error` if any cell in any constraint is outside the grid.
     pub fn apply(&self, grid: &Grid) -> Result<ValueFilter, Error> {
-        let grid = grid.clone();
-        let a = self.cage_filter(&grid)?;
-        let b = self.all_different_filter(&grid)?;
+        let a = self.cage_filter(grid)?;
+        let b = self.all_different_filter(grid)?;
         Ok(a * b)
     }
     fn cage_filter(&self, grid: &Grid) -> Result<ValueFilter, Error> {
