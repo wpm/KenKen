@@ -1,37 +1,52 @@
 #![allow(dead_code)]
-use crate::constraints::{AllDifferent, Cage};
+use crate::constraints::{AllDifferent, Cage, Cages, PuzzleConstraints};
 use crate::grid::Grid;
-use crate::{Cell, Error, Index, Polyomino};
-use std::collections::HashMap;
+use crate::solver::State;
+use crate::{Error, Index, Polyomino, Values};
+use std::sync::Arc;
 
-/// A `KenKen` puzzle is a `Grid` along with a set of `Constraint`s.
+/// A KenKen puzzle: a candidate-value [`Grid`] paired with a fixed set of [`Constraint`]s.
+///
+/// ## Cloning during search
+///
+/// Solving requires branching — each branch needs its own copy of the puzzle state.
+/// `Puzzle` is designed so that clone is cheap:
+///
+/// - The **grid** (candidate bitmaps) is a flat `Box<[Values]>` copied in a single `memcpy`.
+/// - The **constraints** (rows, columns, cages) never change after construction, so they are
+///   stored behind an [`Arc`].  Cloning bumps a reference count rather than duplicating data.
+///   Mutating methods (e.g. [`insert_cage`](Puzzle::insert_cage)) use [`Arc::make_mut`] to
+///   copy-on-write only when necessary.
+///
+/// ## Value semantics
+///
+/// Methods that modify a `Puzzle` consume `self` and return an updated `Puzzle`, following
+/// Rust's move-by-default convention. This makes the state transitions explicit and allows the
+/// compiler to eliminate unnecessary copies.
 #[must_use]
 #[derive(Debug, Clone)]
 pub struct Puzzle {
     grid: Grid,
-    rows: Vec<AllDifferent>,
-    columns: Vec<AllDifferent>,
-    /// Maps each cell to the polyomino of the cage that covers it.
-    cage_cell: HashMap<Cell, Polyomino>,
-    /// One entry per cage, keyed by its polyomino.
-    cages: HashMap<Polyomino, Cage>,
+    constraints: Arc<PuzzleConstraints>,
 }
 
 impl Puzzle {
     /// # Errors
-    /// Returns `Err` if `n` is not in `1..=9`.
+    /// Returns `Error` if `n` is not in `1..=9`.
     pub fn new(n: Index) -> Result<Self, Error> {
         Ok(Self {
             grid: Grid::new(n)?,
-            rows: (0..n).map(|row| AllDifferent::row(n, row)).collect(),
-            columns: (0..n)
-                .map(|column| AllDifferent::column(n, column))
-                .collect(),
-            cage_cell: HashMap::new(),
-            cages: HashMap::new(),
+            constraints: Arc::new(PuzzleConstraints {
+                row: (0..n).map(|row| AllDifferent::row(n, row)).collect(),
+                column: (0..n)
+                    .map(|column| AllDifferent::column(n, column))
+                    .collect(),
+                cage: Cages::default(),
+            }),
         })
     }
 
+    /// The side length of the grid (number of rows and columns).
     #[must_use]
     pub const fn n(&self) -> Index {
         self.grid.n()
@@ -39,29 +54,12 @@ impl Puzzle {
 
     /// Returns a new puzzle with the cage inserted.
     ///
-    /// Idempotent: if the exact same cage (by polyomino) is already present, returns a clone unchanged.
+    /// Idempotent: if the exact same cage (by polyomino) is already present, returns unchanged.
     /// # Errors
-    /// Returns `Err` if any cell in the cage is already claimed by a *different* cage.
+    /// Returns `Error` if any cell in the cage is already claimed by a *different* cage.
     pub fn insert_cage(mut self, cage: Cage) -> Result<Self, Error> {
-        if self.cages.contains_key(cage.polyomino()) {
-            return Ok(self);
-        }
-        let existing = cage.cells().into_iter().find_map(|cell| {
-            self.cage_cell
-                .get(&cell)
-                .and_then(|poly| self.cages.get(poly))
-        });
-        if let Some(existing) = existing {
-            return Err(Error::CageConflict(
-                Box::new(cage),
-                Box::new(existing.clone()),
-            ));
-        }
-        let poly = cage.polyomino().clone();
-        for cell in cage.cells() {
-            self.cage_cell.insert(cell, poly.clone());
-        }
-        self.cages.insert(poly, cage);
+        let constraints = Arc::make_mut(&mut self.constraints);
+        constraints.cage = constraints.cage.clone().insert(cage)?;
         Ok(self)
     }
 
@@ -69,12 +67,43 @@ impl Puzzle {
     ///
     /// Idempotent: if no such cage exists, returns unchanged.
     pub fn remove_cage(mut self, polyomino: &Polyomino) -> Self {
-        if let Some(cage) = self.cages.remove(polyomino) {
-            for cell in cage.cells() {
-                self.cage_cell.remove(&cell);
-            }
-        }
+        let constraints = Arc::make_mut(&mut self.constraints);
+        constraints.cage = constraints.cage.clone().remove(polyomino);
         self
+    }
+}
+
+impl State for Puzzle {
+    fn propagate(self) -> Option<Self> {
+        let filter = self.constraints.apply(&self.grid).ok()?;
+        let grid = filter.apply(&self.grid).ok()?;
+        if grid.is_invalid() {
+            return None;
+        }
+        Some(Self {
+            grid,
+            constraints: self.constraints,
+        })
+    }
+
+    fn branch(self) -> impl Iterator<Item = Self> {
+        let pivot = self
+            .grid
+            .iter()
+            .filter_map(|cell| {
+                let values = self.grid.get(&cell).ok()?;
+                (!values.is_singleton()).then_some((cell, values))
+            })
+            .min_by_key(|(cell, values)| (values.len(), *cell));
+        let Some((cell, values)) = pivot else {
+            return itertools::Either::Left(std::iter::empty());
+        };
+        let constraints = self.constraints.clone();
+        let grid = self.grid;
+        itertools::Either::Right(values.iter().map(move |v| Self {
+            grid: grid.clone().set(&cell, Values::new([v])),
+            constraints: constraints.clone(),
+        }))
     }
 }
 
@@ -82,10 +111,15 @@ impl Puzzle {
 #[allow(clippy::unwrap_used)]
 mod tests {
     use super::*;
-    use crate::constraints::Operation;
+    use crate::Cell;
+    use crate::constraints::{Constraint, Operation};
+    use crate::solver::Solver;
 
     fn make_cage(cells: &[(usize, usize)], n: u8) -> Cage {
-        let cells: Vec<Cell> = cells.iter().map(|&(r, c)| Cell::new(r, c)).collect();
+        let cells: Vec<Cell> = cells
+            .iter()
+            .map(|&(row, column)| Cell::new(row, column))
+            .collect();
         Cage::new(n, Polyomino::new(&cells), Operation::Add(n))
     }
 
@@ -93,12 +127,10 @@ mod tests {
         Polyomino::new(
             &cells
                 .iter()
-                .map(|&(r, c)| Cell::new(r, c))
+                .map(|&(row, column)| Cell::new(row, column))
                 .collect::<Vec<_>>(),
         )
     }
-
-    // --- Puzzle::new ---
 
     #[test]
     fn new_returns_err_for_invalid_size() {
@@ -112,31 +144,21 @@ mod tests {
     }
 
     #[test]
-    fn new_has_no_cages() {
-        let puzzle = Puzzle::new(4).unwrap();
-        assert!(puzzle.cages.is_empty());
-        assert!(puzzle.cage_cell.is_empty());
-    }
-
-    // --- Puzzle::insert_cage ---
-
-    #[test]
-    fn insert_cage_adds_cage_and_cells() {
+    fn insert_cage_adds_cage() {
         let cage = make_cage(&[(0, 0), (0, 1)], 4);
         let poly = cage.polyomino().clone();
         let puzzle = Puzzle::new(4).unwrap().insert_cage(cage).unwrap();
-        assert!(puzzle.cages.contains_key(&poly));
-        assert!(puzzle.cage_cell.contains_key(&Cell::new(0, 0)));
-        assert!(puzzle.cage_cell.contains_key(&Cell::new(0, 1)));
+        assert!(puzzle.constraints.cage.contains(&poly));
     }
 
     #[test]
-    fn insert_cage_cell_points_to_correct_polyomino() {
+    fn insert_cage_cage_covers_correct_cells() {
         let cage = make_cage(&[(0, 0), (0, 1)], 4);
         let poly = cage.polyomino().clone();
         let puzzle = Puzzle::new(4).unwrap().insert_cage(cage).unwrap();
-        assert_eq!(puzzle.cage_cell[&Cell::new(0, 0)], poly);
-        assert_eq!(puzzle.cage_cell[&Cell::new(0, 1)], poly);
+        let cells = puzzle.constraints.cage.get(&poly).unwrap().cells();
+        assert!(cells.contains(&Cell::new(0, 0)));
+        assert!(cells.contains(&Cell::new(0, 1)));
     }
 
     #[test]
@@ -147,8 +169,7 @@ mod tests {
             .unwrap()
             .insert_cage(make_cage(&[(1, 0), (1, 1)], 4))
             .unwrap();
-        assert_eq!(puzzle.cages.len(), 2);
-        assert_eq!(puzzle.cage_cell.len(), 4);
+        assert_eq!(puzzle.constraints.cage.len(), 2);
     }
 
     #[test]
@@ -159,8 +180,7 @@ mod tests {
             .unwrap()
             .insert_cage(make_cage(&[(0, 0), (0, 1)], 4))
             .unwrap();
-        assert_eq!(puzzle.cages.len(), 1);
-        assert_eq!(puzzle.cage_cell.len(), 2);
+        assert_eq!(puzzle.constraints.cage.len(), 1);
     }
 
     #[test]
@@ -188,10 +208,8 @@ mod tests {
         }
     }
 
-    // --- Puzzle::remove_cage ---
-
     #[test]
-    fn remove_cage_removes_cage_and_cells() {
+    fn remove_cage_removes_cage() {
         let cage = make_cage(&[(0, 0), (0, 1)], 4);
         let poly = cage.polyomino().clone();
         let puzzle = Puzzle::new(4)
@@ -199,9 +217,7 @@ mod tests {
             .insert_cage(cage)
             .unwrap()
             .remove_cage(&poly);
-        assert!(!puzzle.cages.contains_key(&poly));
-        assert!(!puzzle.cage_cell.contains_key(&Cell::new(0, 0)));
-        assert!(!puzzle.cage_cell.contains_key(&Cell::new(0, 1)));
+        assert!(!puzzle.constraints.cage.contains(&poly));
     }
 
     #[test]
@@ -217,9 +233,8 @@ mod tests {
             .insert_cage(b)
             .unwrap()
             .remove_cage(&poly_a);
-        assert!(!puzzle.cages.contains_key(&poly_a));
-        assert!(puzzle.cages.contains_key(&poly_b));
-        assert!(puzzle.cage_cell.contains_key(&Cell::new(1, 0)));
+        assert!(!puzzle.constraints.cage.contains(&poly_a));
+        assert!(puzzle.constraints.cage.contains(&poly_b));
     }
 
     #[test]
@@ -239,6 +254,104 @@ mod tests {
             .remove_cage(&poly)
             .insert_cage(make_cage(&[(0, 0), (0, 1)], 4))
             .unwrap();
-        assert!(puzzle.cages.contains_key(&poly));
+        assert!(puzzle.constraints.cage.contains(&poly));
+    }
+
+    #[test]
+    fn clone_shares_constraints() {
+        let puzzle = Puzzle::new(4)
+            .unwrap()
+            .insert_cage(make_cage(&[(0, 0), (0, 1)], 4))
+            .unwrap();
+        let clone = puzzle.clone();
+        assert!(Arc::ptr_eq(&puzzle.constraints, &clone.constraints));
+    }
+
+    fn solve(puzzle: Puzzle) -> Vec<Vec<Vec<u8>>> {
+        Solver::new(puzzle)
+            .map(|p| {
+                let n = p.n();
+                (0..n)
+                    .map(|row| {
+                        (0..n)
+                            .map(|col| {
+                                p.grid
+                                    .get(&Cell::new(row, col))
+                                    .unwrap()
+                                    .iter()
+                                    .next()
+                                    .unwrap()
+                            })
+                            .collect()
+                    })
+                    .collect()
+            })
+            .collect()
+    }
+
+    fn given(row: usize, column: usize, value: u8) -> Cage {
+        let cell = Cell::new(row, column);
+        Cage::new(value, Polyomino::new(&[cell]), Operation::Given(value))
+    }
+
+    fn row_add(n: u8, row: usize, target: u8) -> Cage {
+        let cells: Vec<Cell> = (0..n as usize).map(|col| Cell::new(row, col)).collect();
+        Cage::new(n, Polyomino::new(&cells), Operation::Add(target))
+    }
+
+    #[test]
+    fn solve_1x1_singleton_solves_immediately() {
+        // 1×1 grid: the single cell is already a singleton, solved without branching.
+        let solutions = solve(Puzzle::new(1).unwrap());
+        assert_eq!(solutions, vec![vec![vec![1u8]]]);
+    }
+
+    #[test]
+    fn solve_2x2_no_solution() {
+        // Given(1) in both cells of row 0 conflicts with all-different: no valid assignment.
+        let puzzle = Puzzle::new(2)
+            .unwrap()
+            .insert_cage(given(0, 0, 1))
+            .unwrap()
+            .insert_cage(given(0, 1, 1))
+            .unwrap();
+        assert_eq!(solve(puzzle), Vec::<Vec<Vec<u8>>>::new());
+    }
+
+    #[test]
+    fn solve_2x2_one_solution() {
+        // Given(1) at (0,0): all-different forces (0,1)=2, (1,0)=2, (1,1)=1.
+        let puzzle = Puzzle::new(2).unwrap().insert_cage(given(0, 0, 1)).unwrap();
+        assert_eq!(solve(puzzle), vec![vec![vec![1, 2], vec![2, 1]]]);
+    }
+
+    #[test]
+    fn solve_2x2_multiple_solutions() {
+        // Row add-cages both requiring sum=3 admit both 2×2 latin squares.
+        // DFS with LIFO stack pops the highest-value branch first, so [[2,1],[1,2]] is found first.
+        let puzzle = Puzzle::new(2)
+            .unwrap()
+            .insert_cage(row_add(2, 0, 3))
+            .unwrap()
+            .insert_cage(row_add(2, 1, 3))
+            .unwrap();
+        assert_eq!(
+            solve(puzzle),
+            vec![vec![vec![2, 1], vec![1, 2]], vec![vec![1, 2], vec![2, 1]],]
+        );
+    }
+
+    #[test]
+    fn solve_2x2_partial_coverage_same_solutions_as_full_coverage() {
+        // Only row 0 is caged; row 1 is unconstrained by any cage.
+        // All-different alone determines the rest: same two solutions as the fully-caged case.
+        let puzzle = Puzzle::new(2)
+            .unwrap()
+            .insert_cage(row_add(2, 0, 3))
+            .unwrap();
+        assert_eq!(
+            solve(puzzle),
+            vec![vec![vec![2, 1], vec![1, 2]], vec![vec![1, 2], vec![2, 1]],]
+        );
     }
 }

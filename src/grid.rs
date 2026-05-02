@@ -3,7 +3,7 @@
 use crate::Error::InvalidCell;
 use crate::types::{Cell, Error, Values};
 
-/// A `KenKen` grid mapping each cell to its set of candidate values.
+/// A KenKen grid mapping each cell to its set of candidate values.
 ///
 /// Stored as a single flat allocation of `n×n` [`Values`] in row-major order,
 /// so cloning is one `memcpy`.
@@ -17,7 +17,7 @@ pub struct Grid {
 impl Grid {
     /// Creates an n×n grid where every cell contains the values `1..=n`.
     /// # Errors
-    /// Returns `Err` if `n` is not in `1..=9`.
+    /// Returns `Error` if `n` is not in `1..=9`.
     pub fn new(n: usize) -> Result<Self, Error> {
         if !(1..=9).contains(&n) {
             return Err(Error::InvalidGridSize(n));
@@ -36,7 +36,7 @@ impl Grid {
 
     /// Returns the candidate values for `cell`.
     /// # Errors
-    /// Returns `Err` if `cell` is outside the grid bounds.
+    /// Returns `Error` if `cell` is outside the grid bounds.
     pub fn get(&self, cell: &Cell) -> Result<Values, Error> {
         self.index(cell)
             .map(|i| self.cells[i])
@@ -49,6 +49,22 @@ impl Grid {
             self.cells[i] = values;
         }
         self
+    }
+
+    #[must_use]
+    pub fn is_solved(&self) -> bool {
+        self.cells.iter().all(|values| values.is_singleton())
+    }
+
+    #[must_use]
+    pub fn is_invalid(&self) -> bool {
+        self.cells.iter().any(|values| values.is_empty())
+    }
+
+    /// Iterates over all cells in row-major order.
+    pub fn iter(&self) -> impl Iterator<Item = Cell> {
+        let n = self.n;
+        (0..n).flat_map(move |row| (0..n).map(move |column| Cell::new(row, column)))
     }
 
     const fn index(&self, cell: &Cell) -> Option<usize> {
@@ -131,5 +147,63 @@ mod tests {
     fn cells_are_contiguous() {
         let g = Grid::new(3).unwrap();
         assert_eq!(g.cells.len(), 9);
+    }
+
+    fn solved_grid(n: usize) -> Grid {
+        let mut g = Grid::new(n).unwrap();
+        for row in 0..n {
+            for col in 0..n {
+                g = g.set(
+                    &Cell::new(row, col),
+                    Values::new([u8::try_from((row + col) % n + 1).unwrap()]),
+                );
+            }
+        }
+        g
+    }
+
+    #[test]
+    fn is_solved_false_for_fresh_grid() {
+        assert!(!Grid::new(3).unwrap().is_solved());
+    }
+
+    #[test]
+    fn is_solved_true_when_all_cells_are_singletons() {
+        assert!(solved_grid(3).is_solved());
+    }
+
+    #[test]
+    fn is_solved_false_when_one_cell_has_multiple_values() {
+        let g = solved_grid(3).set(&Cell::new(0, 0), Values::new([1, 2]));
+        assert!(!g.is_solved());
+    }
+
+    #[test]
+    fn is_invalid_false_for_fresh_grid() {
+        assert!(!Grid::new(3).unwrap().is_invalid());
+    }
+
+    #[test]
+    fn is_invalid_false_for_solved_grid() {
+        assert!(!solved_grid(3).is_invalid());
+    }
+
+    #[test]
+    fn is_invalid_true_when_one_cell_is_empty() {
+        let g = Grid::new(3)
+            .unwrap()
+            .set(&Cell::new(1, 1), Values::default());
+        assert!(g.is_invalid());
+    }
+
+    #[test]
+    fn is_invalid_true_when_all_cells_are_empty() {
+        let mut g = Grid::new(2).unwrap();
+        for row in 0..2 {
+            for col in 0..2 {
+                g = g.set(&Cell::new(row, col), Values::default());
+            }
+        }
+        assert!(g.is_invalid());
     }
 }

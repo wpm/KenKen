@@ -5,7 +5,8 @@ pub type N = u8;
 /// Possible product of cell values: a number in the range `1..=9 * 9 * 9`.
 pub type M = u16;
 
-/// A cell in a `KenKen` grid, identified by 0-based row and column `Index` values in row-major order.
+/// A cell in a KenKen grid, identified by 0-based row and column `Index` values in row-major order.
+#[must_use]
 #[derive(Ord, Eq, PartialEq, PartialOrd, Debug, Copy, Clone, Hash)]
 pub struct Cell {
     pub row: Index,
@@ -13,7 +14,6 @@ pub struct Cell {
 }
 
 impl Cell {
-    #[must_use]
     pub const fn new(row: Index, column: Index) -> Self {
         Self { row, column }
     }
@@ -50,6 +50,21 @@ impl Values {
     #[must_use]
     pub const fn is_empty(self) -> bool {
         self.0 == 0
+    }
+
+    /// Returns true if exactly one value is set.
+    ///
+    /// Values are stored in bits 1–9 of a `u16`, so exactly one value set means exactly one bit
+    /// is set, which is equivalent to the inner integer being a power of two.
+    #[must_use]
+    pub const fn is_singleton(self) -> bool {
+        self.0.is_power_of_two()
+    }
+
+    /// Returns the number of candidate values in the set.
+    #[must_use]
+    pub const fn len(self) -> u32 {
+        self.0.count_ones()
     }
 
     /// Returns a new `Values` with `n` removed.
@@ -136,5 +151,23 @@ mod tests {
     #[test]
     fn cell_ordering_is_row_major() {
         assert!(Cell::new(0, 1) < Cell::new(1, 0));
+    }
+
+    #[test]
+    fn is_singleton_true_for_single_value() {
+        assert!(Values::new([1]).is_singleton());
+        assert!(Values::new([5]).is_singleton());
+        assert!(Values::new([9]).is_singleton());
+    }
+
+    #[test]
+    fn is_singleton_false_for_empty() {
+        assert!(!Values::default().is_singleton());
+    }
+
+    #[test]
+    fn is_singleton_false_for_multiple_values() {
+        assert!(!Values::new([1, 2]).is_singleton());
+        assert!(!Values::full(4).is_singleton());
     }
 }

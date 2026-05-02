@@ -1,18 +1,23 @@
 use crate::Cell;
 
 /// All cells in a single row of an `n`×`n` grid.
+#[must_use]
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct Row {
     n: usize,
     row: usize,
 }
 
 /// All cells in a single column of an `n`×`n` grid.
+#[must_use]
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct Column {
     n: usize,
     column: usize,
 }
 
 /// An arbitrary set of cells forming a polyomino, stored in sorted order without duplicates.
+#[must_use]
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct Polyomino(Vec<Cell>);
 
@@ -37,12 +42,16 @@ impl Cells for Column {
 
 impl Polyomino {
     /// Creates a `Polyomino` from a slice of cells, sorting and deduplicating them.
-    #[must_use]
     pub fn new(cells: &[Cell]) -> Self {
         let mut cells = cells.to_vec();
         cells.sort();
         cells.dedup();
         Self(cells)
+    }
+
+    /// Returns the cells as a slice.
+    pub fn as_slice(&self) -> &[Cell] {
+        &self.0
     }
 
     #[must_use]
