@@ -3,6 +3,7 @@
 use crate::Error::InvalidCell;
 use crate::arithmetic::cage_tuples;
 use crate::regin::regin;
+use crate::tiling::Tiling;
 use crate::{Cell, Error, Grid, Index, M, N, Polyomino, Values};
 use itertools::Itertools;
 use std::collections::HashMap;
@@ -218,36 +219,48 @@ impl PuzzleConstraints {
     }
 }
 
-/// The set of [`Cage`] constraints for a puzzle, keyed by polyomino.
+/// The set of [`Cage`] constraints for a puzzle, backed by a [`Tiling`] that tracks cell
+/// coverage and a `HashMap` from polyomino to cage data.
 ///
-/// A cell may belong to at most one cage. Conflict detection on insert is O(n) in the number
-/// of cages, which is acceptable because cages are only added at construction time.
+/// A cell may belong to at most one cage. Conflict detection on insert scans the new cage's
+/// cells against the tiling, which is acceptable because cages are only added at construction
+/// time.
 #[must_use]
-#[derive(Debug, Clone, Default)]
-pub struct Cages(HashMap<Polyomino, Cage>);
+#[derive(Debug, Clone)]
+pub struct Cages {
+    tiling: Tiling,
+    data: HashMap<Polyomino, Cage>,
+}
 
 impl Cages {
+    /// Creates an empty `Cages` for an `n`×`n` grid.
+    pub fn empty(n: Index) -> Self {
+        Self {
+            tiling: Tiling::empty(n),
+            data: HashMap::new(),
+        }
+    }
+
     /// Returns a new cage set with the cage inserted.
     ///
     /// Idempotent: if the exact same cage (by polyomino) is already present, returns unchanged.
     /// # Errors
     /// Returns `Error` if any cell in the cage is already claimed by a *different* cage.
     pub fn insert(mut self, cage: Cage) -> Result<Self, Error> {
-        if self.0.contains_key(cage.polyomino()) {
+        if self.data.contains_key(cage.polyomino()) {
             return Ok(self);
         }
-        let new_cells: std::collections::HashSet<Cell> = cage.cells().iter().copied().collect();
-        let existing = self
-            .0
-            .values()
-            .find(|c| c.cells().iter().any(|cell| new_cells.contains(cell)));
-        if let Some(existing) = existing {
-            return Err(Error::CageConflict(
-                Box::new(cage),
-                Box::new(existing.clone()),
-            ));
+        for cell in cage.cells() {
+            if let Some(existing_poly) = self.tiling.find_cell(*cell) {
+                let existing = self.data[existing_poly].clone();
+                return Err(Error::CageConflict(
+                    Box::new(cage),
+                    Box::new(existing),
+                ));
+            }
         }
-        self.0.insert(cage.polyomino().clone(), cage);
+        self.tiling.insert(cage.polyomino().clone());
+        self.data.insert(cage.polyomino().clone(), cage);
         Ok(self)
     }
 
@@ -255,32 +268,33 @@ impl Cages {
     ///
     /// Idempotent: if no such cage exists, returns unchanged.
     pub fn remove(mut self, polyomino: &Polyomino) -> Self {
-        self.0.remove(polyomino);
+        self.tiling.remove(polyomino);
+        self.data.remove(polyomino);
         self
     }
 
     #[must_use]
     pub fn get(&self, polyomino: &Polyomino) -> Option<&Cage> {
-        self.0.get(polyomino)
+        self.data.get(polyomino)
     }
 
     #[must_use]
     pub fn contains(&self, polyomino: &Polyomino) -> bool {
-        self.0.contains_key(polyomino)
+        self.data.contains_key(polyomino)
     }
 
     #[must_use]
     pub fn len(&self) -> usize {
-        self.0.len()
+        self.data.len()
     }
 
     #[must_use]
     pub fn is_empty(&self) -> bool {
-        self.0.is_empty()
+        self.data.is_empty()
     }
 
     fn values(&self) -> impl Iterator<Item = &Cage> {
-        self.0.values()
+        self.data.values()
     }
 }
 
