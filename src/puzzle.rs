@@ -344,7 +344,7 @@ mod tests {
     #[test]
     fn solve_2x2_partial_coverage_same_solutions_as_full_coverage() {
         // Only row 0 is caged; row 1 is unconstrained by any cage.
-        // All-different alone determines the rest: same two solutions as the fully-caged case.
+        // All-different alone determines the rest: same two solutions as the fully caged case.
         let puzzle = Puzzle::new(2)
             .unwrap()
             .insert_cage(row_add(2, 0, 3))
