@@ -252,6 +252,10 @@ impl Cages {
         }
         for cell in cage.cells() {
             if let Some(existing_poly) = self.tiling.find_cell(*cell) {
+                debug_assert!(
+                    self.data.contains_key(existing_poly),
+                    "Cages tiling and data are out of sync: {existing_poly:?} in tiling but not in data",
+                );
                 let existing = self.data[existing_poly].clone();
                 return Err(Error::CageConflict(Box::new(cage), Box::new(existing)));
             }

@@ -115,25 +115,21 @@ impl Tiling {
             let seed = uncovered[rng.random_range(0..uncovered.len())];
             let target_size = dist.sample(rng);
 
-            let mut cells: Vec<Cell> = vec![seed];
-            let mut cells_set: HashSet<Cell> = HashSet::new();
-            cells_set.insert(seed);
+            let mut cells: HashSet<Cell> = HashSet::new();
+            cells.insert(seed);
+            // Frontier may contain duplicates; dedup happens on pop via the cells/covered checks.
             let mut frontier: Vec<Cell> = grid_neighbors(seed, n)
                 .filter(|c| !covered.contains(c))
                 .collect();
-            let mut frontier_set: HashSet<Cell> = frontier.iter().copied().collect();
 
             while cells.len() < target_size && !frontier.is_empty() {
                 let pick_idx = rng.random_range(0..frontier.len());
                 let pick = frontier.swap_remove(pick_idx);
-                frontier_set.remove(&pick);
-                cells.push(pick);
-                cells_set.insert(pick);
+                if !cells.insert(pick) {
+                    continue;
+                }
                 for neighbor in grid_neighbors(pick, n) {
-                    if !covered.contains(&neighbor)
-                        && !cells_set.contains(&neighbor)
-                        && frontier_set.insert(neighbor)
-                    {
+                    if !covered.contains(&neighbor) && !cells.contains(&neighbor) {
                         frontier.push(neighbor);
                     }
                 }
@@ -142,6 +138,7 @@ impl Tiling {
             for c in &cells {
                 covered.insert(*c);
             }
+            let cells: Vec<Cell> = cells.into_iter().collect();
             tiling.polyominos.insert(Polyomino::new(&cells));
         }
 
@@ -198,6 +195,11 @@ impl Tiling {
 
     /// Merges two adjacent polyominos, builds a random spanning tree of the union, removes
     /// a random edge, and re-splits the tree into two polyominos.
+    ///
+    /// The spanning tree is built by randomized DFS, which does not sample uniformly from
+    /// the set of spanning trees of the merged region; the resulting split distribution is
+    /// biased toward those reachable by DFS. Use Wilson's algorithm if uniform sampling is
+    /// required.
     ///
     /// # Errors
     /// [`Error::PolyominosNotAdjacent`] if `p1 == p2`, either polyomino is not in this
