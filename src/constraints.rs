@@ -182,7 +182,7 @@ impl Mul for ValueFilter {
 
 /// The set of constraints for a single KenKen puzzle.
 ///
-/// Stored behind an [`Arc`] so that cloning a [`Puzzle`] during search shares this allocation
+/// Stored behind an [`std::sync::Arc`] so that cloning a [`crate::puzzle::Puzzle`] during search shares this allocation
 /// instead of duplicating it.
 #[derive(Debug, Clone)]
 pub struct PuzzleConstraints {

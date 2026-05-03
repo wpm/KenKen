@@ -5,7 +5,7 @@ use crate::solver::State;
 use crate::{Error, Index, Polyomino, Values};
 use std::sync::Arc;
 
-/// A KenKen puzzle: a candidate-value [`Grid`] paired with a fixed set of [`Constraint`]s.
+/// A KenKen puzzle: a candidate-value [`Grid`] paired with a fixed set of [`PuzzleConstraints`].
 ///
 /// ## Cloning during search
 ///
