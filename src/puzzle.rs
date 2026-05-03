@@ -41,7 +41,7 @@ impl Puzzle {
                 column: (0..n)
                     .map(|column| AllDifferent::column(n, column))
                     .collect(),
-                cage: Cages::default(),
+                cage: Cages::empty(n),
             }),
         })
     }

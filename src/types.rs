@@ -17,6 +17,19 @@ impl Cell {
     pub const fn new(row: Index, column: Index) -> Self {
         Self { row, column }
     }
+
+    /// The (up to four) 4-adjacent cells, with no upper bound check.
+    /// Cells off the top or left edge are filtered; cells off the bottom or right are not.
+    pub fn neighbors_4(self) -> impl Iterator<Item = Self> {
+        [
+            self.row.checked_sub(1).map(|r| Self::new(r, self.column)),
+            Some(Self::new(self.row + 1, self.column)),
+            self.column.checked_sub(1).map(|c| Self::new(self.row, c)),
+            Some(Self::new(self.row, self.column + 1)),
+        ]
+        .into_iter()
+        .flatten()
+    }
 }
 /// A 0-based row or column index.
 pub type Index = usize;
@@ -104,6 +117,14 @@ pub enum Error {
     InvalidCell(Cell),
     /// A new cage conflicts with an existing cage: `(new_cage, existing_cage)`.
     CageConflict(Box<crate::constraints::Cage>, Box<crate::constraints::Cage>),
+    /// A tiling operation referenced a cell that no polyomino covers.
+    CellNotCovered(Cell),
+    /// A flip would leave the source polyomino disconnected.
+    FlipWouldDisconnect(Cell),
+    /// A flip target polyomino has no cell 4-adjacent to the cell being flipped.
+    TargetNotAdjacent,
+    /// Two polyominos passed to `merge_split` are not 4-adjacent.
+    PolyominosNotAdjacent,
 }
 
 #[cfg(test)]
