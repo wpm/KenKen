@@ -332,11 +332,7 @@ fn random_spanning_tree<R: Rng>(cells: &[Cell], rng: &mut R) -> Vec<(Cell, Cell)
 
 /// Returns the connected component containing `start` in the tree given by `edges`,
 /// excluding `edges[excluded_idx]`.
-fn tree_component(
-    start: Cell,
-    edges: &[(Cell, Cell)],
-    excluded_idx: usize,
-) -> HashSet<Cell> {
+fn tree_component(start: Cell, edges: &[(Cell, Cell)], excluded_idx: usize) -> HashSet<Cell> {
     let mut adj: HashMap<Cell, Vec<Cell>> = HashMap::new();
     for (i, &(a, b)) in edges.iter().enumerate() {
         if i == excluded_idx {
@@ -411,8 +407,10 @@ mod tests {
     }
 
     fn cells_of(t: &Tiling) -> Vec<Cell> {
-        let mut cells: Vec<Cell> =
-            t.polyominos().flat_map(|p| p.as_slice().iter().copied()).collect();
+        let mut cells: Vec<Cell> = t
+            .polyominos()
+            .flat_map(|p| p.as_slice().iter().copied())
+            .collect();
         cells.sort();
         cells
     }

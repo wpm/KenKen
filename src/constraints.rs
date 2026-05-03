@@ -253,10 +253,7 @@ impl Cages {
         for cell in cage.cells() {
             if let Some(existing_poly) = self.tiling.find_cell(*cell) {
                 let existing = self.data[existing_poly].clone();
-                return Err(Error::CageConflict(
-                    Box::new(cage),
-                    Box::new(existing),
-                ));
+                return Err(Error::CageConflict(Box::new(cage), Box::new(existing)));
             }
         }
         self.tiling.insert(cage.polyomino().clone());
