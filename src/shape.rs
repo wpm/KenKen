@@ -104,7 +104,7 @@ impl Polyomino {
             return Err(Error::CellNotCovered(cell));
         }
         if self.0.len() == 1 {
-            return Err(Error::RemovalWouldEmptyPolyomino);
+            return Err(Error::RemovalWouldEmptyPolyomino(cell));
         }
         let mut remaining = self.0.clone();
         remaining.retain(|c| *c != cell);
@@ -277,6 +277,6 @@ mod tests {
     fn without_errors_on_single_cell_polyomino() {
         let p = Polyomino::new(&[Cell::new(0, 0)]);
         let r = p.without(Cell::new(0, 0));
-        assert!(matches!(r, Err(Error::RemovalWouldEmptyPolyomino)));
+        assert!(matches!(r, Err(Error::RemovalWouldEmptyPolyomino(_))));
     }
 }
