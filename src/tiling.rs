@@ -200,52 +200,26 @@ impl Tiling {
         Ok(())
     }
 
-    /// Merges two adjacent polyominos, builds a random spanning tree of the union, removes
-    /// a random edge, and re-splits the tree into two polyominos.
-    ///
-    /// The spanning tree is built by randomized DFS, which does not sample uniformly from
-    /// the set of spanning trees of the merged region; the resulting split distribution is
-    /// biased toward those reachable by DFS. Use Wilson's algorithm if uniform sampling is
-    /// required.
+    /// Replaces `p1` and `p2` in this tiling with the pair returned by
+    /// [`random_merge_split`]; see that function for the splitting algorithm.
     ///
     /// # Errors
-    /// [`Error::PolyominosNotAdjacent`] if `p1 == p2`, either polyomino is not in this
-    /// tiling, or no cell of `p1` is 4-adjacent to a cell of `p2`.
+    /// [`Error::PolyominosNotAdjacent`] if either polyomino is not in this tiling, or
+    /// for any reason [`random_merge_split`] returns it.
     pub fn merge_split<R: Rng>(
         &mut self,
         p1: &Polyomino,
         p2: &Polyomino,
         rng: &mut R,
     ) -> Result<(), Error> {
-        if p1 == p2 || !self.contains(p1) || !self.contains(p2) {
+        if !self.contains(p1) || !self.contains(p2) {
             return Err(Error::PolyominosNotAdjacent);
         }
-        if !are_adjacent(p1, p2) {
-            return Err(Error::PolyominosNotAdjacent);
-        }
-
-        let merged: Vec<Cell> = p1
-            .as_slice()
-            .iter()
-            .chain(p2.as_slice().iter())
-            .copied()
-            .collect();
-
-        let edges = random_spanning_tree(&merged, rng);
-        let cut = rng.random_range(0..edges.len());
-        let (a, _) = edges[cut];
-        let component_a = tree_component(a, &edges, cut);
-        let cells_a: Vec<Cell> = component_a.iter().copied().collect();
-        let cells_b: Vec<Cell> = merged
-            .iter()
-            .copied()
-            .filter(|c| !component_a.contains(c))
-            .collect();
-
+        let (q1, q2) = random_merge_split(p1, p2, rng)?;
         self.polyominos.remove(p1);
         self.polyominos.remove(p2);
-        self.polyominos.insert(Polyomino::new(&cells_a));
-        self.polyominos.insert(Polyomino::new(&cells_b));
+        self.polyominos.insert(q1);
+        self.polyominos.insert(q2);
         Ok(())
     }
 
@@ -301,6 +275,47 @@ impl Tiling {
         let p2 = polys[j].clone();
         self.merge_split(&p1, &p2, rng).is_ok()
     }
+}
+
+/// Merges two adjacent polyominos, builds a random spanning tree of the union,
+/// removes a random edge, and returns the two resulting polyominos.
+///
+/// The spanning tree is built by randomized DFS, which does not sample uniformly from
+/// the set of spanning trees of the merged region; the resulting split distribution is
+/// biased toward those reachable by DFS. Use Wilson's algorithm if uniform sampling is
+/// required.
+///
+/// # Errors
+/// Returns [`Error::PolyominosNotAdjacent`] if `p1 == p2` or no cell of `p1` is
+/// 4-adjacent to a cell of `p2`.
+pub fn random_merge_split<R: Rng>(
+    p1: &Polyomino,
+    p2: &Polyomino,
+    rng: &mut R,
+) -> Result<(Polyomino, Polyomino), Error> {
+    if p1 == p2 || !are_adjacent(p1, p2) {
+        return Err(Error::PolyominosNotAdjacent);
+    }
+
+    let merged: Vec<Cell> = p1
+        .as_slice()
+        .iter()
+        .chain(p2.as_slice().iter())
+        .copied()
+        .collect();
+
+    let edges = random_spanning_tree(&merged, rng);
+    let cut = rng.random_range(0..edges.len());
+    let (a, _) = edges[cut];
+    let component_a = tree_component(a, &edges, cut);
+    let cells_a: Vec<Cell> = component_a.iter().copied().collect();
+    let cells_b: Vec<Cell> = merged
+        .iter()
+        .copied()
+        .filter(|c| !component_a.contains(c))
+        .collect();
+
+    Ok((Polyomino::new(&cells_a), Polyomino::new(&cells_b)))
 }
 
 /// In-bounds 4-neighbors of `cell` in an `n`×`n` grid.
@@ -763,5 +778,67 @@ mod tests {
         assert!(!t.random_merge_split(&mut r));
         t.insert(poly(&[(0, 0)]));
         assert!(!t.random_merge_split(&mut r));
+    }
+
+    #[test]
+    fn free_random_merge_split_preserves_union_of_cells() {
+        let p1 = poly(&[(0, 0), (0, 1), (0, 2)]);
+        let p2 = poly(&[(1, 0), (1, 1), (1, 2)]);
+        let mut r = rng();
+        let (q1, q2) = random_merge_split(&p1, &p2, &mut r).unwrap();
+        let expected: HashSet<Cell> = p1
+            .as_slice()
+            .iter()
+            .chain(p2.as_slice().iter())
+            .copied()
+            .collect();
+        let got: HashSet<Cell> = q1
+            .as_slice()
+            .iter()
+            .chain(q2.as_slice().iter())
+            .copied()
+            .collect();
+        assert_eq!(got, expected);
+    }
+
+    #[test]
+    fn free_random_merge_split_returns_connected_polyominos() {
+        let p1 = poly(&[(0, 0), (0, 1), (0, 2)]);
+        let p2 = poly(&[(1, 0), (1, 1), (1, 2)]);
+        let mut r = rng();
+        let (q1, q2) = random_merge_split(&p1, &p2, &mut r).unwrap();
+        assert!(!q1.is_empty());
+        assert!(!q2.is_empty());
+        assert!(is_connected(q1.as_slice()));
+        assert!(is_connected(q2.as_slice()));
+    }
+
+    #[test]
+    fn free_random_merge_split_same_polyomino_is_err() {
+        let p = poly(&[(0, 0), (0, 1), (0, 2)]);
+        let mut r = rng();
+        let res = random_merge_split(&p, &p, &mut r);
+        assert!(matches!(res, Err(Error::PolyominosNotAdjacent)));
+    }
+
+    #[test]
+    fn free_random_merge_split_non_adjacent_is_err() {
+        let p1 = poly(&[(0, 0), (0, 1), (0, 2)]);
+        let p2 = poly(&[(2, 0), (2, 1), (2, 2)]);
+        let mut r = rng();
+        let res = random_merge_split(&p1, &p2, &mut r);
+        assert!(matches!(res, Err(Error::PolyominosNotAdjacent)));
+    }
+
+    #[test]
+    fn free_random_merge_split_is_deterministic_with_same_seed() {
+        let p1 = poly(&[(0, 0), (0, 1), (0, 2)]);
+        let p2 = poly(&[(1, 0), (1, 1), (1, 2)]);
+        let mut r1 = ChaCha8Rng::seed_from_u64(123);
+        let mut r2 = ChaCha8Rng::seed_from_u64(123);
+        let (a1, a2) = random_merge_split(&p1, &p2, &mut r1).unwrap();
+        let (b1, b2) = random_merge_split(&p1, &p2, &mut r2).unwrap();
+        assert_eq!(a1, b1);
+        assert_eq!(a2, b2);
     }
 }
