@@ -205,7 +205,7 @@ impl Tiling {
     ///
     /// # Errors
     /// [`Error::PolyominosNotAdjacent`] if either polyomino is not in this tiling, or
-    /// for any reason [`random_merge_split`] returns it.
+    /// any condition listed in [`random_merge_split`]'s errors holds.
     pub fn merge_split<R: Rng>(
         &mut self,
         p1: &Polyomino,
