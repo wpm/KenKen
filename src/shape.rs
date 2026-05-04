@@ -81,9 +81,8 @@ impl Polyomino {
     /// - [`Error::CellAlreadyInPolyomino`] if `cell` is already in `self`.
     /// - [`Error::TargetNotAdjacent`] if `cell` is not 4-adjacent to any cell of `self`.
     pub fn extend(&self, cell: Cell) -> Result<Self, Error> {
-        let pos = match self.0.binary_search(&cell) {
-            Ok(_) => return Err(Error::CellAlreadyInPolyomino(cell)),
-            Err(pos) => pos,
+        let Err(pos) = self.0.binary_search(&cell) else {
+            return Err(Error::CellAlreadyInPolyomino(cell));
         };
         if !cell.neighbors_4().any(|n| self.contains_cell(n)) {
             return Err(Error::TargetNotAdjacent);
@@ -150,6 +149,7 @@ pub fn is_connected_set<S: std::hash::BuildHasher>(cells: &HashSet<Cell, S>) -> 
 }
 
 #[cfg(test)]
+#[allow(clippy::unwrap_used)]
 mod tests {
     use super::*;
 
@@ -222,7 +222,10 @@ mod tests {
     fn extend_adds_adjacent_cell_to_single_cell_polyomino() {
         let p = Polyomino::new(&[Cell::new(0, 0)]);
         let extended = p.extend(Cell::new(0, 1)).unwrap();
-        assert_eq!(extended, Polyomino::new(&[Cell::new(0, 0), Cell::new(0, 1)]));
+        assert_eq!(
+            extended,
+            Polyomino::new(&[Cell::new(0, 0), Cell::new(0, 1)])
+        );
     }
 
     #[test]
