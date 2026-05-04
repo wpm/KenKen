@@ -127,6 +127,10 @@ pub enum Error {
     TargetNotAdjacent,
     /// Two polyominos passed to `merge_split` are not 4-adjacent.
     PolyominosNotAdjacent,
+    /// A cell passed to `Polyomino::extend` is already in the polyomino.
+    CellAlreadyInPolyomino(Cell),
+    /// A `Polyomino::without` call would remove the only remaining cell.
+    RemovalWouldEmptyPolyomino,
 }
 
 #[cfg(test)]

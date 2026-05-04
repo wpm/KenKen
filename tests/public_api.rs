@@ -233,6 +233,15 @@ fn random_merge_split_is_public() {
 }
 
 #[test]
+fn polyomino_extend_and_without_are_public() {
+    let p = Polyomino::new(&[Cell::new(0, 0), Cell::new(0, 1)]);
+    let extended = p.extend(Cell::new(0, 2)).unwrap();
+    assert_eq!(extended.as_slice().len(), 3);
+    let shrunk = extended.without(Cell::new(0, 2)).unwrap();
+    assert_eq!(shrunk, p);
+}
+
+#[test]
 fn puzzle_cage_accessors_are_reachable() {
     let p = Puzzle::new(2)
         .unwrap()
