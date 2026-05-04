@@ -1,3 +1,5 @@
+#![allow(dead_code)]
+
 use std::ops::{BitAnd, BitOr};
 
 /// Possible cell value: a number in the range `1..=9`.

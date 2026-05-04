@@ -1,11 +1,11 @@
 #![allow(dead_code)]
 
-use crate::shape::is_connected_set;
-use crate::{Cell, Error, Polyomino};
+use crate::shape::{Polyomino, is_connected_set};
+use crate::types::{Cell, Error};
 use rand::{Rng, RngExt};
 use std::collections::{HashMap, HashSet};
 
-/// Distribution over target polyomino sizes used by [`Tiling::greedy`].
+/// Distribution over target cage sizes used by [`crate::generate_with`].
 #[derive(Debug, Clone, Copy)]
 pub enum SizeDistribution {
     /// Every polyomino has the same target size.
@@ -62,6 +62,12 @@ impl Tiling {
 
     pub fn polyominos(&self) -> impl Iterator<Item = &Polyomino> {
         self.polyominos.iter()
+    }
+
+    /// Consumes the tiling, yielding owned polyominos. Use when the caller is the last owner
+    /// and would otherwise have to clone each polyomino out of the borrowing iterator.
+    pub fn into_polyominos(self) -> impl Iterator<Item = Polyomino> {
+        self.polyominos.into_iter()
     }
 
     #[must_use]

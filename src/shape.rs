@@ -1,4 +1,6 @@
-use crate::Cell;
+#![allow(dead_code)]
+
+use crate::types::Cell;
 use std::collections::HashSet;
 
 /// All cells in a single row of an `n`×`n` grid.

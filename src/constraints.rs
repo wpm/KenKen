@@ -1,10 +1,12 @@
 #![allow(dead_code)]
 
-use crate::Error::InvalidCell;
 use crate::arithmetic::cage_tuples;
+use crate::grid::Grid;
 use crate::regin::regin;
+use crate::shape::Polyomino;
 use crate::tiling::Tiling;
-use crate::{Cell, Error, Grid, Index, M, N, Polyomino, Values};
+use crate::types::Error::InvalidCell;
+use crate::types::{Cell, Error, Index, M, N, Values};
 use itertools::Itertools;
 use std::collections::HashMap;
 use std::ops::Mul;
@@ -68,7 +70,7 @@ pub struct Cage {
 impl Cage {
     /// Creates a polyomino over the given cells, computing valid tuples from the operation.
     pub fn new(n: N, polyomino: Polyomino, operation: Operation) -> Self {
-        let tuples = cage_tuples(n, polyomino.len(), &operation);
+        let tuples = cage_tuples(n, polyomino.len(), operation);
         Self {
             polyomino,
             operation,
