@@ -1,6 +1,6 @@
 #![allow(dead_code)]
 
-use crate::types::Cell;
+use crate::types::{Cell, Error};
 use std::collections::HashSet;
 
 /// All cells in a single row of an `n`×`n` grid.
@@ -73,6 +73,46 @@ impl Polyomino {
     #[must_use]
     pub fn contains_cell(&self, cell: Cell) -> bool {
         self.0.binary_search(&cell).is_ok()
+    }
+
+    /// Returns a new polyomino containing every cell of `self` plus `cell`.
+    ///
+    /// # Errors
+    /// - [`Error::CellAlreadyInPolyomino`] if `cell` is already in `self`.
+    /// - [`Error::TargetNotAdjacent`] if `cell` is not 4-adjacent to any cell of `self`.
+    pub fn extend(&self, cell: Cell) -> Result<Self, Error> {
+        let pos = match self.0.binary_search(&cell) {
+            Ok(_) => return Err(Error::CellAlreadyInPolyomino(cell)),
+            Err(pos) => pos,
+        };
+        if !cell.neighbors_4().any(|n| self.contains_cell(n)) {
+            return Err(Error::TargetNotAdjacent);
+        }
+        let mut cells = self.0.clone();
+        cells.insert(pos, cell);
+        Ok(Self(cells))
+    }
+
+    /// Returns a new polyomino containing every cell of `self` except `cell`.
+    ///
+    /// # Errors
+    /// - [`Error::CellNotCovered`] if `cell` is not in `self`.
+    /// - [`Error::RemovalWouldEmptyPolyomino`] if `self` has only one cell.
+    /// - [`Error::FlipWouldDisconnect`] if removal would leave the remaining cells
+    ///   disconnected.
+    pub fn without(&self, cell: Cell) -> Result<Self, Error> {
+        if !self.contains_cell(cell) {
+            return Err(Error::CellNotCovered(cell));
+        }
+        if self.0.len() == 1 {
+            return Err(Error::RemovalWouldEmptyPolyomino);
+        }
+        let mut remaining = self.0.clone();
+        remaining.retain(|c| *c != cell);
+        if !is_connected(&remaining) {
+            return Err(Error::FlipWouldDisconnect(cell));
+        }
+        Ok(Self(remaining))
     }
 }
 
@@ -176,5 +216,64 @@ mod tests {
     #[test]
     fn is_connected_diagonal_is_false() {
         assert!(!is_connected(&[Cell::new(0, 0), Cell::new(1, 1)]));
+    }
+
+    #[test]
+    fn extend_adds_adjacent_cell_to_single_cell_polyomino() {
+        let p = Polyomino::new(&[Cell::new(0, 0)]);
+        let extended = p.extend(Cell::new(0, 1)).unwrap();
+        assert_eq!(extended, Polyomino::new(&[Cell::new(0, 0), Cell::new(0, 1)]));
+    }
+
+    #[test]
+    fn extend_adds_adjacent_cell_to_multi_cell_polyomino() {
+        let p = Polyomino::new(&[Cell::new(0, 0), Cell::new(0, 1)]);
+        let extended = p.extend(Cell::new(1, 1)).unwrap();
+        assert_eq!(
+            extended,
+            Polyomino::new(&[Cell::new(0, 0), Cell::new(0, 1), Cell::new(1, 1)])
+        );
+    }
+
+    #[test]
+    fn extend_errors_on_non_adjacent_cell() {
+        let p = Polyomino::new(&[Cell::new(0, 0)]);
+        let r = p.extend(Cell::new(2, 2));
+        assert!(matches!(r, Err(Error::TargetNotAdjacent)));
+    }
+
+    #[test]
+    fn extend_errors_when_cell_already_present() {
+        let p = Polyomino::new(&[Cell::new(0, 0), Cell::new(0, 1)]);
+        let r = p.extend(Cell::new(0, 0));
+        assert!(matches!(r, Err(Error::CellAlreadyInPolyomino(_))));
+    }
+
+    #[test]
+    fn without_removes_leaf_of_three_cell_line() {
+        let p = Polyomino::new(&[Cell::new(0, 0), Cell::new(0, 1), Cell::new(0, 2)]);
+        let result = p.without(Cell::new(0, 2)).unwrap();
+        assert_eq!(result, Polyomino::new(&[Cell::new(0, 0), Cell::new(0, 1)]));
+    }
+
+    #[test]
+    fn without_errors_when_removal_disconnects() {
+        let p = Polyomino::new(&[Cell::new(0, 0), Cell::new(0, 1), Cell::new(0, 2)]);
+        let r = p.without(Cell::new(0, 1));
+        assert!(matches!(r, Err(Error::FlipWouldDisconnect(_))));
+    }
+
+    #[test]
+    fn without_errors_when_cell_not_in_polyomino() {
+        let p = Polyomino::new(&[Cell::new(0, 0), Cell::new(0, 1)]);
+        let r = p.without(Cell::new(2, 2));
+        assert!(matches!(r, Err(Error::CellNotCovered(_))));
+    }
+
+    #[test]
+    fn without_errors_on_single_cell_polyomino() {
+        let p = Polyomino::new(&[Cell::new(0, 0)]);
+        let r = p.without(Cell::new(0, 0));
+        assert!(matches!(r, Err(Error::RemovalWouldEmptyPolyomino)));
     }
 }
