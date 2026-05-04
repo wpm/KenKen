@@ -1,3 +1,6 @@
+//! `Puzzle` is `Send + Sync` and may be shared across threads or sent
+//! between them. Cloning is cheap (the constraints share an `Arc`).
+
 #![allow(dead_code)]
 use crate::constraints::{AllDifferent, Cage, Cages, PuzzleConstraints};
 use crate::grid::Grid;
@@ -88,11 +91,10 @@ impl Puzzle {
     /// [`Puzzle::solutions`] when the answer is `Multiple`.
     #[must_use]
     pub fn uniqueness(&self) -> Uniqueness {
-        let mut iter = Solver::new(self.clone());
-        match (iter.next(), iter.next()) {
-            (None, _) => Uniqueness::None,
-            (Some(_), None) => Uniqueness::Unique,
-            (Some(_), Some(_)) => Uniqueness::Multiple,
+        match self.solutions_at_most(2) {
+            0 => Uniqueness::None,
+            1 => Uniqueness::Unique,
+            _ => Uniqueness::Multiple,
         }
     }
 
@@ -101,7 +103,20 @@ impl Puzzle {
     /// Use [`Puzzle::uniqueness`] when only the bucket (none / one / many) is needed.
     #[must_use]
     pub fn solutions(&self) -> usize {
-        Solver::new(self.clone()).count()
+        self.solutions_at_most(usize::MAX)
+    }
+
+    /// Count solutions, stopping after `k` are found.
+    /// Returns `min(actual_count, k)`.
+    ///
+    /// `solutions_at_most(0)` returns `0` without invoking the solver.
+    /// `solutions_at_most(usize::MAX)` is equivalent to [`Puzzle::solutions`].
+    #[must_use]
+    pub fn solutions_at_most(&self, k: usize) -> usize {
+        if k == 0 {
+            return 0;
+        }
+        Solver::new(self.clone()).take(k).count()
     }
 }
 
@@ -370,6 +385,62 @@ mod tests {
             solve(puzzle),
             vec![vec![vec![2, 1], vec![1, 2]], vec![vec![1, 2], vec![2, 1]],]
         );
+    }
+
+    #[test]
+    fn solutions_at_most_zero_returns_zero() {
+        let unique = Puzzle::new(2).unwrap().insert_cage(given(0, 0, 1)).unwrap();
+        let multi = Puzzle::new(2)
+            .unwrap()
+            .insert_cage(row_add(2, 0, 3))
+            .unwrap()
+            .insert_cage(row_add(2, 1, 3))
+            .unwrap();
+        let none = Puzzle::new(2)
+            .unwrap()
+            .insert_cage(given(0, 0, 1))
+            .unwrap()
+            .insert_cage(given(0, 1, 1))
+            .unwrap();
+        assert_eq!(unique.solutions_at_most(0), 0);
+        assert_eq!(multi.solutions_at_most(0), 0);
+        assert_eq!(none.solutions_at_most(0), 0);
+    }
+
+    #[test]
+    fn solutions_at_most_caps_unique_puzzle() {
+        let p = Puzzle::new(2).unwrap().insert_cage(given(0, 0, 1)).unwrap();
+        assert_eq!(p.solutions_at_most(1), 1);
+        assert_eq!(p.solutions_at_most(2), 1);
+        assert_eq!(p.solutions_at_most(100), 1);
+    }
+
+    #[test]
+    fn solutions_at_most_caps_multi_solution_puzzle() {
+        let p = Puzzle::new(2)
+            .unwrap()
+            .insert_cage(row_add(2, 0, 3))
+            .unwrap()
+            .insert_cage(row_add(2, 1, 3))
+            .unwrap();
+        let true_count = p.solutions();
+        assert!(true_count >= 2);
+        assert_eq!(p.solutions_at_most(1), 1);
+        assert_eq!(p.solutions_at_most(2), 2);
+        assert_eq!(p.solutions_at_most(100), true_count);
+    }
+
+    #[test]
+    fn solutions_at_most_zero_for_overconstrained() {
+        let p = Puzzle::new(2)
+            .unwrap()
+            .insert_cage(given(0, 0, 1))
+            .unwrap()
+            .insert_cage(given(0, 1, 1))
+            .unwrap();
+        assert_eq!(p.solutions_at_most(0), 0);
+        assert_eq!(p.solutions_at_most(1), 0);
+        assert_eq!(p.solutions_at_most(100), 0);
     }
 
     #[test]

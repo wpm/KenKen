@@ -130,6 +130,26 @@ fn fixed_size_one_distribution_yields_unique_puzzles() {
 }
 
 #[test]
+fn puzzle_is_send_and_sync() {
+    fn assert_send_sync<T: Send + Sync>() {}
+    assert_send_sync::<Puzzle>();
+}
+
+#[test]
+fn solutions_at_most_caps_count() {
+    let mut r = rng(1);
+    let p = generate(3, &mut r).unwrap();
+    let total = p.solutions();
+    assert_eq!(p.solutions_at_most(0), 0);
+    assert_eq!(p.solutions_at_most(usize::MAX), total);
+    let cap = total.saturating_add(1);
+    assert_eq!(p.solutions_at_most(cap), total);
+    if total > 0 {
+        assert_eq!(p.solutions_at_most(1), 1);
+    }
+}
+
+#[test]
 fn size_distribution_uniform_is_constructible() {
     let dist = SizeDistribution::Uniform { min: 2, max: 3 };
     let p = generate_with(4, &mut rng(5), default_op_policy, dist).unwrap();
