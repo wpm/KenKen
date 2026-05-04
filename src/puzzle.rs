@@ -1,28 +1,37 @@
 #![allow(dead_code)]
 use crate::constraints::{AllDifferent, Cage, Cages, PuzzleConstraints};
 use crate::grid::Grid;
-use crate::solver::State;
-use crate::{Error, Index, Polyomino, Values};
+use crate::shape::Polyomino;
+use crate::solver::{Solver, State};
+use crate::types::{Error, Index, Values};
 use std::sync::Arc;
 
-/// A KenKen puzzle: a candidate-value [`Grid`] paired with a fixed set of [`PuzzleConstraints`].
+/// Three-bucket classification of a puzzle's solution count.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Uniqueness {
+    /// No solutions.
+    None,
+    /// Exactly one solution.
+    Unique,
+    /// Two or more solutions.
+    Multiple,
+}
+
+/// A KenKen puzzle: a candidate-value grid paired with a fixed set of all-different and
+/// cage constraints.
+///
+/// Construct one via [`crate::generate`] or [`crate::generate_with`]; the public surface is
+/// [`Puzzle::n`], [`Puzzle::uniqueness`], and [`Puzzle::solutions`].
 ///
 /// ## Cloning during search
 ///
 /// Solving requires branching — each branch needs its own copy of the puzzle state.
 /// `Puzzle` is designed so that clone is cheap:
 ///
-/// - The **grid** (candidate bitmaps) is a flat `Box<[Values]>` copied in a single `memcpy`.
+/// - The **grid** (candidate bitmaps) is a flat boxed slice copied in a single `memcpy`.
 /// - The **constraints** (rows, columns, cages) never change after construction, so they are
-///   stored behind an [`Arc`].  Cloning bumps a reference count rather than duplicating data.
-///   Mutating methods (e.g. [`insert_cage`](Puzzle::insert_cage)) use [`Arc::make_mut`] to
-///   copy-on-write only when necessary.
-///
-/// ## Value semantics
-///
-/// Methods that modify a `Puzzle` consume `self` and return an updated `Puzzle`, following
-/// Rust's move-by-default convention. This makes the state transitions explicit and allows the
-/// compiler to eliminate unnecessary copies.
+///   stored behind an [`Arc`]. Cloning bumps a reference count rather than duplicating data.
+///   Mutating methods use [`Arc::make_mut`] to copy-on-write only when necessary.
 #[must_use]
 #[derive(Debug, Clone)]
 pub struct Puzzle {
@@ -57,7 +66,7 @@ impl Puzzle {
     /// Idempotent: if the exact same cage (by polyomino) is already present, returns unchanged.
     /// # Errors
     /// Returns `Error` if any cell in the cage is already claimed by a *different* cage.
-    pub fn insert_cage(mut self, cage: Cage) -> Result<Self, Error> {
+    pub(crate) fn insert_cage(mut self, cage: Cage) -> Result<Self, Error> {
         let constraints = Arc::make_mut(&mut self.constraints);
         constraints.cage = constraints.cage.clone().insert(cage)?;
         Ok(self)
@@ -66,10 +75,33 @@ impl Puzzle {
     /// Returns a new puzzle with the cage removed.
     ///
     /// Idempotent: if no such cage exists, returns unchanged.
-    pub fn remove_cage(mut self, polyomino: &Polyomino) -> Self {
+    pub(crate) fn remove_cage(mut self, polyomino: &Polyomino) -> Self {
         let constraints = Arc::make_mut(&mut self.constraints);
         constraints.cage = constraints.cage.clone().remove(polyomino);
         self
+    }
+
+    /// Classifies the puzzle's solution count into [`Uniqueness::None`], [`Uniqueness::Unique`],
+    /// or [`Uniqueness::Multiple`].
+    ///
+    /// Stops the solver as soon as a second solution is found, so this is strictly cheaper than
+    /// [`Puzzle::solutions`] when the answer is `Multiple`.
+    #[must_use]
+    pub fn uniqueness(&self) -> Uniqueness {
+        let mut iter = Solver::new(self.clone());
+        match (iter.next(), iter.next()) {
+            (None, _) => Uniqueness::None,
+            (Some(_), None) => Uniqueness::Unique,
+            (Some(_), Some(_)) => Uniqueness::Multiple,
+        }
+    }
+
+    /// Counts every solution by exhaustive search.
+    ///
+    /// Use [`Puzzle::uniqueness`] when only the bucket (none / one / many) is needed.
+    #[must_use]
+    pub fn solutions(&self) -> usize {
+        Solver::new(self.clone()).count()
     }
 }
 
@@ -111,9 +143,8 @@ impl State for Puzzle {
 #[allow(clippy::unwrap_used)]
 mod tests {
     use super::*;
-    use crate::Cell;
     use crate::constraints::{Constraint, Operation};
-    use crate::solver::Solver;
+    use crate::types::Cell;
 
     fn make_cage(cells: &[(usize, usize)], n: u8) -> Cage {
         let cells: Vec<Cell> = cells

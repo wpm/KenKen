@@ -1,15 +1,17 @@
-pub mod arithmetic;
-pub mod constraints;
-pub mod grid;
+mod arithmetic;
+mod constraints;
+mod generation;
+mod grid;
 mod latin_square;
-pub mod puzzle;
+mod puzzle;
 mod regin;
-pub mod shape;
-pub mod solver;
-pub mod tiling;
+mod shape;
+mod solver;
+mod tiling;
 mod types;
 
-pub use grid::Grid;
-pub use shape::{Column, Polyomino, Row};
-pub use tiling::{SizeDistribution, Tiling};
-pub use types::*;
+pub use constraints::Operation;
+pub use generation::{DEFAULT_SIZE_DISTRIBUTION, default_op_policy, generate, generate_with};
+pub use puzzle::{Puzzle, Uniqueness};
+pub use tiling::SizeDistribution;
+pub use types::{Error, Index, M, N};
