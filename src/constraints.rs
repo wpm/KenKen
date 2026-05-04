@@ -96,8 +96,8 @@ impl Cage {
 
     /// Returns the cells covered by this cage.
     ///
-    /// Inherent counterpart of [`Constraint::cells`] so callers can read a cage's cells
-    /// without importing the [`Constraint`] trait.
+    /// Inherent counterpart of the internal `Constraint::cells` so callers can read a
+    /// cage's cells without importing the (crate-private) `Constraint` trait.
     pub fn cells(&self) -> &[Cell] {
         self.polyomino.as_slice()
     }
