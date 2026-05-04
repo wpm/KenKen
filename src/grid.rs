@@ -8,7 +8,7 @@ use crate::types::{Cell, Error, Values};
 /// Stored as a single flat allocation of `n×n` [`Values`] in row-major order,
 /// so cloning is one `memcpy`.
 #[must_use]
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Grid {
     n: usize,
     cells: Box<[Values]>,

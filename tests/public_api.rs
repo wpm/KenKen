@@ -4,7 +4,7 @@
 #![allow(clippy::unwrap_used)]
 
 use kenken::{
-    Cage, Cell, DEFAULT_SIZE_DISTRIBUTION, Grid, Index, N, Operation, Polyomino, Puzzle,
+    Cage, Cell, DEFAULT_SIZE_DISTRIBUTION, Delta, Grid, Index, N, Operation, Polyomino, Puzzle,
     SizeDistribution, Uniqueness, Values, default_op_policy, generate, generate_with,
     random_merge_split,
 };
@@ -245,4 +245,45 @@ fn puzzle_cage_accessors_are_reachable() {
     assert_eq!(cage_at.operation(), Operation::Given(1));
     assert!(p.is_covered(Cell::new(1, 1)));
     assert!(!p.is_covered(Cell::new(0, 1)));
+}
+
+#[test]
+fn delta_narrow_widen_and_propagate_fully_are_public() {
+    // Identity delta is a no-op after propagation, regardless of starting state.
+    let p = Puzzle::new(2).unwrap();
+    let identity = Delta::identity(2).unwrap();
+    let unchanged = p.narrow(&identity);
+    assert!(unchanged.is_valid());
+
+    // Pinning (0,0)={1} on a 2×2 grid forces a unique completion via narrow + propagate.
+    let pinning = Delta::identity(2)
+        .unwrap()
+        .set(Cell::new(0, 0), Values::new([1]));
+    let pinned = Puzzle::new(2).unwrap().narrow(&pinning);
+    assert!(pinned.is_valid());
+    assert_eq!(
+        pinned.candidates(Cell::new(1, 1)).unwrap(),
+        Values::new([1]),
+    );
+
+    // Emptying a cell via narrow yields an invalid puzzle.
+    let emptying = Delta::identity(2)
+        .unwrap()
+        .set(Cell::new(0, 0), Values::new([]));
+    let invalid = Puzzle::new(2).unwrap().narrow(&emptying);
+    assert!(!invalid.is_valid());
+
+    // Widen with the identity over a fully-propagated puzzle re-narrows back to the
+    // same fixed point.
+    let solved = Puzzle::new(2)
+        .unwrap()
+        .insert_cage(given_cage(0, 0, 1))
+        .unwrap()
+        .propagate_fully();
+    let rewidened = solved.widen(&identity);
+    assert!(rewidened.is_valid());
+    assert_eq!(
+        rewidened.candidates(Cell::new(1, 1)).unwrap(),
+        Values::new([1]),
+    );
 }
