@@ -44,7 +44,7 @@ impl Grid {
     }
 
     /// Returns a new grid with `cell` set to `values`.
-    pub(crate) fn set(mut self, cell: &Cell, values: Values) -> Self {
+    pub fn set(mut self, cell: &Cell, values: Values) -> Self {
         if let Some(i) = self.index(cell) {
             self.cells[i] = values;
         }

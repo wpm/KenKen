@@ -4,8 +4,8 @@
 #![allow(clippy::unwrap_used)]
 
 use kenken::{
-    DEFAULT_SIZE_DISTRIBUTION, Index, N, Operation, Puzzle, SizeDistribution, Uniqueness,
-    default_op_policy, generate, generate_with,
+    Cage, Cell, DEFAULT_SIZE_DISTRIBUTION, Grid, Index, N, Operation, Polyomino, Puzzle,
+    SizeDistribution, Uniqueness, Values, default_op_policy, generate, generate_with,
 };
 use rand::SeedableRng;
 use rand_chacha::ChaCha8Rng;
@@ -154,4 +154,85 @@ fn size_distribution_uniform_is_constructible() {
     let dist = SizeDistribution::Uniform { min: 2, max: 3 };
     let p = generate_with(4, &mut rng(5), default_op_policy, dist).unwrap();
     assert_ne!(p.uniqueness(), Uniqueness::None);
+}
+
+fn given_cage(row: Index, column: Index, value: N) -> Cage {
+    let cell = Cell::new(row, column);
+    Cage::new(value, Polyomino::new(&[cell]), Operation::Given(value))
+}
+
+#[test]
+fn puzzle_insert_and_remove_cage_are_public() {
+    let cage = given_cage(0, 0, 1);
+    let poly = cage.polyomino().clone();
+    let p = Puzzle::new(2).unwrap().insert_cage(cage).unwrap();
+    assert!(p.is_covered(Cell::new(0, 0)));
+    let p = p.remove_cage(&poly);
+    assert!(!p.is_covered(Cell::new(0, 0)));
+}
+
+#[test]
+fn grid_set_is_public_and_round_trips() {
+    let g: Grid = Grid::new(3).unwrap();
+    let cell = Cell::new(1, 2);
+    let one = Values::new([1]);
+    let g = g.set(&cell, one);
+    assert_eq!(g.get(&cell).unwrap(), one);
+}
+
+#[test]
+fn cage_inherent_accessors_are_reachable() {
+    let cage = given_cage(0, 0, 1);
+    assert_eq!(cage.operation(), Operation::Given(1));
+    assert_eq!(cage.cells(), &[Cell::new(0, 0)]);
+    assert_eq!(cage.tuples(), &[vec![1u8]]);
+}
+
+#[test]
+fn puzzle_grid_and_candidates_expose_state() {
+    let p = Puzzle::new(2)
+        .unwrap()
+        .insert_cage(given_cage(0, 0, 1))
+        .unwrap();
+    let grid: &Grid = p.grid();
+    assert_eq!(grid.n(), 2);
+    let v: Values = p.candidates(Cell::new(0, 1)).unwrap();
+    assert_eq!(v, Values::full(2));
+}
+
+#[test]
+fn puzzle_cells_visits_every_grid_cell() {
+    let p = Puzzle::new(2).unwrap();
+    assert_eq!(p.cells().count(), 4);
+}
+
+#[test]
+fn fresh_puzzle_has_no_singletons_or_empty_cells() {
+    // Fresh 2×2 has every cell containing {1, 2}: no singletons and no empties.
+    let p = Puzzle::new(2).unwrap();
+    assert_eq!(p.singleton_cells().count(), 0);
+    assert_eq!(p.empty_cells().count(), 0);
+}
+
+#[test]
+fn singleton_grid_yields_its_only_cell() {
+    // 1×1: the lone cell holds {1}, which is a singleton by construction.
+    let p = Puzzle::new(1).unwrap();
+    let singletons: Vec<(Cell, N)> = p.singleton_cells().collect();
+    assert_eq!(singletons, vec![(Cell::new(0, 0), 1)]);
+}
+
+#[test]
+fn puzzle_cage_accessors_are_reachable() {
+    let p = Puzzle::new(2)
+        .unwrap()
+        .insert_cage(given_cage(0, 0, 1))
+        .unwrap()
+        .insert_cage(given_cage(1, 1, 2))
+        .unwrap();
+    assert_eq!(p.cages().count(), 2);
+    let cage_at = p.cage_at(Cell::new(0, 0)).unwrap();
+    assert_eq!(cage_at.operation(), Operation::Given(1));
+    assert!(p.is_covered(Cell::new(1, 1)));
+    assert!(!p.is_covered(Cell::new(0, 1)));
 }
