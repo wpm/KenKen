@@ -15,5 +15,5 @@ pub use generation::{DEFAULT_SIZE_DISTRIBUTION, default_op_policy, generate, gen
 pub use grid::Grid;
 pub use puzzle::{Puzzle, Uniqueness};
 pub use shape::Polyomino;
-pub use tiling::SizeDistribution;
+pub use tiling::{SizeDistribution, random_merge_split};
 pub use types::{Cell, Error, Index, M, N, Values};
