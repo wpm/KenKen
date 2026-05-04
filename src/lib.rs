@@ -1,5 +1,6 @@
 mod arithmetic;
 mod constraints;
+mod delta;
 mod generation;
 mod grid;
 mod latin_square;
@@ -11,6 +12,7 @@ mod tiling;
 mod types;
 
 pub use constraints::{Cage, Operation};
+pub use delta::Delta;
 pub use generation::{DEFAULT_SIZE_DISTRIBUTION, default_op_policy, generate, generate_with};
 pub use grid::Grid;
 pub use puzzle::{Puzzle, Uniqueness};

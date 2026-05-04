@@ -3,6 +3,7 @@
 
 #![allow(dead_code)]
 use crate::constraints::{AllDifferent, Cage, Cages, PuzzleConstraints};
+use crate::delta::Delta;
 use crate::grid::Grid;
 use crate::shape::Polyomino;
 use crate::solver::{Solver, State};
@@ -169,19 +170,96 @@ impl Puzzle {
     pub fn is_covered(&self, cell: Cell) -> bool {
         self.cage_at(cell).is_some()
     }
+
+    /// Returns true iff every cell has at least one candidate value — i.e. propagation
+    /// has not produced a contradiction.
+    #[must_use]
+    pub fn is_valid(&self) -> bool {
+        !self.grid.is_invalid()
+    }
+
+    /// One round of constraint propagation: builds a value filter from every constraint
+    /// against the current grid and applies it. Always returns a `Puzzle`; the resulting
+    /// grid may be invalid when constraints contradict. Best-effort: returns `self`
+    /// unchanged on the unreachable error path from `apply`.
+    fn propagate_round(self) -> Self {
+        let Ok(filter) = self.constraints.apply(&self.grid) else {
+            return self;
+        };
+        let Ok(grid) = filter.apply(&self.grid) else {
+            return self;
+        };
+        Self {
+            grid,
+            constraints: self.constraints,
+        }
+    }
+
+    /// Iterates one round of constraint propagation until the grid stops changing or
+    /// goes invalid. Always returns a `Puzzle`; the caller inspects [`Self::is_valid`]
+    /// if they care.
+    pub fn propagate_fully(self) -> Self {
+        let mut current = self;
+        loop {
+            let prev_grid = current.grid.clone();
+            let next = current.propagate_round();
+            if next.grid.is_invalid() || next.grid == prev_grid {
+                return next;
+            }
+            current = next;
+        }
+    }
+
+    /// Apply `delta` by intersecting per-cell with the current grid, then propagate to
+    /// fixed point. Always returns a `Puzzle`; the caller inspects [`Self::is_valid`].
+    ///
+    /// # Panics
+    /// Panics if `delta.n()` does not match `self.n()`.
+    pub fn narrow(&self, delta: &Delta) -> Self {
+        self.apply_delta(delta, |a, b| a & b)
+    }
+
+    /// Apply `delta` by unioning per-cell with the current grid, then propagate to
+    /// fixed point. Always returns a `Puzzle`; the caller inspects [`Self::is_valid`].
+    ///
+    /// # Panics
+    /// Panics if `delta.n()` does not match `self.n()`.
+    pub fn widen(&self, delta: &Delta) -> Self {
+        self.apply_delta(delta, |a, b| a | b)
+    }
+
+    fn apply_delta(&self, delta: &Delta, op: impl Fn(Values, Values) -> Values) -> Self {
+        assert_eq!(
+            delta.n(),
+            self.n(),
+            "delta size {} must match puzzle size {}",
+            delta.n(),
+            self.n(),
+        );
+        let mut grid = self.grid.clone();
+        for ((cell, current), (_, delta_v)) in self
+            .grid
+            .iter_with_values()
+            .zip(delta.grid().iter_with_values())
+        {
+            grid = grid.set(&cell, op(current, delta_v));
+        }
+        Self {
+            grid,
+            constraints: self.constraints.clone(),
+        }
+        .propagate_fully()
+    }
 }
 
 impl State for Puzzle {
     fn propagate(self) -> Option<Self> {
-        let filter = self.constraints.apply(&self.grid).ok()?;
-        let grid = filter.apply(&self.grid).ok()?;
-        if grid.is_invalid() {
-            return None;
+        let next = self.propagate_round();
+        if next.grid.is_invalid() {
+            None
+        } else {
+            Some(next)
         }
-        Some(Self {
-            grid,
-            constraints: self.constraints,
-        })
     }
 
     fn branch(self) -> impl Iterator<Item = Self> {
@@ -609,5 +687,163 @@ mod tests {
     fn is_covered_false_for_uncovered_cell() {
         let p = small_puzzle();
         assert!(!p.is_covered(Cell::new(1, 1)));
+    }
+
+    fn add_cage(cells: &[(usize, usize)], n: u8, target: u8) -> Cage {
+        let cells: Vec<Cell> = cells
+            .iter()
+            .map(|&(row, column)| Cell::new(row, column))
+            .collect();
+        Cage::new(n, Polyomino::new(&cells), Operation::Add(target))
+    }
+
+    #[test]
+    fn is_valid_true_for_fresh_puzzle() {
+        assert!(Puzzle::new(2).unwrap().is_valid());
+    }
+
+    #[test]
+    fn is_valid_false_when_a_cell_is_empty() {
+        let mut p = Puzzle::new(2).unwrap();
+        p.grid = p.grid.set(&Cell::new(0, 0), Values::default());
+        assert!(!p.is_valid());
+    }
+
+    #[test]
+    fn propagate_round_leaves_fresh_grid_unchanged() {
+        let p = Puzzle::new(2).unwrap();
+        let before = p.grid.clone();
+        let after = p.propagate_round();
+        assert_eq!(after.grid, before);
+    }
+
+    #[test]
+    fn propagate_round_propagates_given_cage_value() {
+        let p = Puzzle::new(2).unwrap().insert_cage(given(0, 0, 1)).unwrap();
+        let after = p.propagate_round();
+        assert_eq!(after.grid.get(&Cell::new(0, 0)).unwrap(), Values::new([1]));
+    }
+
+    #[test]
+    fn propagate_round_yields_empty_for_overconstrained() {
+        // A 2-cell Add cage with target 5 has no valid tuples in 1..=2,
+        // so the cage filter pins both cells to the empty set.
+        let p = Puzzle::new(2)
+            .unwrap()
+            .insert_cage(add_cage(&[(0, 0), (0, 1)], 2, 5))
+            .unwrap();
+        let after = p.propagate_round();
+        assert!(after.grid.is_invalid());
+        assert_eq!(after.grid.get(&Cell::new(0, 0)).unwrap(), Values::default());
+    }
+
+    #[test]
+    fn propagate_fully_reaches_singletons_on_unique_solution() {
+        // Given(0,0,1) on 2×2 forces every cell to a singleton via all-different.
+        let p = Puzzle::new(2).unwrap().insert_cage(given(0, 0, 1)).unwrap();
+        let fixed = p.propagate_fully();
+        assert!(fixed.is_valid());
+        for cell in fixed.cells() {
+            assert!(fixed.grid.get(&cell).unwrap().is_singleton());
+        }
+    }
+
+    #[test]
+    fn propagate_fully_yields_invalid_for_overconstrained() {
+        let p = Puzzle::new(2)
+            .unwrap()
+            .insert_cage(add_cage(&[(0, 0), (0, 1)], 2, 5))
+            .unwrap();
+        let fixed = p.propagate_fully();
+        assert!(!fixed.is_valid());
+    }
+
+    #[test]
+    fn propagate_fully_idempotent_at_fixed_point() {
+        let p = Puzzle::new(2).unwrap().insert_cage(given(0, 0, 1)).unwrap();
+        let once = p.propagate_fully();
+        let twice = once.clone().propagate_fully();
+        assert_eq!(once.grid, twice.grid);
+    }
+
+    #[test]
+    fn narrow_with_identity_delta_is_no_op() {
+        let p = Puzzle::new(2).unwrap().insert_cage(given(0, 0, 1)).unwrap();
+        let baseline = p.clone().propagate_fully();
+        let narrowed = p.narrow(&Delta::identity(2).unwrap());
+        assert_eq!(narrowed.grid, baseline.grid);
+    }
+
+    #[test]
+    fn narrow_with_singleton_delta_pins_cell() {
+        // Pinning (0,0) to {1} on a fresh 2×2 grid forces (0,1)={2}, (1,0)={2}, (1,1)={1}.
+        let p = Puzzle::new(2).unwrap();
+        let delta = Delta::identity(2)
+            .unwrap()
+            .set(Cell::new(0, 0), Values::new([1]));
+        let narrowed = p.narrow(&delta);
+        assert!(narrowed.is_valid());
+        assert_eq!(
+            narrowed.grid.get(&Cell::new(0, 0)).unwrap(),
+            Values::new([1])
+        );
+        assert_eq!(
+            narrowed.grid.get(&Cell::new(0, 1)).unwrap(),
+            Values::new([2])
+        );
+        assert_eq!(
+            narrowed.grid.get(&Cell::new(1, 0)).unwrap(),
+            Values::new([2])
+        );
+        assert_eq!(
+            narrowed.grid.get(&Cell::new(1, 1)).unwrap(),
+            Values::new([1])
+        );
+    }
+
+    #[test]
+    fn narrow_emptying_a_cell_yields_invalid() {
+        let p = Puzzle::new(2).unwrap();
+        let delta = Delta::identity(2)
+            .unwrap()
+            .set(Cell::new(0, 0), Values::default());
+        let narrowed = p.narrow(&delta);
+        assert!(!narrowed.is_valid());
+    }
+
+    #[test]
+    fn widen_with_identity_delta_is_no_op() {
+        let p = Puzzle::new(2).unwrap().insert_cage(given(0, 0, 1)).unwrap();
+        let baseline = p.clone().propagate_fully();
+        let widened = p.widen(&Delta::identity(2).unwrap());
+        assert_eq!(widened.grid, baseline.grid);
+    }
+
+    #[test]
+    fn widen_re_narrows_to_constraint_implications() {
+        // Start from the fully-propagated puzzle (every cell singleton). Widen with the
+        // identity delta unions full {1,2} into every cell, then propagation re-narrows
+        // to the same fixed point.
+        let p = Puzzle::new(2).unwrap().insert_cage(given(0, 0, 1)).unwrap();
+        let baseline = p.propagate_fully();
+        let widened = baseline.widen(&Delta::identity(2).unwrap());
+        assert!(widened.is_valid());
+        for cell in widened.cells() {
+            assert!(widened.grid.get(&cell).unwrap().is_singleton());
+        }
+    }
+
+    #[test]
+    #[should_panic(expected = "delta size")]
+    fn narrow_panics_on_size_mismatch() {
+        let p = Puzzle::new(2).unwrap();
+        let _ = p.narrow(&Delta::identity(3).unwrap());
+    }
+
+    #[test]
+    #[should_panic(expected = "delta size")]
+    fn widen_panics_on_size_mismatch() {
+        let p = Puzzle::new(2).unwrap();
+        let _ = p.widen(&Delta::identity(3).unwrap());
     }
 }
