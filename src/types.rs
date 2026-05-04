@@ -121,7 +121,9 @@ pub enum Error {
     CageConflict(Box<crate::constraints::Cage>, Box<crate::constraints::Cage>),
     /// A tiling operation referenced a cell that no polyomino covers.
     CellNotCovered(Cell),
-    /// A flip would leave the source polyomino disconnected.
+    /// Removing a cell from a polyomino would leave the remaining cells disconnected.
+    /// Raised by `Tiling::flip` (when the source polyomino splits) and by
+    /// `Polyomino::without`.
     FlipWouldDisconnect(Cell),
     /// A flip target polyomino has no cell 4-adjacent to the cell being flipped.
     TargetNotAdjacent,
@@ -129,8 +131,8 @@ pub enum Error {
     PolyominosNotAdjacent,
     /// A cell passed to `Polyomino::extend` is already in the polyomino.
     CellAlreadyInPolyomino(Cell),
-    /// A `Polyomino::without` call would remove the only remaining cell.
-    RemovalWouldEmptyPolyomino,
+    /// A `Polyomino::without` call would remove the polyomino's only remaining cell.
+    RemovalWouldEmptyPolyomino(Cell),
 }
 
 #[cfg(test)]
