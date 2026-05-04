@@ -67,6 +67,18 @@ impl Grid {
         (0..n).flat_map(move |row| (0..n).map(move |column| Cell::new(row, column)))
     }
 
+    /// Iterates over `(cell, values)` pairs in row-major order.
+    ///
+    /// Walks the underlying flat storage so callers don't need a per-cell
+    /// bounds-check via [`Grid::get`].
+    pub fn iter_with_values(&self) -> impl Iterator<Item = (Cell, Values)> + '_ {
+        let n = self.n;
+        self.cells
+            .iter()
+            .enumerate()
+            .map(move |(i, &values)| (Cell::new(i / n, i % n), values))
+    }
+
     const fn index(&self, cell: &Cell) -> Option<usize> {
         if cell.row < self.n && cell.column < self.n {
             Some(cell.row * self.n + cell.column)
@@ -205,5 +217,23 @@ mod tests {
             }
         }
         assert!(g.is_invalid());
+    }
+
+    #[test]
+    fn iter_with_values_yields_row_major_pairs() {
+        let g = Grid::new(2)
+            .unwrap()
+            .set(&Cell::new(0, 1), Values::new([1]))
+            .set(&Cell::new(1, 0), Values::default());
+        let got: Vec<(Cell, Values)> = g.iter_with_values().collect();
+        assert_eq!(
+            got,
+            vec![
+                (Cell::new(0, 0), Values::full(2)),
+                (Cell::new(0, 1), Values::new([1])),
+                (Cell::new(1, 0), Values::default()),
+                (Cell::new(1, 1), Values::full(2)),
+            ]
+        );
     }
 }

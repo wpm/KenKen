@@ -138,18 +138,19 @@ impl Puzzle {
 
     /// Iterates over cells whose candidate set is a singleton, paired with that value.
     pub fn singleton_cells(&self) -> impl Iterator<Item = (Cell, N)> + '_ {
-        self.grid.iter().filter_map(move |cell| {
-            let v = self.grid.get(&cell).ok()?;
-            v.is_singleton()
-                .then(|| v.iter().next().map(|n| (cell, n)))?
+        self.grid.iter_with_values().filter_map(|(cell, v)| {
+            if !v.is_singleton() {
+                return None;
+            }
+            v.iter().next().map(|n| (cell, n))
         })
     }
 
     /// Iterates over cells whose candidate set is empty.
     pub fn empty_cells(&self) -> impl Iterator<Item = Cell> + '_ {
         self.grid
-            .iter()
-            .filter(move |cell| self.grid.get(cell).is_ok_and(Values::is_empty))
+            .iter_with_values()
+            .filter_map(|(cell, v)| v.is_empty().then_some(cell))
     }
 
     /// Returns the cage covering `cell`, or `None` if none does.
