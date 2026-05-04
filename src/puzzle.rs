@@ -6,7 +6,7 @@ use crate::constraints::{AllDifferent, Cage, Cages, PuzzleConstraints};
 use crate::grid::Grid;
 use crate::shape::Polyomino;
 use crate::solver::{Solver, State};
-use crate::types::{Error, Index, Values};
+use crate::types::{Cell, Error, Index, N, Values};
 use std::sync::Arc;
 
 /// Three-bucket classification of a puzzle's solution count.
@@ -69,7 +69,7 @@ impl Puzzle {
     /// Idempotent: if the exact same cage (by polyomino) is already present, returns unchanged.
     /// # Errors
     /// Returns `Error` if any cell in the cage is already claimed by a *different* cage.
-    pub(crate) fn insert_cage(mut self, cage: Cage) -> Result<Self, Error> {
+    pub fn insert_cage(mut self, cage: Cage) -> Result<Self, Error> {
         let constraints = Arc::make_mut(&mut self.constraints);
         constraints.cage = constraints.cage.clone().insert(cage)?;
         Ok(self)
@@ -78,7 +78,7 @@ impl Puzzle {
     /// Returns a new puzzle with the cage removed.
     ///
     /// Idempotent: if no such cage exists, returns unchanged.
-    pub(crate) fn remove_cage(mut self, polyomino: &Polyomino) -> Self {
+    pub fn remove_cage(mut self, polyomino: &Polyomino) -> Self {
         let constraints = Arc::make_mut(&mut self.constraints);
         constraints.cage = constraints.cage.clone().remove(polyomino);
         self
@@ -117,6 +117,56 @@ impl Puzzle {
             return 0;
         }
         Solver::new(self.clone()).take(k).count()
+    }
+
+    /// Read-only access to the underlying candidate-value grid.
+    pub const fn grid(&self) -> &Grid {
+        &self.grid
+    }
+
+    /// Returns the candidate values currently associated with `cell`.
+    /// # Errors
+    /// Returns `Error` if `cell` is outside the grid bounds.
+    pub fn candidates(&self, cell: Cell) -> Result<Values, Error> {
+        self.grid.get(&cell)
+    }
+
+    /// Iterates over every cell of the grid in row-major order.
+    pub fn cells(&self) -> impl Iterator<Item = Cell> + '_ {
+        self.grid.iter()
+    }
+
+    /// Iterates over cells whose candidate set is a singleton, paired with that value.
+    pub fn singleton_cells(&self) -> impl Iterator<Item = (Cell, N)> + '_ {
+        self.grid.iter().filter_map(move |cell| {
+            let v = self.grid.get(&cell).ok()?;
+            v.is_singleton()
+                .then(|| v.iter().next().map(|n| (cell, n)))?
+        })
+    }
+
+    /// Iterates over cells whose candidate set is empty.
+    pub fn empty_cells(&self) -> impl Iterator<Item = Cell> + '_ {
+        self.grid
+            .iter()
+            .filter(move |cell| self.grid.get(cell).is_ok_and(|v| v.is_empty()))
+    }
+
+    /// Returns the cage covering `cell`, or `None` if none does.
+    #[must_use]
+    pub fn cage_at(&self, cell: Cell) -> Option<&Cage> {
+        self.constraints.cage.get_at(cell)
+    }
+
+    /// Iterates over every cage in the puzzle.
+    pub fn cages(&self) -> impl Iterator<Item = &Cage> + '_ {
+        self.constraints.cage.iter()
+    }
+
+    /// Returns true iff some cage covers `cell`.
+    #[must_use]
+    pub fn is_covered(&self, cell: Cell) -> bool {
+        self.cage_at(cell).is_some()
     }
 }
 
@@ -158,7 +208,7 @@ impl State for Puzzle {
 #[allow(clippy::unwrap_used)]
 mod tests {
     use super::*;
-    use crate::constraints::{Constraint, Operation};
+    use crate::constraints::Operation;
     use crate::types::Cell;
 
     fn make_cage(cells: &[(usize, usize)], n: u8) -> Cage {
@@ -455,5 +505,108 @@ mod tests {
             solve(puzzle),
             vec![vec![vec![2, 1], vec![1, 2]], vec![vec![1, 2], vec![2, 1]],]
         );
+    }
+
+    fn small_puzzle() -> Puzzle {
+        Puzzle::new(2).unwrap().insert_cage(given(0, 0, 1)).unwrap()
+    }
+
+    #[test]
+    fn grid_returns_underlying_grid() {
+        let p = small_puzzle();
+        assert_eq!(p.grid().n(), 2);
+    }
+
+    #[test]
+    fn candidates_matches_grid_get() {
+        let p = small_puzzle();
+        let cell = Cell::new(0, 0);
+        assert_eq!(p.candidates(cell).unwrap(), p.grid().get(&cell).unwrap());
+    }
+
+    #[test]
+    fn candidates_out_of_bounds_is_err() {
+        let p = small_puzzle();
+        assert!(p.candidates(Cell::new(5, 5)).is_err());
+    }
+
+    #[test]
+    fn cells_visits_every_cell_in_row_major_order() {
+        let p = small_puzzle();
+        let got: Vec<Cell> = p.cells().collect();
+        assert_eq!(
+            got,
+            vec![
+                Cell::new(0, 0),
+                Cell::new(0, 1),
+                Cell::new(1, 0),
+                Cell::new(1, 1),
+            ]
+        );
+    }
+
+    #[test]
+    fn singleton_cells_yields_only_singleton_cells() {
+        // A fresh 1×1 puzzle has its lone cell as a singleton {1}.
+        let p = Puzzle::new(1).unwrap();
+        let got: Vec<(Cell, N)> = p.singleton_cells().collect();
+        assert_eq!(got, vec![(Cell::new(0, 0), 1)]);
+    }
+
+    #[test]
+    fn singleton_cells_empty_when_no_singletons() {
+        // A fresh 2×2 puzzle has every cell containing {1, 2} — no singletons.
+        let p = Puzzle::new(2).unwrap();
+        assert_eq!(p.singleton_cells().count(), 0);
+    }
+
+    #[test]
+    fn empty_cells_empty_for_fresh_puzzle() {
+        let p = Puzzle::new(2).unwrap();
+        assert_eq!(p.empty_cells().count(), 0);
+    }
+
+    #[test]
+    fn empty_cells_yields_emptied_cell() {
+        let mut p = Puzzle::new(2).unwrap();
+        p.grid = p.grid.set(&Cell::new(1, 1), Values::default());
+        let got: Vec<Cell> = p.empty_cells().collect();
+        assert_eq!(got, vec![Cell::new(1, 1)]);
+    }
+
+    #[test]
+    fn cage_at_returns_covering_cage() {
+        let p = small_puzzle();
+        let cage = p.cage_at(Cell::new(0, 0)).unwrap();
+        assert_eq!(cage.operation(), Operation::Given(1));
+    }
+
+    #[test]
+    fn cage_at_returns_none_for_uncovered_cell() {
+        let p = small_puzzle();
+        assert!(p.cage_at(Cell::new(1, 1)).is_none());
+    }
+
+    #[test]
+    fn cages_iterates_every_cage() {
+        let p = Puzzle::new(2)
+            .unwrap()
+            .insert_cage(given(0, 0, 1))
+            .unwrap()
+            .insert_cage(given(1, 1, 2))
+            .unwrap();
+        assert_eq!(p.cages().count(), 2);
+    }
+
+    #[test]
+    fn is_covered_true_for_covered_cell() {
+        let p = small_puzzle();
+        assert!(p.is_covered(Cell::new(0, 0)));
+    }
+
+    #[test]
+    fn is_covered_false_for_uncovered_cell() {
+        let p = small_puzzle();
+        assert!(!p.is_covered(Cell::new(1, 1)));
     }
 }

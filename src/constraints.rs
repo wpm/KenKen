@@ -81,6 +81,26 @@ impl Cage {
     pub const fn polyomino(&self) -> &Polyomino {
         &self.polyomino
     }
+
+    /// Returns a copy of this cage's [`Operation`].
+    #[must_use]
+    pub const fn operation(&self) -> Operation {
+        self.operation
+    }
+
+    /// Returns a slice over the cage's precomputed valid value tuples.
+    #[must_use]
+    pub fn tuples(&self) -> &[Vec<N>] {
+        &self.tuples
+    }
+
+    /// Returns the cells covered by this cage.
+    ///
+    /// Inherent counterpart of [`Constraint::cells`] so callers can read a cage's cells
+    /// without importing the [`Constraint`] trait.
+    pub fn cells(&self) -> &[Cell] {
+        self.polyomino.as_slice()
+    }
 }
 
 impl Constraint for Cage {
@@ -204,7 +224,7 @@ impl PuzzleConstraints {
     }
     fn cage_filter(&self, grid: &Grid) -> Result<ValueFilter, Error> {
         let mut filter = ValueFilter::default();
-        for cage in self.cage.values() {
+        for cage in self.cage.iter() {
             filter = filter * cage.grid_value_filter(grid)?;
         }
         Ok(filter)
@@ -296,8 +316,15 @@ impl Cages {
         self.data.is_empty()
     }
 
-    fn values(&self) -> impl Iterator<Item = &Cage> {
+    /// Iterates over every cage in this set.
+    pub fn iter(&self) -> impl Iterator<Item = &Cage> + '_ {
         self.data.values()
+    }
+
+    /// Returns the cage covering `cell`, or `None` if no cage covers it.
+    #[must_use]
+    pub fn get_at(&self, cell: Cell) -> Option<&Cage> {
+        self.tiling.find_cell(cell).and_then(|p| self.data.get(p))
     }
 }
 
@@ -309,6 +336,52 @@ mod tests {
 
     fn cell(row: Index, column: Index) -> Cell {
         Cell::new(row, column)
+    }
+
+    fn make_cage(cells: &[(Index, Index)], n: N, op: Operation) -> Cage {
+        let cells: Vec<Cell> = cells.iter().map(|&(r, c)| Cell::new(r, c)).collect();
+        Cage::new(n, Polyomino::new(&cells), op)
+    }
+
+    #[test]
+    fn cage_operation_returns_stored_operation() {
+        let cage = make_cage(&[(0, 0), (0, 1)], 4, Operation::Add(5));
+        assert_eq!(cage.operation(), Operation::Add(5));
+    }
+
+    #[test]
+    fn cage_tuples_match_constructor_output() {
+        let cage = make_cage(&[(0, 0)], 4, Operation::Given(3));
+        let tuples = cage.tuples();
+        assert_eq!(tuples, &[vec![3u8]]);
+    }
+
+    #[test]
+    fn cage_cells_inherent_matches_polyomino_slice() {
+        let cage = make_cage(&[(0, 0), (1, 0)], 4, Operation::Add(5));
+        assert_eq!(cage.cells(), cage.polyomino().as_slice());
+    }
+
+    #[test]
+    fn cages_iter_yields_every_cage() {
+        let a = make_cage(&[(0, 0), (0, 1)], 4, Operation::Add(5));
+        let b = make_cage(&[(1, 0), (1, 1)], 4, Operation::Add(5));
+        let cages = Cages::empty(4).insert(a).unwrap().insert(b).unwrap();
+        assert_eq!(cages.iter().count(), 2);
+    }
+
+    #[test]
+    fn cages_get_at_returns_covering_cage() {
+        let a = make_cage(&[(0, 0), (0, 1)], 4, Operation::Add(5));
+        let cages = Cages::empty(4).insert(a).unwrap();
+        let got = cages.get_at(cell(0, 1)).unwrap();
+        assert!(got.cells().contains(&cell(0, 1)));
+    }
+
+    #[test]
+    fn cages_get_at_returns_none_for_uncovered_cell() {
+        let cages = Cages::empty(4);
+        assert!(cages.get_at(cell(0, 0)).is_none());
     }
 
     #[test]
