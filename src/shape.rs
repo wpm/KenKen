@@ -20,8 +20,13 @@ pub struct Column {
 }
 
 /// An arbitrary set of cells forming a polyomino, stored in sorted order without duplicates.
+///
+/// `Polyomino`s are ordered by the row-major position of their upper-left-hand cell, with
+/// the remaining cells breaking ties so the order is total and consistent with `Eq`. This
+/// works because cells are stored in row-major sorted order, so lexicographic comparison
+/// of the underlying vector compares upper-left corners first.
 #[must_use]
-#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+#[derive(Debug, Clone, PartialEq, Eq, Hash, PartialOrd, Ord)]
 pub struct Polyomino(Vec<Cell>);
 
 /// A shape that covers a set of cells in the grid.
@@ -278,5 +283,23 @@ mod tests {
         let p = Polyomino::new(&[Cell::new(0, 0)]);
         let r = p.without(Cell::new(0, 0));
         assert!(matches!(r, Err(Error::RemovalWouldEmptyPolyomino(_))));
+    }
+
+    #[test]
+    fn polyomino_sort_order_is_row_major_by_upper_left_corner() {
+        let a = Polyomino::new(&[Cell::new(0, 1), Cell::new(0, 2)]);
+        let b = Polyomino::new(&[Cell::new(0, 2), Cell::new(0, 3)]);
+        let c = Polyomino::new(&[Cell::new(1, 0), Cell::new(1, 1)]);
+        let mut polys = vec![c.clone(), b.clone(), a.clone()];
+        polys.sort();
+        assert_eq!(polys, vec![a, b, c]);
+    }
+
+    #[test]
+    fn polyomino_sort_order_breaks_ties_with_remaining_cells() {
+        // Same upper-left corner; tie broken by the second cell.
+        let a = Polyomino::new(&[Cell::new(0, 0), Cell::new(0, 1)]);
+        let b = Polyomino::new(&[Cell::new(0, 0), Cell::new(1, 0)]);
+        assert!(a < b);
     }
 }
