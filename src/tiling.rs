@@ -539,6 +539,15 @@ mod tests {
     }
 
     #[test]
+    fn flip_target_not_in_tiling_is_err() {
+        let mut t = two_strip_tiling();
+        // A polyomino that's adjacent to (0, 0) by cell coordinates but is not part of t.
+        let stranger = poly(&[(0, 1)]);
+        let r = t.flip(Cell::new(0, 0), &stranger);
+        assert!(matches!(r, Err(Error::TargetNotAdjacent)));
+    }
+
+    #[test]
     fn flip_would_disconnect_is_err() {
         // Removing (0,1) from the row (0,0)-(0,1)-(0,2) splits it into two pieces.
         let mut t = Tiling::empty(3);
@@ -605,6 +614,30 @@ mod tests {
     }
 
     #[test]
+    fn merge_split_with_singleton_polyomino() {
+        // 2x2: a 1-cell polyomino at (0,0) plus the L-shaped polyomino covering the rest.
+        // Merged: all 4 cells. Spanning tree has 3 edges; cutting any of them yields a
+        // {1, 3} split (the only way to subdivide that doesn't recreate the original
+        // singleton at (0,0) is to cut so that (0,0) ends up grouped with neighbors).
+        let mut t = Tiling::empty(2);
+        let single = poly(&[(0, 0)]);
+        let l_shape = poly(&[(0, 1), (1, 0), (1, 1)]);
+        t.insert(single.clone());
+        t.insert(l_shape.clone());
+        let mut r = rng();
+        t.merge_split(&single, &l_shape, &mut r).unwrap();
+        // Both inputs are gone; total cell count preserved; both new polys are connected.
+        assert!(!t.contains(&single) || !t.contains(&l_shape));
+        let total: usize = t.polyominos().map(Polyomino::len).sum();
+        assert_eq!(total, 4);
+        for p in t.polyominos() {
+            assert!(!p.is_empty());
+            assert!(is_connected(p.as_slice()));
+        }
+        assert_eq!(t.len(), 2);
+    }
+
+    #[test]
     fn merge_split_yields_two_connected_components() {
         let mut t = two_strip_tiling();
         let row_a = poly(&[(0, 0), (0, 1), (0, 2)]);
@@ -635,7 +668,7 @@ mod tests {
     }
 
     #[test]
-    fn random_flip_changes_or_preserves_invariants() {
+    fn random_flip_preserves_invariants_smoke() {
         let mut r = rng();
         let mut t = Tiling::greedy(5, &SizeDistribution::Fixed(2), &mut r);
         let total_cells: usize = t.polyominos().map(Polyomino::len).sum();
@@ -645,12 +678,13 @@ mod tests {
         let total_after: usize = t.polyominos().map(Polyomino::len).sum();
         assert_eq!(total_after, total_cells);
         for p in t.polyominos() {
+            assert!(!p.is_empty());
             assert!(is_connected(p.as_slice()));
         }
     }
 
     #[test]
-    fn random_merge_split_preserves_invariants() {
+    fn random_merge_split_preserves_invariants_smoke() {
         let mut r = rng();
         let mut t = Tiling::greedy(5, &SizeDistribution::Fixed(2), &mut r);
         let total_cells: usize = t.polyominos().map(Polyomino::len).sum();
@@ -660,7 +694,52 @@ mod tests {
         let total_after: usize = t.polyominos().map(Polyomino::len).sum();
         assert_eq!(total_after, total_cells);
         for p in t.polyominos() {
+            assert!(!p.is_empty());
             assert!(is_connected(p.as_slice()));
+        }
+    }
+
+    #[test]
+    #[ignore = "slow: run with `cargo test -- --ignored`"]
+    fn random_flip_preserves_invariants_fuzz() {
+        for seed in 0..50 {
+            let mut r = ChaCha8Rng::seed_from_u64(seed);
+            let mut t = Tiling::greedy(9, &SizeDistribution::Uniform { min: 2, max: 4 }, &mut r);
+            let total_cells: usize = t.polyominos().map(Polyomino::len).sum();
+            for _ in 0..1000 {
+                t.random_flip(&mut r);
+            }
+            let total_after: usize = t.polyominos().map(Polyomino::len).sum();
+            assert_eq!(total_after, total_cells, "seed {seed}: total cells changed");
+            for p in t.polyominos() {
+                assert!(!p.is_empty(), "seed {seed}: empty polyomino");
+                assert!(
+                    is_connected(p.as_slice()),
+                    "seed {seed}: disconnected polyomino"
+                );
+            }
+        }
+    }
+
+    #[test]
+    #[ignore = "slow: run with `cargo test -- --ignored`"]
+    fn random_merge_split_preserves_invariants_fuzz() {
+        for seed in 0..50 {
+            let mut r = ChaCha8Rng::seed_from_u64(seed);
+            let mut t = Tiling::greedy(9, &SizeDistribution::Uniform { min: 2, max: 4 }, &mut r);
+            let total_cells: usize = t.polyominos().map(Polyomino::len).sum();
+            for _ in 0..1000 {
+                t.random_merge_split(&mut r);
+            }
+            let total_after: usize = t.polyominos().map(Polyomino::len).sum();
+            assert_eq!(total_after, total_cells, "seed {seed}: total cells changed");
+            for p in t.polyominos() {
+                assert!(!p.is_empty(), "seed {seed}: empty polyomino");
+                assert!(
+                    is_connected(p.as_slice()),
+                    "seed {seed}: disconnected polyomino"
+                );
+            }
         }
     }
 
