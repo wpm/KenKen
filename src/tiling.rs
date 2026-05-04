@@ -1,6 +1,6 @@
 #![allow(dead_code)]
 
-use crate::shape::is_connected;
+use crate::shape::is_connected_set;
 use crate::{Cell, Error, Polyomino};
 use rand::{Rng, RngExt};
 use std::collections::{HashMap, HashSet};
@@ -171,13 +171,13 @@ impl Tiling {
             return Err(Error::TargetNotAdjacent);
         }
 
-        let new_source_cells: Vec<Cell> = source
+        let new_source_cells: HashSet<Cell> = source
             .as_slice()
             .iter()
             .copied()
             .filter(|c| *c != cell)
             .collect();
-        if !is_connected(&new_source_cells) {
+        if !is_connected_set(&new_source_cells) {
             return Err(Error::FlipWouldDisconnect(cell));
         }
 
@@ -187,7 +187,8 @@ impl Tiling {
         self.polyominos.remove(&source);
         self.polyominos.remove(target);
         if !new_source_cells.is_empty() {
-            self.polyominos.insert(Polyomino::new(&new_source_cells));
+            let new_source: Vec<Cell> = new_source_cells.into_iter().collect();
+            self.polyominos.insert(Polyomino::new(&new_source));
         }
         self.polyominos.insert(Polyomino::new(&new_target_cells));
         Ok(())
@@ -267,6 +268,12 @@ impl Tiling {
 
     /// Picks a random pair of adjacent polyominos and merge-splits them.
     /// Returns true if the move was applied.
+    ///
+    /// # Performance
+    /// Enumerates all O(P²) polyomino pairs and tests adjacency for each, where `P` is the
+    /// number of polyominos. For grids in the KenKen range (n ≤ 9, so P ≤ 81) this is
+    /// ~6.5k adjacency checks per call; if used in a hot MCMC inner loop on larger grids,
+    /// replace with a sampler that picks one cell uniformly and walks to a neighbor.
     pub fn random_merge_split<R: Rng>(&mut self, rng: &mut R) -> bool {
         if self.polyominos.len() < 2 {
             return false;
@@ -362,6 +369,7 @@ fn tree_component(start: Cell, edges: &[(Cell, Cell)], excluded_idx: usize) -> H
 #[allow(clippy::unwrap_used)]
 mod tests {
     use super::*;
+    use crate::shape::is_connected;
     use rand::SeedableRng;
     use rand_chacha::ChaCha8Rng;
 

@@ -83,21 +83,28 @@ impl Cells for Polyomino {
 /// Returns true if `cells` form a single 4-connected component (or is empty).
 #[must_use]
 pub fn is_connected(cells: &[Cell]) -> bool {
-    if cells.is_empty() {
-        return true;
-    }
     let cell_set: HashSet<Cell> = cells.iter().copied().collect();
+    is_connected_set(&cell_set)
+}
+
+/// As [`is_connected`], but takes a pre-built `HashSet` so callers that already have one
+/// avoid a second allocation.
+#[must_use]
+pub fn is_connected_set<S: std::hash::BuildHasher>(cells: &HashSet<Cell, S>) -> bool {
+    let Some(&start) = cells.iter().next() else {
+        return true;
+    };
     let mut visited: HashSet<Cell> = HashSet::with_capacity(cells.len());
-    visited.insert(cells[0]);
-    let mut stack: Vec<Cell> = vec![cells[0]];
+    visited.insert(start);
+    let mut stack: Vec<Cell> = vec![start];
     while let Some(cell) = stack.pop() {
         for n in cell.neighbors_4() {
-            if cell_set.contains(&n) && visited.insert(n) {
+            if cells.contains(&n) && visited.insert(n) {
                 stack.push(n);
             }
         }
     }
-    visited.len() == cell_set.len()
+    visited.len() == cells.len()
 }
 
 #[cfg(test)]
