@@ -149,7 +149,7 @@ impl Puzzle {
     pub fn empty_cells(&self) -> impl Iterator<Item = Cell> + '_ {
         self.grid
             .iter()
-            .filter(move |cell| self.grid.get(cell).is_ok_and(|v| v.is_empty()))
+            .filter(move |cell| self.grid.get(cell).is_ok_and(Values::is_empty))
     }
 
     /// Returns the cage covering `cell`, or `None` if none does.
