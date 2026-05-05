@@ -21,6 +21,24 @@ pub enum Uniqueness {
     Multiple,
 }
 
+/// Total candidate-domain reduction across the grid after committing one tuple
+/// for a cage and propagating to fixpoint.
+///
+/// Produced by [`Puzzle::rank_tuples_for_cage`] to rank a cage's tuples by how
+/// informative each choice is. The score is *coupled to the puzzle's current
+/// inference engine*: a stronger engine (for instance Régin's filter for
+/// `AllDifferent` versus a weaker pairwise filter) reaches a different fixpoint
+/// after `narrow`, so the same input tuple yields a different score. This
+/// coupling is intentional — "informativeness given your inference engine" is
+/// the right notion for the cage-band UX in the Designer.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct NarrowingScore {
+    /// Sum over all cells `c` of `|fill_before(c)| - |fill_after(c)|`.
+    pub total_reduction: usize,
+    /// Number of cells whose candidate set went from non-singleton to singleton.
+    pub newly_singleton: usize,
+}
+
 /// A KenKen puzzle: a candidate-value grid paired with a fixed set of all-different and
 /// cage constraints.
 ///
@@ -226,6 +244,93 @@ impl Puzzle {
     /// Panics if `delta.n()` does not match `self.n()`.
     pub fn widen(&self, delta: &Delta) -> Self {
         self.apply_delta(delta, |a, b| a | b)
+    }
+
+    /// Returns one entry per legal tuple of `cage`, sorted by how much committing
+    /// the tuple narrows the puzzle's candidate domains after propagation to
+    /// fixpoint.
+    ///
+    /// Each entry is `(tuple, post-narrow puzzle, score)`. The post-narrow
+    /// puzzle is `self` with every cell of the cage pinned to its tuple value,
+    /// then propagated to fixpoint via [`Puzzle::narrow`]. Tuples whose narrow
+    /// produces an invalid puzzle (some cell goes empty) are excluded — those
+    /// are the *illegal* tuples once the rest of the puzzle's constraints are
+    /// folded in.
+    ///
+    /// # Ordering
+    ///
+    /// 1. [`NarrowingScore::total_reduction`], descending.
+    /// 2. [`NarrowingScore::newly_singleton`], descending.
+    /// 3. The tuple itself, ascending lexicographic on the value sequence.
+    ///
+    /// `Cage::tuples` already returns each tuple at most once, so the lex
+    /// tiebreak is total: no two equal-score entries remain after it, and the
+    /// returned order is fully deterministic across runs and platforms.
+    ///
+    /// # Inference-engine coupling
+    ///
+    /// Because the score is computed *after* propagation to fixpoint, it
+    /// reflects what the current inference engine can derive. Swapping in a
+    /// stronger engine will produce different scores for the same tuple. This
+    /// coupling is intentional — it is what makes the score useful for
+    /// surfacing informative choices in the Designer's cage band.
+    ///
+    /// # Errors
+    /// Returns `Error` if `cage` is not present in `self` (looked up by
+    /// polyomino).
+    pub fn rank_tuples_for_cage(
+        &self,
+        cage: &Cage,
+    ) -> Result<Vec<(Vec<N>, Self, NarrowingScore)>, Error> {
+        if !self.constraints.cage.contains(cage.polyomino()) {
+            return Err(Error::CageNotInPuzzle(Box::new(cage.clone())));
+        }
+
+        let n = self.n();
+        let cells = cage.cells();
+        let mut results: Vec<(Vec<N>, Self, NarrowingScore)> = Vec::new();
+
+        for tuple in cage.tuples() {
+            let mut delta = Delta::identity(n)?;
+            for (cell, &value) in cells.iter().zip(tuple.iter()) {
+                delta = delta.set(*cell, Values::new([value]));
+            }
+            let after = self.narrow(&delta);
+            if !after.is_valid() {
+                continue;
+            }
+
+            let mut total_reduction: usize = 0;
+            let mut newly_singleton: usize = 0;
+            for ((_, before_v), (_, after_v)) in self
+                .grid
+                .iter_with_values()
+                .zip(after.grid.iter_with_values())
+            {
+                total_reduction += (before_v.len() as usize).saturating_sub(after_v.len() as usize);
+                if !before_v.is_singleton() && after_v.is_singleton() {
+                    newly_singleton += 1;
+                }
+            }
+
+            results.push((
+                tuple.clone(),
+                after,
+                NarrowingScore {
+                    total_reduction,
+                    newly_singleton,
+                },
+            ));
+        }
+
+        results.sort_by(|a, b| {
+            b.2.total_reduction
+                .cmp(&a.2.total_reduction)
+                .then_with(|| b.2.newly_singleton.cmp(&a.2.newly_singleton))
+                .then_with(|| a.0.cmp(&b.0))
+        });
+
+        Ok(results)
     }
 
     fn apply_delta(&self, delta: &Delta, op: impl Fn(Values, Values) -> Values) -> Self {
@@ -845,5 +950,114 @@ mod tests {
     fn widen_panics_on_size_mismatch() {
         let p = Puzzle::new(2).unwrap();
         let _ = p.widen(&Delta::identity(3).unwrap());
+    }
+
+    fn sub_cage(cells: &[(usize, usize)], n: u8, target: u8) -> Cage {
+        let cells: Vec<Cell> = cells
+            .iter()
+            .map(|&(row, column)| Cell::new(row, column))
+            .collect();
+        Cage::new(n, Polyomino::new(&cells), Operation::Subtract(target))
+    }
+
+    #[test]
+    fn rank_returns_err_for_unknown_cage() {
+        let p = Puzzle::new(4).unwrap();
+        let cage = make_cage(&[(0, 0), (0, 1)], 4);
+        assert!(matches!(
+            p.rank_tuples_for_cage(&cage),
+            Err(Error::CageNotInPuzzle(_)),
+        ));
+    }
+
+    #[test]
+    fn rank_lex_tiebreak_is_stable() {
+        // Tuples (1,2) and (2,1) reduce by identical amounts on an empty 4×4 by value-swap
+        // symmetry, so the lex tiebreak picks (1,2) first.
+        let cage = add_cage(&[(0, 0), (0, 1)], 4, 3);
+        let p = Puzzle::new(4).unwrap().insert_cage(cage.clone()).unwrap();
+        let ranked = p.rank_tuples_for_cage(&cage).unwrap();
+        let tuples: Vec<Vec<N>> = ranked.iter().map(|(t, _, _)| t.clone()).collect();
+        assert_eq!(tuples, vec![vec![1, 2], vec![2, 1]]);
+        assert_eq!(ranked[0].2, ranked[1].2);
+    }
+
+    #[test]
+    fn rank_returns_descending_score_order() {
+        // The given at (1,2)=1 makes some Sub(1) tuples cascade further than others
+        // (some pin (0,2) to a singleton, others don't), so total_reduction varies.
+        let cage = sub_cage(&[(0, 0), (0, 1)], 4, 1);
+        let p = Puzzle::new(4)
+            .unwrap()
+            .insert_cage(cage.clone())
+            .unwrap()
+            .insert_cage(given(1, 2, 1))
+            .unwrap();
+        let ranked = p.rank_tuples_for_cage(&cage).unwrap();
+        assert!(ranked.len() >= 2);
+        let scores: Vec<usize> = ranked.iter().map(|(_, _, s)| s.total_reduction).collect();
+        let mut sorted = scores.clone();
+        sorted.sort_by(|a, b| b.cmp(a));
+        assert_eq!(scores, sorted);
+        assert!(
+            scores.first() > scores.last(),
+            "test setup should produce at least one strictly higher score, got {scores:?}",
+        );
+    }
+
+    #[test]
+    fn rank_returns_only_legal_tuples() {
+        // Givens at (2,0)=1 and (3,1)=2 invalidate any tuple placing 1 in column 0
+        // or 2 in column 1. Add(5) tuples (1,4),(2,3),(3,2),(4,1) → only (2,3) and (4,1) survive.
+        let cage = add_cage(&[(0, 0), (1, 1)], 4, 5);
+        let p = Puzzle::new(4)
+            .unwrap()
+            .insert_cage(cage.clone())
+            .unwrap()
+            .insert_cage(given(2, 0, 1))
+            .unwrap()
+            .insert_cage(given(3, 1, 2))
+            .unwrap();
+        let ranked = p.rank_tuples_for_cage(&cage).unwrap();
+        let tuples: Vec<Vec<N>> = ranked.iter().map(|(t, _, _)| t.clone()).collect();
+        assert!(!tuples.iter().any(|t| t[0] == 1));
+        assert!(!tuples.iter().any(|t| t[1] == 2));
+        // (2,3) and (4,1) are the only survivors.
+        let mut expected: Vec<Vec<N>> = vec![vec![2, 3], vec![4, 1]];
+        expected.sort();
+        let mut got = tuples;
+        got.sort();
+        assert_eq!(got, expected);
+    }
+
+    #[test]
+    fn rank_handles_zero_legal_tuples() {
+        // Givens (0,2)=1 and (0,3)=2 make every Add(3) tuple narrow to invalid:
+        // the result is an empty vec rather than an error.
+        let cage = add_cage(&[(0, 0), (0, 1)], 4, 3);
+        let p = Puzzle::new(4)
+            .unwrap()
+            .insert_cage(cage.clone())
+            .unwrap()
+            .insert_cage(given(0, 2, 1))
+            .unwrap()
+            .insert_cage(given(0, 3, 2))
+            .unwrap();
+        let ranked = p.rank_tuples_for_cage(&cage).unwrap();
+        assert!(ranked.is_empty());
+    }
+
+    #[test]
+    fn rank_is_deterministic() {
+        let cage = add_cage(&[(0, 0), (0, 1)], 4, 5);
+        let p = Puzzle::new(4).unwrap().insert_cage(cage.clone()).unwrap();
+        let a = p.rank_tuples_for_cage(&cage).unwrap();
+        let b = p.rank_tuples_for_cage(&cage).unwrap();
+        let project = |v: &[(Vec<N>, Puzzle, NarrowingScore)]| {
+            v.iter()
+                .map(|(t, _, s)| (t.clone(), *s))
+                .collect::<Vec<_>>()
+        };
+        assert_eq!(project(&a), project(&b));
     }
 }

@@ -119,6 +119,8 @@ pub enum Error {
     InvalidCell(Cell),
     /// A new cage conflicts with an existing cage: `(new_cage, existing_cage)`.
     CageConflict(Box<crate::constraints::Cage>, Box<crate::constraints::Cage>),
+    /// A cage passed to a `Puzzle` method is not present in that puzzle (looked up by polyomino).
+    CageNotInPuzzle(Box<crate::constraints::Cage>),
     /// A tiling operation referenced a cell that no polyomino covers.
     CellNotCovered(Cell),
     /// Removing a cell from a polyomino would leave the remaining cells disconnected.
