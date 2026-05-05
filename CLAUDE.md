@@ -1,0 +1,3 @@
+- Always do test-driven development. Iterate until green.
+- When you are ready to create a pull request, run `/simplify`.
+- After making a pull request, run `/review` on it.
