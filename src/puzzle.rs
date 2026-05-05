@@ -973,9 +973,8 @@ mod tests {
 
     #[test]
     fn rank_lex_tiebreak_is_stable() {
-        // 2-cell Add(3) cage on an empty 4×4: tuples (1,2) and (2,1) reduce by
-        // identical amounts (the puzzle is symmetric under value swap), so the
-        // lex tiebreak picks (1,2) first.
+        // Tuples (1,2) and (2,1) reduce by identical amounts on an empty 4×4 by value-swap
+        // symmetry, so the lex tiebreak picks (1,2) first.
         let cage = add_cage(&[(0, 0), (0, 1)], 4, 3);
         let p = Puzzle::new(4).unwrap().insert_cage(cage.clone()).unwrap();
         let ranked = p.rank_tuples_for_cage(&cage).unwrap();
@@ -986,12 +985,8 @@ mod tests {
 
     #[test]
     fn rank_returns_descending_score_order() {
-        // 4×4 with a Subtract(1) cage on (0,0)+(0,1) and a given (1,2)=1.
-        // The given forces (0,2) to lose value 1 via column 2's all-different.
-        // For tuples whose row-0 cells take values {1,2}, (0,2) ends up in
-        // {3,4}; for tuples whose row-0 cells take values {3,4} or {2,3},
-        // propagation pins (0,2) to a singleton, which is a strictly larger
-        // reduction.
+        // The given at (1,2)=1 makes some Sub(1) tuples cascade further than others
+        // (some pin (0,2) to a singleton, others don't), so total_reduction varies.
         let cage = sub_cage(&[(0, 0), (0, 1)], 4, 1);
         let p = Puzzle::new(4)
             .unwrap()
@@ -1013,11 +1008,8 @@ mod tests {
 
     #[test]
     fn rank_returns_only_legal_tuples() {
-        // 4×4: 2-cell Add(5) cage on the diagonal (0,0)+(1,1). Tuples are
-        // (1,4),(2,3),(3,2),(4,1). Inserting Given(2,0)=1 places a 1 in
-        // column 0, which invalidates any tuple with (0,0)=1. Inserting
-        // Given(3,1)=2 places a 2 in column 1, which invalidates any tuple
-        // with (1,1)=2.
+        // Givens at (2,0)=1 and (3,1)=2 invalidate any tuple placing 1 in column 0
+        // or 2 in column 1. Add(5) tuples (1,4),(2,3),(3,2),(4,1) → only (2,3) and (4,1) survive.
         let cage = add_cage(&[(0, 0), (1, 1)], 4, 5);
         let p = Puzzle::new(4)
             .unwrap()
@@ -1041,10 +1033,8 @@ mod tests {
 
     #[test]
     fn rank_handles_zero_legal_tuples() {
-        // 4×4: 2-cell Add(3) cage on (0,0)+(0,1) with tuples (1,2),(2,1).
-        // Pinning row 0's other cells to 1 and 2 leaves no value for the
-        // cage cells: every tuple makes some cell empty after propagation,
-        // so the result is an empty vec — not an error.
+        // Givens (0,2)=1 and (0,3)=2 make every Add(3) tuple narrow to invalid:
+        // the result is an empty vec rather than an error.
         let cage = add_cage(&[(0, 0), (0, 1)], 4, 3);
         let p = Puzzle::new(4)
             .unwrap()

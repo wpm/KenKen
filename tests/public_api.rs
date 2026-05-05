@@ -258,8 +258,7 @@ fn puzzle_cage_accessors_are_reachable() {
 
 #[test]
 fn rank_tuples_for_cage_is_public_and_returns_scored_entries() {
-    // 4×4 with a 2-cell Add(3) cage: tuples (1,2) and (2,1) tie on reduction
-    // and lose the lex tiebreak in (1,2) → (2,1) order.
+    // Tuples (1,2) and (2,1) tie on reduction; lex tiebreak orders (1,2) first.
     let cells = [Cell::new(0, 0), Cell::new(0, 1)];
     let cage = Cage::new(4, Polyomino::new(&cells), Operation::Add(3));
     let p = Puzzle::new(4).unwrap().insert_cage(cage.clone()).unwrap();
