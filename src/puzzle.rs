@@ -27,7 +27,7 @@ pub enum Uniqueness {
 /// Produced by [`Puzzle::rank_tuples_for_cage`] to rank a cage's tuples by how
 /// informative each choice is. The score is *coupled to the puzzle's current
 /// inference engine*: a stronger engine (for instance Régin's filter for
-/// AllDifferent versus a weaker pairwise filter) reaches a different fixpoint
+/// `AllDifferent` versus a weaker pairwise filter) reaches a different fixpoint
 /// after `narrow`, so the same input tuple yields a different score. This
 /// coupling is intentional — "informativeness given your inference engine" is
 /// the right notion for the cage-band UX in the Designer.
@@ -291,7 +291,7 @@ impl Puzzle {
         let mut results: Vec<(Vec<N>, Self, NarrowingScore)> = Vec::new();
 
         for tuple in cage.tuples() {
-            let mut delta = Delta::identity(n).expect("puzzle size is in 1..=9");
+            let mut delta = Delta::identity(n)?;
             for (cell, &value) in cells.iter().zip(tuple.iter()) {
                 delta = delta.set(*cell, Values::new([value]));
             }
@@ -1025,7 +1025,7 @@ mod tests {
         // (2,3) and (4,1) are the only survivors.
         let mut expected: Vec<Vec<N>> = vec![vec![2, 3], vec![4, 1]];
         expected.sort();
-        let mut got = tuples.clone();
+        let mut got = tuples;
         got.sort();
         assert_eq!(got, expected);
     }
