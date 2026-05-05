@@ -15,7 +15,7 @@ pub use constraints::{Cage, Operation};
 pub use delta::Delta;
 pub use generation::{DEFAULT_SIZE_DISTRIBUTION, default_op_policy, generate, generate_with};
 pub use grid::Grid;
-pub use puzzle::{Puzzle, Uniqueness};
+pub use puzzle::{NarrowingScore, Puzzle, Uniqueness};
 pub use shape::Polyomino;
 pub use tiling::{SizeDistribution, random_merge_split};
 pub use types::{Cell, Error, Index, M, N, Values};

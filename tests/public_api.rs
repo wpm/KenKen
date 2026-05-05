@@ -4,9 +4,9 @@
 #![allow(clippy::unwrap_used)]
 
 use kenken::{
-    Cage, Cell, DEFAULT_SIZE_DISTRIBUTION, Delta, Grid, Index, N, Operation, Polyomino, Puzzle,
-    SizeDistribution, Uniqueness, Values, default_op_policy, generate, generate_with,
-    random_merge_split,
+    Cage, Cell, DEFAULT_SIZE_DISTRIBUTION, Delta, Grid, Index, N, NarrowingScore, Operation,
+    Polyomino, Puzzle, SizeDistribution, Uniqueness, Values, default_op_policy, generate,
+    generate_with, random_merge_split,
 };
 use rand::SeedableRng;
 use rand_chacha::ChaCha8Rng;
@@ -254,6 +254,21 @@ fn puzzle_cage_accessors_are_reachable() {
     assert_eq!(cage_at.operation(), Operation::Given(1));
     assert!(p.is_covered(Cell::new(1, 1)));
     assert!(!p.is_covered(Cell::new(0, 1)));
+}
+
+#[test]
+fn rank_tuples_for_cage_is_public_and_returns_scored_entries() {
+    // 4×4 with a 2-cell Add(3) cage: tuples (1,2) and (2,1) tie on reduction
+    // and lose the lex tiebreak in (1,2) → (2,1) order.
+    let cells = [Cell::new(0, 0), Cell::new(0, 1)];
+    let cage = Cage::new(4, Polyomino::new(&cells), Operation::Add(3));
+    let p = Puzzle::new(4).unwrap().insert_cage(cage.clone()).unwrap();
+    let ranked: Vec<(Vec<N>, Puzzle, NarrowingScore)> = p.rank_tuples_for_cage(&cage).unwrap();
+    let tuples: Vec<Vec<N>> = ranked.iter().map(|(t, _, _)| t.clone()).collect();
+    assert_eq!(tuples, vec![vec![1, 2], vec![2, 1]]);
+    assert!(ranked.iter().all(|(_, post, _)| post.is_valid()));
+    let score: NarrowingScore = ranked[0].2;
+    assert!(score.total_reduction > 0);
 }
 
 #[test]
