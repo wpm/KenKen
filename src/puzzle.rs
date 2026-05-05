@@ -307,8 +307,7 @@ impl Puzzle {
                 .iter_with_values()
                 .zip(after.grid.iter_with_values())
             {
-                total_reduction +=
-                    (before_v.len() as usize).saturating_sub(after_v.len() as usize);
+                total_reduction += (before_v.len() as usize).saturating_sub(after_v.len() as usize);
                 if !before_v.is_singleton() && after_v.is_singleton() {
                     newly_singleton += 1;
                 }
