@@ -10,6 +10,14 @@ into cages, each labeled with a target number and an arithmetic operation. The g
 with digits 1 through n such that no digit repeats in any row or column, and the numbers in each cage
 produce the target value using the given operation.
 
+## Development setup
+
+After cloning, configure git to use the checked-in hooks:
+
+```sh
+git config core.hooksPath .githooks
+```
+
 ## What the library provides
 
 **Generate puzzles** with `generate(n, rng)` for a random n×n puzzle, or
