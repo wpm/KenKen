@@ -69,8 +69,14 @@ pub struct Cage {
 
 impl Cage {
     /// Creates a polyomino over the given cells, computing valid tuples from the operation.
+    /// Tuples that violate all-different on any row or column group of cage cells are dropped.
     pub fn new(n: N, polyomino: Polyomino, operation: Operation) -> Self {
         let tuples = cage_tuples(n, polyomino.len(), operation);
+        let groups = row_and_column_groups(polyomino.as_slice());
+        let tuples = tuples
+            .into_iter()
+            .filter(|t| groups.iter().all(|g| values_all_different(t, g)))
+            .collect();
         Self {
             polyomino,
             operation,
@@ -119,6 +125,36 @@ impl Constraint for Cage {
             cells.iter().copied().zip(valid_tuple_values).collect(),
         ))
     }
+}
+
+/// Returns the cell-index groups (one per row, one per column) of cage cells that share a
+/// row or column with at least one other cell. Singleton groups are dropped because the
+/// all-different check is trivially true on a single cell.
+fn row_and_column_groups(cells: &[Cell]) -> Vec<Vec<usize>> {
+    let mut by_row: HashMap<Index, Vec<usize>> = HashMap::new();
+    let mut by_col: HashMap<Index, Vec<usize>> = HashMap::new();
+    for (i, cell) in cells.iter().enumerate() {
+        by_row.entry(cell.row).or_default().push(i);
+        by_col.entry(cell.column).or_default().push(i);
+    }
+    by_row
+        .into_values()
+        .chain(by_col.into_values())
+        .filter(|g| g.len() > 1)
+        .collect()
+}
+
+/// Returns true iff the values at positions `indices` of `tuple` are all distinct.
+fn values_all_different(tuple: &[N], indices: &[usize]) -> bool {
+    let mut seen = Values::default();
+    for &i in indices {
+        let bit = Values::new([tuple[i]]);
+        if !(seen & bit).is_empty() {
+            return false;
+        }
+        seen = seen | bit;
+    }
+    true
 }
 
 /// Filters tuples to those consistent with the current grid values.
@@ -355,6 +391,52 @@ mod tests {
         let cage = make_cage(&[(0, 0)], 4, Operation::Given(3));
         let tuples = cage.tuples();
         assert_eq!(tuples, &[vec![3u8]]);
+    }
+
+    #[test]
+    fn cage_new_prunes_l_shape_add_six() {
+        // L-shape (0,0),(1,0),(1,1) on n=4: column 0 holds positions 0 & 1,
+        // row 1 holds positions 1 & 2. Of the 10 raw tuples (3 from {1,1,4},
+        // 6 from {1,2,3}, 1 from {2,2,2}), only the 7 that obey both
+        // all-different constraints survive.
+        let cage = make_cage(&[(0, 0), (1, 0), (1, 1)], 4, Operation::Add(6));
+        let tuples: Vec<Vec<N>> = cage.tuples().to_vec();
+        assert_eq!(tuples.len(), 7, "got tuples {tuples:?}");
+        for t in &tuples {
+            assert_ne!(t[0], t[1], "column-0 duplicate in tuple {t:?}");
+            assert_ne!(t[1], t[2], "row-1 duplicate in tuple {t:?}");
+        }
+        assert!(tuples.contains(&vec![1, 4, 1]));
+        assert!(!tuples.contains(&vec![1, 1, 4]));
+        assert!(!tuples.contains(&vec![4, 1, 1]));
+        assert!(!tuples.contains(&vec![2, 2, 2]));
+    }
+
+    #[test]
+    fn cage_new_prunes_horizontal_pair_add_six() {
+        // (0,0),(0,1) with Add(6) on n=4. Raw cage_tuples returns
+        // [[2,4],[3,3],[4,2]]; the row-shared all-different constraint drops
+        // [3,3].
+        let cage = make_cage(&[(0, 0), (0, 1)], 4, Operation::Add(6));
+        let mut tuples: Vec<Vec<N>> = cage.tuples().to_vec();
+        tuples.sort();
+        assert_eq!(tuples, vec![vec![2, 4], vec![4, 2]]);
+    }
+
+    #[test]
+    fn cage_new_leaves_unique_value_tuples_unchanged() {
+        // (0,0),(0,1) with Add(3) on n=4: raw tuples are already all-different,
+        // so pruning must be a no-op.
+        let cage = make_cage(&[(0, 0), (0, 1)], 4, Operation::Add(3));
+        let mut tuples: Vec<Vec<N>> = cage.tuples().to_vec();
+        tuples.sort();
+        assert_eq!(tuples, vec![vec![1, 2], vec![2, 1]]);
+    }
+
+    #[test]
+    fn cage_new_singleton_unchanged() {
+        let cage = make_cage(&[(0, 0)], 4, Operation::Given(3));
+        assert_eq!(cage.tuples(), &[vec![3u8]]);
     }
 
     #[test]
