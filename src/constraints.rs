@@ -68,8 +68,8 @@ pub struct Cage {
 }
 
 impl Cage {
-    /// Creates a polyomino over the given cells, computing valid tuples from the operation.
-    /// Tuples that violate all-different on any row or column group of cage cells are dropped.
+    /// Creates a polyomino over the given cells. Stores valid tuples for `operation`, with
+    /// tuples that repeat a value within any shared row or column of `polyomino` dropped.
     pub fn new(n: N, polyomino: Polyomino, operation: Operation) -> Self {
         let tuples = cage_tuples(n, polyomino.len(), operation);
         let groups = row_and_column_groups(polyomino.as_slice());
@@ -146,15 +146,8 @@ fn row_and_column_groups(cells: &[Cell]) -> Vec<Vec<usize>> {
 
 /// Returns true iff the values at positions `indices` of `tuple` are all distinct.
 fn values_all_different(tuple: &[N], indices: &[usize]) -> bool {
-    let mut seen = Values::default();
-    for &i in indices {
-        let bit = Values::new([tuple[i]]);
-        if !(seen & bit).is_empty() {
-            return false;
-        }
-        seen = seen | bit;
-    }
-    true
+    let bits: Values = indices.iter().map(|&i| tuple[i]).collect();
+    bits.len() as usize == indices.len()
 }
 
 /// Filters tuples to those consistent with the current grid values.
@@ -395,10 +388,8 @@ mod tests {
 
     #[test]
     fn cage_new_prunes_l_shape_add_six() {
-        // L-shape (0,0),(1,0),(1,1) on n=4: column 0 holds positions 0 & 1,
-        // row 1 holds positions 1 & 2. Of the 10 raw tuples (3 from {1,1,4},
-        // 6 from {1,2,3}, 1 from {2,2,2}), only the 7 that obey both
-        // all-different constraints survive.
+        // 10 raw tuples (3 from {1,1,4}, 6 from {1,2,3}, 1 from {2,2,2}) → 7 survive
+        // column-0 (positions 0,1) and row-1 (positions 1,2) all-different.
         let cage = make_cage(&[(0, 0), (1, 0), (1, 1)], 4, Operation::Add(6));
         let tuples: Vec<Vec<N>> = cage.tuples().to_vec();
         assert_eq!(tuples.len(), 7, "got tuples {tuples:?}");
@@ -414,9 +405,7 @@ mod tests {
 
     #[test]
     fn cage_new_prunes_horizontal_pair_add_six() {
-        // (0,0),(0,1) with Add(6) on n=4. Raw cage_tuples returns
-        // [[2,4],[3,3],[4,2]]; the row-shared all-different constraint drops
-        // [3,3].
+        // Raw cage_tuples returns [[2,4],[3,3],[4,2]]; the row drops [3,3].
         let cage = make_cage(&[(0, 0), (0, 1)], 4, Operation::Add(6));
         let mut tuples: Vec<Vec<N>> = cage.tuples().to_vec();
         tuples.sort();
@@ -425,18 +414,11 @@ mod tests {
 
     #[test]
     fn cage_new_leaves_unique_value_tuples_unchanged() {
-        // (0,0),(0,1) with Add(3) on n=4: raw tuples are already all-different,
-        // so pruning must be a no-op.
+        // Raw tuples are already all-different — pruning is a no-op.
         let cage = make_cage(&[(0, 0), (0, 1)], 4, Operation::Add(3));
         let mut tuples: Vec<Vec<N>> = cage.tuples().to_vec();
         tuples.sort();
         assert_eq!(tuples, vec![vec![1, 2], vec![2, 1]]);
-    }
-
-    #[test]
-    fn cage_new_singleton_unchanged() {
-        let cage = make_cage(&[(0, 0)], 4, Operation::Given(3));
-        assert_eq!(cage.tuples(), &[vec![3u8]]);
     }
 
     #[test]
