@@ -128,8 +128,6 @@ pub enum Error {
     FlipWouldDisconnect(Cell),
     /// A target cell is not 4-adjacent to any cell of the polyomino it was applied to.
     TargetNotAdjacent,
-    /// Two polyominos passed to `random_merge_split` are not 4-adjacent.
-    PolyominosNotAdjacent,
     /// A cell passed to `Polyomino::extend` is already in the polyomino.
     CellAlreadyInPolyomino(Cell),
     /// A `Polyomino::without` call would remove the polyomino's only remaining cell.
