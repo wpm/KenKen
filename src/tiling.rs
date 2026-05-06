@@ -172,10 +172,9 @@ impl Tiling {
         let Some(target) = self.find_cell(target_cell).cloned() else {
             return false;
         };
-        let source = self
-            .find_cell(cell)
-            .expect("cell came from polyominos")
-            .clone();
+        let Some(source) = self.find_cell(cell).cloned() else {
+            return false;
+        };
         if source == target {
             return true;
         }
