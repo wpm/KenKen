@@ -13,6 +13,21 @@ use crate::types::{N, Values};
 /// 3. Compute SCCs of the residual graph.
 /// 4. An edge (variable → value) is arc-consistent iff it is in the matching
 ///    OR both endpoints lie in the same SCC. Remove all other edges.
+///
+/// # Precondition
+///
+/// The union of the domains must contain at most `domains.len()` values
+/// (equivalently, every feasible assignment is a perfect matching that uses
+/// every value). When there are more values than variables, some values are
+/// "free" (unmatched) and the SCC-only residual graph used here isolates them
+/// in their own component, causing edges to those values to be pruned even
+/// when they participate in valid assignments. The full Régin construction
+/// fixes this by adding a sink node connected to free values; this
+/// implementation omits that step. See issue #30.
+///
+/// The only current caller (`AllDifferent::grid_value_filter`) always passes
+/// a full row or column of an `n`×`n` grid with values `{1..=n}`, so the
+/// precondition holds. New callers must ensure it before using `regin`.
 use std::collections::HashMap;
 
 #[must_use]
