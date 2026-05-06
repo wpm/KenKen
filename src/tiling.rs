@@ -151,80 +151,9 @@ impl Tiling {
         tiling
     }
 
-    /// Moves `cell` from its current polyomino to `target`.
-    ///
-    /// # Errors
-    /// - [`Error::CellNotCovered`] if `cell` is not in any polyomino.
-    /// - [`Error::TargetNotAdjacent`] if `target` is not in this tiling, or has no cell
-    ///   4-adjacent to `cell`.
-    /// - [`Error::FlipWouldDisconnect`] if removing `cell` from its current polyomino would
-    ///   leave that polyomino disconnected.
-    pub fn flip(&mut self, cell: Cell, target: &Polyomino) -> Result<(), Error> {
-        let source = self
-            .find_cell(cell)
-            .ok_or(Error::CellNotCovered(cell))?
-            .clone();
-
-        if &source == target {
-            return Ok(());
-        }
-
-        if !self.contains(target) {
-            return Err(Error::TargetNotAdjacent);
-        }
-
-        if !grid_neighbors(cell, self.n).any(|n| target.contains_cell(n)) {
-            return Err(Error::TargetNotAdjacent);
-        }
-
-        let new_source_cells: HashSet<Cell> = source
-            .as_slice()
-            .iter()
-            .copied()
-            .filter(|c| *c != cell)
-            .collect();
-        if !is_connected_set(&new_source_cells) {
-            return Err(Error::FlipWouldDisconnect(cell));
-        }
-
-        let mut new_target_cells: Vec<Cell> = target.as_slice().to_vec();
-        new_target_cells.push(cell);
-
-        self.polyominos.remove(&source);
-        self.polyominos.remove(target);
-        if !new_source_cells.is_empty() {
-            let new_source: Vec<Cell> = new_source_cells.into_iter().collect();
-            self.polyominos.insert(Polyomino::new(&new_source));
-        }
-        self.polyominos.insert(Polyomino::new(&new_target_cells));
-        Ok(())
-    }
-
-    /// Replaces `p1` and `p2` in this tiling with the pair returned by
-    /// [`random_merge_split`]; see that function for the splitting algorithm.
-    ///
-    /// # Errors
-    /// [`Error::PolyominosNotAdjacent`] if either polyomino is not in this tiling, or
-    /// any condition listed in [`random_merge_split`]'s errors holds.
-    pub fn merge_split<R: Rng>(
-        &mut self,
-        p1: &Polyomino,
-        p2: &Polyomino,
-        rng: &mut R,
-    ) -> Result<(), Error> {
-        if !self.contains(p1) || !self.contains(p2) {
-            return Err(Error::PolyominosNotAdjacent);
-        }
-        let (q1, q2) = random_merge_split(p1, p2, rng)?;
-        self.polyominos.remove(p1);
-        self.polyominos.remove(p2);
-        self.polyominos.insert(q1);
-        self.polyominos.insert(q2);
-        Ok(())
-    }
-
-    /// Picks a random covered cell and a random 4-adjacent target cell, then flips.
-    /// Returns true if the move was applied.
+    /// Picks a random covered cell and a random 4-adjacent target cell, then moves the cell
+    /// from its current polyomino into the target's polyomino. Returns true if the move was
+    /// applied.
     pub fn random_flip<R: Rng>(&mut self, rng: &mut R) -> bool {
         let covered: Vec<Cell> = self
             .polyominos
@@ -243,11 +172,36 @@ impl Tiling {
         let Some(target) = self.find_cell(target_cell).cloned() else {
             return false;
         };
-        self.flip(cell, &target).is_ok()
+        let source = self
+            .find_cell(cell)
+            .expect("cell came from polyominos")
+            .clone();
+        if source == target {
+            return true;
+        }
+        let new_source_cells: HashSet<Cell> = source
+            .as_slice()
+            .iter()
+            .copied()
+            .filter(|c| *c != cell)
+            .collect();
+        if !is_connected_set(&new_source_cells) {
+            return false;
+        }
+        let mut new_target_cells: Vec<Cell> = target.as_slice().to_vec();
+        new_target_cells.push(cell);
+        self.polyominos.remove(&source);
+        self.polyominos.remove(&target);
+        if !new_source_cells.is_empty() {
+            let new_source: Vec<Cell> = new_source_cells.into_iter().collect();
+            self.polyominos.insert(Polyomino::new(&new_source));
+        }
+        self.polyominos.insert(Polyomino::new(&new_target_cells));
+        true
     }
 
-    /// Picks a random pair of adjacent polyominos and merge-splits them.
-    /// Returns true if the move was applied.
+    /// Picks a random pair of adjacent polyominos and replaces them with the pair returned
+    /// by [`random_merge_split`]. Returns true if the move was applied.
     ///
     /// # Performance
     /// Enumerates all O(P²) polyomino pairs and tests adjacency for each, where `P` is the
@@ -273,7 +227,14 @@ impl Tiling {
         let (i, j) = pair_indices[rng.random_range(0..pair_indices.len())];
         let p1 = polys[i].clone();
         let p2 = polys[j].clone();
-        self.merge_split(&p1, &p2, rng).is_ok()
+        let Ok((q1, q2)) = random_merge_split(&p1, &p2, rng) else {
+            return false;
+        };
+        self.polyominos.remove(&p1);
+        self.polyominos.remove(&p2);
+        self.polyominos.insert(q1);
+        self.polyominos.insert(q2);
+        true
     }
 }
 
@@ -527,165 +488,6 @@ mod tests {
         let a_polys: HashSet<&Polyomino> = a.polyominos().collect();
         let b_polys: HashSet<&Polyomino> = b.polyominos().collect();
         assert_ne!(a_polys, b_polys);
-    }
-
-    fn two_strip_tiling() -> Tiling {
-        // 3x3 grid:
-        //   A A A
-        //   B B B
-        //   C C C
-        let mut t = Tiling::empty(3);
-        t.insert(poly(&[(0, 0), (0, 1), (0, 2)]));
-        t.insert(poly(&[(1, 0), (1, 1), (1, 2)]));
-        t.insert(poly(&[(2, 0), (2, 1), (2, 2)]));
-        t
-    }
-
-    #[test]
-    fn flip_uncovered_cell_is_err() {
-        let mut t = Tiling::empty(3);
-        let target = poly(&[(0, 0)]);
-        t.insert(target.clone());
-        let r = t.flip(Cell::new(2, 2), &target);
-        assert!(matches!(r, Err(Error::CellNotCovered(_))));
-    }
-
-    #[test]
-    fn flip_non_adjacent_target_is_err() {
-        let mut t = two_strip_tiling();
-        let row_c = poly(&[(2, 0), (2, 1), (2, 2)]);
-        // (0,0) is in row A; row C is not adjacent to (0,0).
-        let r = t.flip(Cell::new(0, 0), &row_c);
-        assert!(matches!(r, Err(Error::TargetNotAdjacent)));
-    }
-
-    #[test]
-    fn flip_target_not_in_tiling_is_err() {
-        let mut t = two_strip_tiling();
-        // A polyomino that's adjacent to (0, 0) by cell coordinates but is not part of t.
-        let stranger = poly(&[(0, 1)]);
-        let r = t.flip(Cell::new(0, 0), &stranger);
-        assert!(matches!(r, Err(Error::TargetNotAdjacent)));
-    }
-
-    #[test]
-    fn flip_would_disconnect_is_err() {
-        // Removing (0,1) from the row (0,0)-(0,1)-(0,2) splits it into two pieces.
-        let mut t = Tiling::empty(3);
-        t.insert(poly(&[(0, 0), (0, 1), (0, 2)]));
-        let target = poly(&[(1, 1)]);
-        t.insert(target.clone());
-        let r = t.flip(Cell::new(0, 1), &target);
-        assert!(matches!(r, Err(Error::FlipWouldDisconnect(_))));
-    }
-
-    #[test]
-    fn flip_moves_cell_to_target() {
-        let mut t = two_strip_tiling();
-        let row_a = poly(&[(0, 0), (0, 1), (0, 2)]);
-        // Move (1, 0) from row_b to row_a; remaining (1,1),(1,2) stays connected.
-        t.flip(Cell::new(1, 0), &row_a).unwrap();
-        let new_a = poly(&[(0, 0), (0, 1), (0, 2), (1, 0)]);
-        let new_b = poly(&[(1, 1), (1, 2)]);
-        assert!(t.contains(&new_a));
-        assert!(t.contains(&new_b));
-    }
-
-    #[test]
-    fn flip_emptying_source_removes_it() {
-        let mut t = Tiling::empty(2);
-        let solo = poly(&[(0, 0)]);
-        let target = poly(&[(0, 1)]);
-        t.insert(solo);
-        t.insert(target.clone());
-        t.flip(Cell::new(0, 0), &target).unwrap();
-        assert_eq!(t.len(), 1);
-        let new_target = poly(&[(0, 0), (0, 1)]);
-        assert!(t.contains(&new_target));
-    }
-
-    #[test]
-    fn merge_split_non_adjacent_is_err() {
-        let mut t = two_strip_tiling();
-        let row_a = poly(&[(0, 0), (0, 1), (0, 2)]);
-        let row_c = poly(&[(2, 0), (2, 1), (2, 2)]);
-        let mut r = rng();
-        let res = t.merge_split(&row_a, &row_c, &mut r);
-        assert!(matches!(res, Err(Error::PolyominosNotAdjacent)));
-    }
-
-    #[test]
-    fn merge_split_same_polyomino_is_err() {
-        let mut t = two_strip_tiling();
-        let row_a = poly(&[(0, 0), (0, 1), (0, 2)]);
-        let mut r = rng();
-        let res = t.merge_split(&row_a, &row_a, &mut r);
-        assert!(matches!(res, Err(Error::PolyominosNotAdjacent)));
-    }
-
-    #[test]
-    fn merge_split_preserves_total_cells() {
-        let mut t = two_strip_tiling();
-        let row_a = poly(&[(0, 0), (0, 1), (0, 2)]);
-        let row_b = poly(&[(1, 0), (1, 1), (1, 2)]);
-        let mut r = rng();
-        t.merge_split(&row_a, &row_b, &mut r).unwrap();
-        let total: usize = t.polyominos().map(Polyomino::len).sum();
-        assert_eq!(total, 9);
-    }
-
-    #[test]
-    fn merge_split_with_singleton_polyomino() {
-        // 2x2: a 1-cell polyomino at (0,0) plus the L-shaped polyomino covering the rest.
-        // Merged: all 4 cells. Spanning tree has 3 edges; cutting any of them yields a
-        // {1, 3} split (the only way to subdivide that doesn't recreate the original
-        // singleton at (0,0) is to cut so that (0,0) ends up grouped with neighbors).
-        let mut t = Tiling::empty(2);
-        let single = poly(&[(0, 0)]);
-        let l_shape = poly(&[(0, 1), (1, 0), (1, 1)]);
-        t.insert(single.clone());
-        t.insert(l_shape.clone());
-        let mut r = rng();
-        t.merge_split(&single, &l_shape, &mut r).unwrap();
-        // Both inputs are gone; total cell count preserved; both new polys are connected.
-        assert!(!t.contains(&single) || !t.contains(&l_shape));
-        let total: usize = t.polyominos().map(Polyomino::len).sum();
-        assert_eq!(total, 4);
-        for p in t.polyominos() {
-            assert!(!p.is_empty());
-            assert!(is_connected(p.as_slice()));
-        }
-        assert_eq!(t.len(), 2);
-    }
-
-    #[test]
-    fn merge_split_yields_two_connected_components() {
-        let mut t = two_strip_tiling();
-        let row_a = poly(&[(0, 0), (0, 1), (0, 2)]);
-        let row_b = poly(&[(1, 0), (1, 1), (1, 2)]);
-        let mut r = rng();
-        t.merge_split(&row_a, &row_b, &mut r).unwrap();
-        // Row C should be untouched. The merged region produced two new polys that together
-        // cover rows 0+1, both connected.
-        let row_c = poly(&[(2, 0), (2, 1), (2, 2)]);
-        assert!(t.contains(&row_c));
-        let merged_cells: HashSet<Cell> = (0..2)
-            .flat_map(|r| (0..3).map(move |c| Cell::new(r, c)))
-            .collect();
-        let mut covered: HashSet<Cell> = HashSet::new();
-        let mut new_polys = 0;
-        for p in t.polyominos() {
-            if p == &row_c {
-                continue;
-            }
-            new_polys += 1;
-            assert!(is_connected(p.as_slice()));
-            for c in p.as_slice() {
-                covered.insert(*c);
-            }
-        }
-        assert_eq!(new_polys, 2);
-        assert_eq!(covered, merged_cells);
     }
 
     #[test]

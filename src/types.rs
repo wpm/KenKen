@@ -124,12 +124,11 @@ pub enum Error {
     /// A tiling operation referenced a cell that no polyomino covers.
     CellNotCovered(Cell),
     /// Removing a cell from a polyomino would leave the remaining cells disconnected.
-    /// Raised by `Tiling::flip` (when the source polyomino splits) and by
-    /// `Polyomino::without`.
+    /// Raised by `Polyomino::without`.
     FlipWouldDisconnect(Cell),
-    /// A flip target polyomino has no cell 4-adjacent to the cell being flipped.
+    /// A target cell is not 4-adjacent to any cell of the polyomino it was applied to.
     TargetNotAdjacent,
-    /// Two polyominos passed to `merge_split` are not 4-adjacent.
+    /// Two polyominos passed to `random_merge_split` are not 4-adjacent.
     PolyominosNotAdjacent,
     /// A cell passed to `Polyomino::extend` is already in the polyomino.
     CellAlreadyInPolyomino(Cell),
