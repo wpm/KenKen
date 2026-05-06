@@ -6,7 +6,7 @@
 use kenken::{
     Cage, Cell, DEFAULT_SIZE_DISTRIBUTION, Delta, Grid, Index, N, NarrowingScore, Operation,
     Polyomino, Puzzle, SizeDistribution, Uniqueness, Values, default_op_policy, generate,
-    generate_with, random_merge_split,
+    generate_with,
 };
 use rand::SeedableRng;
 use rand_chacha::ChaCha8Rng;
@@ -221,15 +221,6 @@ fn singleton_grid_yields_its_only_cell() {
     let p = Puzzle::new(1).unwrap();
     let singletons: Vec<(Cell, N)> = p.singleton_cells().collect();
     assert_eq!(singletons, vec![(Cell::new(0, 0), 1)]);
-}
-
-#[test]
-fn random_merge_split_is_public() {
-    let p1 = Polyomino::new(&[Cell::new(0, 0), Cell::new(0, 1)]);
-    let p2 = Polyomino::new(&[Cell::new(1, 0), Cell::new(1, 1)]);
-    let mut r = rng(0);
-    let (q1, q2) = random_merge_split(&p1, &p2, &mut r).unwrap();
-    assert_eq!(q1.len() + q2.len(), 4);
 }
 
 #[test]
