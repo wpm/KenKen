@@ -148,27 +148,25 @@ impl Cage {
         let k = polyomino.len();
         match op {
             Operator::Given => Box::new((1..=n).map(Operation::Given)),
-            Operator::Subtract => Box::new((1..=n.saturating_sub(1)).filter_map(move |t| {
-                let cage = Self::new(n, polyomino.clone(), Operation::Subtract(t));
-                (!cage.tuples().is_empty()).then_some(Operation::Subtract(t))
-            })),
-            Operator::Divide => Box::new((2..=n).filter_map(move |t| {
-                let cage = Self::new(n, polyomino.clone(), Operation::Divide(t));
-                (!cage.tuples().is_empty()).then_some(Operation::Divide(t))
-            })),
+            // Every target in 1..=n-1 is reachable by the pair (1, 1+t).
+            Operator::Subtract => Box::new((1..=n.saturating_sub(1)).map(Operation::Subtract)),
+            // Every target in 2..=n is reachable by the pair (1, t).
+            Operator::Divide => Box::new((2..=n).map(Operation::Divide)),
             Operator::Add => {
                 let max = N::try_from(usize::from(n).saturating_mul(k)).unwrap_or(N::MAX);
+                let groups = row_and_column_groups(polyomino.as_slice());
                 Box::new((1..=max).filter_map(move |t| {
-                    let cage = Self::new(n, polyomino.clone(), Operation::Add(t));
-                    (!cage.tuples().is_empty()).then_some(Operation::Add(t))
+                    let op = Operation::Add(t);
+                    any_admissible_tuple(n, k, op, &groups).then_some(op)
                 }))
             }
             Operator::Multiply => {
                 let exp = u32::try_from(k).unwrap_or(u32::MAX);
                 let max = M::from(n).saturating_pow(exp);
+                let groups = row_and_column_groups(polyomino.as_slice());
                 Box::new((1..=max).filter_map(move |t| {
-                    let cage = Self::new(n, polyomino.clone(), Operation::Multiply(t));
-                    (!cage.tuples().is_empty()).then_some(Operation::Multiply(t))
+                    let op = Operation::Multiply(t);
+                    any_admissible_tuple(n, k, op, &groups).then_some(op)
                 }))
             }
         }
@@ -192,8 +190,19 @@ impl Cage {
             _ => {}
         }
         let polyomino = Polyomino::new(cells);
-        !Self::new(n, polyomino, operation).tuples().is_empty()
+        let groups = row_and_column_groups(polyomino.as_slice());
+        any_admissible_tuple(n, polyomino.len(), operation, &groups)
     }
+}
+
+/// Returns true if some tuple from [`cage_tuples`] satisfies every row/column group.
+///
+/// Cheaper than [`Cage::new`] when the caller only needs a yes/no answer: avoids the
+/// `Polyomino` clone and the allocation of the filtered tuple list.
+fn any_admissible_tuple(n: N, k: usize, operation: Operation, groups: &[Vec<usize>]) -> bool {
+    cage_tuples(n, k, operation)
+        .iter()
+        .any(|tuple| groups.iter().all(|g| values_all_different(tuple, g)))
 }
 
 impl Constraint for Cage {
