@@ -106,7 +106,7 @@ fn uniqueness_and_solutions_buckets_agree() {
 fn custom_op_policy_overrides_default() {
     let policy = |values: &[N], n: Index| {
         if values.len() == 2 {
-            Operation::Add(values.iter().sum())
+            Operation::Add(values.iter().map(|&v| u16::from(v)).sum())
         } else {
             default_op_policy(values, n)
         }
@@ -159,7 +159,11 @@ fn size_distribution_uniform_is_constructible() {
 
 fn given_cage(row: Index, column: Index, value: N) -> Cage {
     let cell = Cell::new(row, column);
-    Cage::new(value, Polyomino::new(&[cell]), Operation::Given(value))
+    Cage::new(
+        value,
+        Polyomino::new(&[cell]),
+        Operation::Given(u16::from(value)),
+    )
 }
 
 #[test]

@@ -400,7 +400,7 @@ mod tests {
             .iter()
             .map(|&(row, column)| Cell::new(row, column))
             .collect();
-        Cage::new(n, Polyomino::new(&cells), Operation::Add(n))
+        Cage::new(n, Polyomino::new(&cells), Operation::Add(u16::from(n)))
     }
 
     fn poly(cells: &[(usize, usize)]) -> Polyomino {
@@ -571,12 +571,16 @@ mod tests {
 
     fn given(row: usize, column: usize, value: u8) -> Cage {
         let cell = Cell::new(row, column);
-        Cage::new(value, Polyomino::new(&[cell]), Operation::Given(value))
+        Cage::new(
+            value,
+            Polyomino::new(&[cell]),
+            Operation::Given(u16::from(value)),
+        )
     }
 
     fn row_add(n: u8, row: usize, target: u8) -> Cage {
         let cells: Vec<Cell> = (0..n as usize).map(|col| Cell::new(row, col)).collect();
-        Cage::new(n, Polyomino::new(&cells), Operation::Add(target))
+        Cage::new(n, Polyomino::new(&cells), Operation::Add(u16::from(target)))
     }
 
     #[test]
@@ -799,7 +803,7 @@ mod tests {
             .iter()
             .map(|&(row, column)| Cell::new(row, column))
             .collect();
-        Cage::new(n, Polyomino::new(&cells), Operation::Add(target))
+        Cage::new(n, Polyomino::new(&cells), Operation::Add(u16::from(target)))
     }
 
     #[test]
@@ -957,7 +961,11 @@ mod tests {
             .iter()
             .map(|&(row, column)| Cell::new(row, column))
             .collect();
-        Cage::new(n, Polyomino::new(&cells), Operation::Subtract(target))
+        Cage::new(
+            n,
+            Polyomino::new(&cells),
+            Operation::Subtract(u16::from(target)),
+        )
     }
 
     #[test]

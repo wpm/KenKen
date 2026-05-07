@@ -9,13 +9,22 @@ use std::collections::BTreeSet;
 #[must_use]
 pub fn cage_tuples(n: N, cage_size: usize, operation: Operation) -> Vec<Vec<N>> {
     let multisets: Vec<Vec<N>> = match operation {
-        Operation::Add(target) => addition_multisets(target, cage_size, n),
+        Operation::Add(target) => fits_in_n(target, |t| addition_multisets(t, cage_size, n)),
         Operation::Multiply(target) => multiplication_multisets(target, cage_size, n),
-        Operation::Subtract(target) => subtraction_multisets(target, n),
-        Operation::Divide(target) => division_multisets(target, n),
-        Operation::Given(value) => vec![vec![value]],
+        Operation::Subtract(target) => fits_in_n(target, |t| subtraction_multisets(t, n)),
+        Operation::Divide(target) => fits_in_n(target, |t| division_multisets(t, n)),
+        Operation::Given(value) => fits_in_n(value, |v| vec![vec![v]]),
     };
     permute(multisets, cage_size)
+}
+
+/// Runs `f` on `target` narrowed to [`N`], or returns an empty result if `target` overflows.
+///
+/// Add/Subtract/Divide/Given targets fit in `N` for any practical KenKen, but the
+/// [`Operation`] variants store [`M`] for type uniformity. This bridges the two without
+/// constraining the storage type.
+fn fits_in_n<F: FnOnce(N) -> Vec<Vec<N>>>(target: M, f: F) -> Vec<Vec<N>> {
+    N::try_from(target).map(f).unwrap_or_default()
 }
 
 /// Expands a list of multisets into distinct ordered permutations of length `k`.
