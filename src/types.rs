@@ -4,7 +4,8 @@ use std::ops::{BitAnd, BitOr};
 
 /// Possible cell value: a number in the range `1..=9`.
 pub type N = u8;
-/// Possible product of cell values: a number in the range `1..=9 * 9 * 9`.
+/// A cage target (sum, product, difference, ratio, or given value). Wide enough to hold the
+/// largest possible product on a single cage.
 pub type M = u16;
 
 /// A cell in a KenKen grid, identified by 0-based row and column `Index` values in row-major order.

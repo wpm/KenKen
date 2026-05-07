@@ -25,13 +25,13 @@ pub fn default_op_policy(values: &[N], n: Index) -> Operation {
     use Operation::{Add, Divide, Given, Multiply, Subtract};
     match values.len() {
         0 => panic!("default_op_policy called with empty values slice"),
-        1 => Given(values[0]),
+        1 => Given(M::from(values[0])),
         2 => {
             let (hi, lo) = (values[0].max(values[1]), values[0].min(values[1]));
             if hi.is_multiple_of(lo) {
-                Divide(hi / lo)
+                Divide(M::from(hi / lo))
             } else {
-                Subtract(hi - lo)
+                Subtract(M::from(hi - lo))
             }
         }
         _ => {
@@ -40,7 +40,7 @@ pub fn default_op_policy(values: &[N], n: Index) -> Operation {
             if prod <= area {
                 Multiply(prod)
             } else {
-                Add(values.iter().sum())
+                Add(values.iter().map(|&v| M::from(v)).sum())
             }
         }
     }

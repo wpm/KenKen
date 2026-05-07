@@ -146,14 +146,15 @@ impl Cage {
         }
         let polyomino = Polyomino::new(cells);
         let k = polyomino.len();
+        let n_m = M::from(n);
         match op {
-            Operator::Given => Box::new((1..=n).map(Operation::Given)),
+            Operator::Given => Box::new((1..=n_m).map(Operation::Given)),
             // Every target in 1..=n-1 is reachable by the pair (1, 1+t).
-            Operator::Subtract => Box::new((1..=n.saturating_sub(1)).map(Operation::Subtract)),
+            Operator::Subtract => Box::new((1..=n_m.saturating_sub(1)).map(Operation::Subtract)),
             // Every target in 2..=n is reachable by the pair (1, t).
-            Operator::Divide => Box::new((2..=n).map(Operation::Divide)),
+            Operator::Divide => Box::new((2..=n_m).map(Operation::Divide)),
             Operator::Add => {
-                let max = N::try_from(usize::from(n).saturating_mul(k)).unwrap_or(N::MAX);
+                let max = M::try_from(usize::from(n).saturating_mul(k)).unwrap_or(M::MAX);
                 let groups = row_and_column_groups(polyomino.as_slice());
                 Box::new((1..=max).filter_map(move |t| {
                     let op = Operation::Add(t);
@@ -162,7 +163,7 @@ impl Cage {
             }
             Operator::Multiply => {
                 let exp = u32::try_from(k).unwrap_or(u32::MAX);
-                let max = M::from(n).saturating_pow(exp);
+                let max = n_m.saturating_pow(exp);
                 let groups = row_and_column_groups(polyomino.as_slice());
                 Box::new((1..=max).filter_map(move |t| {
                     let op = Operation::Multiply(t);
@@ -185,7 +186,7 @@ impl Cage {
             return false;
         }
         match operation {
-            Operation::Given(v) => return (1..=n).contains(&v),
+            Operation::Given(v) => return (1..=M::from(n)).contains(&v),
             Operation::Subtract(0) | Operation::Divide(0 | 1) => return false,
             _ => {}
         }
@@ -275,13 +276,17 @@ fn transpose(cage_size: usize, tuples: &[Vec<N>]) -> Vec<Values> {
 }
 
 /// An arithmetic operation that defines a polyomino.
+///
+/// Every variant carries its target as an [`M`] (u16). The product target needs the wider
+/// type; the others fit in [`N`] but use [`M`] so the API is uniform and consumers can read
+/// `target` without matching on the variant.
 #[derive(Debug, Clone, Copy, Eq, PartialEq)]
 pub enum Operation {
-    Add(N),
-    Subtract(N),
+    Add(M),
+    Subtract(M),
     Multiply(M),
-    Divide(N),
-    Given(N),
+    Divide(M),
+    Given(M),
 }
 
 /// The operator portion of an [`Operation`], without an associated target.
@@ -660,26 +665,14 @@ mod tests {
         positions.iter().map(|&(r, c)| Cell::new(r, c)).collect()
     }
 
-    fn add_targets(cells: &[Cell], n: N) -> Vec<N> {
-        Cage::valid_targets(cells, Operator::Add, n)
-            .filter_map(|op| {
-                if let Operation::Add(t) = op {
-                    Some(t)
-                } else {
-                    None
-                }
-            })
-            .collect()
-    }
-
-    fn multiply_targets(cells: &[Cell], n: N) -> Vec<M> {
-        Cage::valid_targets(cells, Operator::Multiply, n)
-            .filter_map(|op| {
-                if let Operation::Multiply(t) = op {
-                    Some(t)
-                } else {
-                    None
-                }
+    fn collect_targets(cells: &[Cell], op: Operator, n: N) -> Vec<M> {
+        Cage::valid_targets(cells, op, n)
+            .map(|op| match op {
+                Operation::Add(t)
+                | Operation::Subtract(t)
+                | Operation::Multiply(t)
+                | Operation::Divide(t)
+                | Operation::Given(t) => t,
             })
             .collect()
     }
@@ -732,7 +725,10 @@ mod tests {
     fn valid_targets_singleton_given_yields_one_through_n() {
         let cells = cells_of(&[(0, 0)]);
         let targets: Vec<Operation> = Cage::valid_targets(&cells, Operator::Given, 5).collect();
-        assert_eq!(targets, (1..=5u8).map(Operation::Given).collect::<Vec<_>>());
+        assert_eq!(
+            targets,
+            (1..=5u16).map(Operation::Given).collect::<Vec<_>>()
+        );
     }
 
     #[test]
@@ -754,7 +750,7 @@ mod tests {
         let targets: Vec<Operation> = Cage::valid_targets(&cells, Operator::Subtract, 5).collect();
         assert_eq!(
             targets,
-            (1..=4u8).map(Operation::Subtract).collect::<Vec<_>>()
+            (1..=4u16).map(Operation::Subtract).collect::<Vec<_>>()
         );
     }
 
@@ -764,7 +760,7 @@ mod tests {
         let targets: Vec<Operation> = Cage::valid_targets(&cells, Operator::Divide, 6).collect();
         assert_eq!(
             targets,
-            (2..=6u8).map(Operation::Divide).collect::<Vec<_>>()
+            (2..=6u16).map(Operation::Divide).collect::<Vec<_>>()
         );
     }
 
@@ -773,7 +769,10 @@ mod tests {
         // n=4 same-row 2-cell cage requires a≠b. Pairs: (1,2)=3, (1,3)=4, (1,4)=5,
         // (2,3)=5, (2,4)=6, (3,4)=7. Sums 2 and 8 require doubles.
         let cells = cells_of(&[(0, 0), (0, 1)]);
-        assert_eq!(add_targets(&cells, 4), vec![3, 4, 5, 6, 7]);
+        assert_eq!(
+            collect_targets(&cells, Operator::Add, 4),
+            vec![3, 4, 5, 6, 7]
+        );
     }
 
     #[test]
@@ -781,14 +780,20 @@ mod tests {
         // L-shaped (different row and column) 2-cell cage has no row/col group, so
         // (a, a) tuples are kept: sums 2 (1+1), 4 (2+2), 6 (3+3), 8 (4+4) join the list.
         let cells = cells_of(&[(0, 0), (1, 1)]);
-        assert_eq!(add_targets(&cells, 4), vec![2, 3, 4, 5, 6, 7, 8]);
+        assert_eq!(
+            collect_targets(&cells, Operator::Add, 4),
+            vec![2, 3, 4, 5, 6, 7, 8]
+        );
     }
 
     #[test]
     fn valid_targets_two_cell_same_row_multiply_excludes_squares() {
         // 1*2=2, 1*3=3, 1*4=4, 2*3=6, 2*4=8, 3*4=12.
         let cells = cells_of(&[(0, 0), (0, 1)]);
-        assert_eq!(multiply_targets(&cells, 4), vec![2, 3, 4, 6, 8, 12]);
+        assert_eq!(
+            collect_targets(&cells, Operator::Multiply, 4),
+            vec![2, 3, 4, 6, 8, 12]
+        );
     }
 
     #[test]
@@ -796,14 +801,17 @@ mod tests {
         // 3 cells in a row, n=4: triplets {a,b,c} all-different, sums {1,2,3}=6,
         // {1,2,4}=7, {1,3,4}=8, {2,3,4}=9.
         let cells = cells_of(&[(0, 0), (0, 1), (0, 2)]);
-        assert_eq!(add_targets(&cells, 4), vec![6, 7, 8, 9]);
+        assert_eq!(collect_targets(&cells, Operator::Add, 4), vec![6, 7, 8, 9]);
     }
 
     #[test]
     fn valid_targets_three_cell_line_multiply() {
         // 3 cells in a row, n=4: 1*2*3=6, 1*2*4=8, 1*3*4=12, 2*3*4=24.
         let cells = cells_of(&[(0, 0), (0, 1), (0, 2)]);
-        assert_eq!(multiply_targets(&cells, 4), vec![6, 8, 12, 24]);
+        assert_eq!(
+            collect_targets(&cells, Operator::Multiply, 4),
+            vec![6, 8, 12, 24]
+        );
     }
 
     #[test]
@@ -811,7 +819,7 @@ mod tests {
         // L-shape (0,0), (1,0), (1,1): col-0 group {pos 0, 1}, row-1 group {pos 1, 2}.
         // Position 1 must differ from both neighbors, so (v, v, v) tuples are filtered.
         let cells = cells_of(&[(0, 0), (1, 0), (1, 1)]);
-        let targets = add_targets(&cells, 4);
+        let targets = collect_targets(&cells, Operator::Add, 4);
         assert!(!targets.contains(&3), "got {targets:?}");
         assert!(!targets.contains(&12), "got {targets:?}");
         assert!(targets.contains(&4));
