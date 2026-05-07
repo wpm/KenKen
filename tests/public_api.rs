@@ -5,8 +5,8 @@
 
 use kenken::{
     Cage, Cell, DEFAULT_SIZE_DISTRIBUTION, Delta, Grid, Index, N, NarrowingScore, Operation,
-    Operator, Polyomino, Puzzle, SizeDistribution, Uniqueness, Values, default_op_policy,
-    generate, generate_with,
+    Operator, Polyomino, Puzzle, SizeDistribution, Uniqueness, Values, default_op_policy, generate,
+    generate_with,
 };
 use rand::SeedableRng;
 use rand_chacha::ChaCha8Rng;
