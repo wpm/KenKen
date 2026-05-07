@@ -11,7 +11,7 @@ mod solver;
 mod tiling;
 mod types;
 
-pub use constraints::{Cage, Operation};
+pub use constraints::{Cage, Operation, Operator};
 pub use delta::Delta;
 pub use generation::{DEFAULT_SIZE_DISTRIBUTION, default_op_policy, generate, generate_with};
 pub use grid::Grid;
