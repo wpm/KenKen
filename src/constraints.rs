@@ -149,17 +149,17 @@ impl Cage {
         match op {
             Operator::Given => Box::new((1..=n).map(Operation::Given)),
             Operator::Subtract => Box::new((1..=n.saturating_sub(1)).filter_map(move |t| {
-                let cage = Cage::new(n, polyomino.clone(), Operation::Subtract(t));
+                let cage = Self::new(n, polyomino.clone(), Operation::Subtract(t));
                 (!cage.tuples().is_empty()).then_some(Operation::Subtract(t))
             })),
             Operator::Divide => Box::new((2..=n).filter_map(move |t| {
-                let cage = Cage::new(n, polyomino.clone(), Operation::Divide(t));
+                let cage = Self::new(n, polyomino.clone(), Operation::Divide(t));
                 (!cage.tuples().is_empty()).then_some(Operation::Divide(t))
             })),
             Operator::Add => {
                 let max = N::try_from(usize::from(n).saturating_mul(k)).unwrap_or(N::MAX);
                 Box::new((1..=max).filter_map(move |t| {
-                    let cage = Cage::new(n, polyomino.clone(), Operation::Add(t));
+                    let cage = Self::new(n, polyomino.clone(), Operation::Add(t));
                     (!cage.tuples().is_empty()).then_some(Operation::Add(t))
                 }))
             }
@@ -167,7 +167,7 @@ impl Cage {
                 let exp = u32::try_from(k).unwrap_or(u32::MAX);
                 let max = M::from(n).saturating_pow(exp);
                 Box::new((1..=max).filter_map(move |t| {
-                    let cage = Cage::new(n, polyomino.clone(), Operation::Multiply(t));
+                    let cage = Self::new(n, polyomino.clone(), Operation::Multiply(t));
                     (!cage.tuples().is_empty()).then_some(Operation::Multiply(t))
                 }))
             }
@@ -192,7 +192,7 @@ impl Cage {
             _ => {}
         }
         let polyomino = Polyomino::new(cells);
-        !Cage::new(n, polyomino, operation).tuples().is_empty()
+        !Self::new(n, polyomino, operation).tuples().is_empty()
     }
 }
 
@@ -653,18 +653,24 @@ mod tests {
 
     fn add_targets(cells: &[Cell], n: N) -> Vec<N> {
         Cage::valid_targets(cells, Operator::Add, n)
-            .map(|op| match op {
-                Operation::Add(t) => t,
-                _ => panic!("expected Add"),
+            .filter_map(|op| {
+                if let Operation::Add(t) = op {
+                    Some(t)
+                } else {
+                    None
+                }
             })
             .collect()
     }
 
     fn multiply_targets(cells: &[Cell], n: N) -> Vec<M> {
         Cage::valid_targets(cells, Operator::Multiply, n)
-            .map(|op| match op {
-                Operation::Multiply(t) => t,
-                _ => panic!("expected Multiply"),
+            .filter_map(|op| {
+                if let Operation::Multiply(t) = op {
+                    Some(t)
+                } else {
+                    None
+                }
             })
             .collect()
     }
@@ -717,10 +723,7 @@ mod tests {
     fn valid_targets_singleton_given_yields_one_through_n() {
         let cells = cells_of(&[(0, 0)]);
         let targets: Vec<Operation> = Cage::valid_targets(&cells, Operator::Given, 5).collect();
-        assert_eq!(
-            targets,
-            (1..=5u8).map(Operation::Given).collect::<Vec<_>>()
-        );
+        assert_eq!(targets, (1..=5u8).map(Operation::Given).collect::<Vec<_>>());
     }
 
     #[test]
@@ -739,8 +742,7 @@ mod tests {
     #[test]
     fn valid_targets_two_cell_subtract_yields_one_through_n_minus_one() {
         let cells = cells_of(&[(0, 0), (0, 1)]);
-        let targets: Vec<Operation> =
-            Cage::valid_targets(&cells, Operator::Subtract, 5).collect();
+        let targets: Vec<Operation> = Cage::valid_targets(&cells, Operator::Subtract, 5).collect();
         assert_eq!(
             targets,
             (1..=4u8).map(Operation::Subtract).collect::<Vec<_>>()
@@ -805,7 +807,10 @@ mod tests {
         assert!(!targets.contains(&12), "got {targets:?}");
         assert!(targets.contains(&4));
         assert!(targets.contains(&11));
-        assert!(targets.windows(2).all(|w| w[0] < w[1]), "not ascending: {targets:?}");
+        assert!(
+            targets.windows(2).all(|w| w[0] < w[1]),
+            "not ascending: {targets:?}"
+        );
     }
 
     #[test]
