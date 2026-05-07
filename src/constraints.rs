@@ -108,6 +108,92 @@ impl Cage {
     pub fn cells(&self) -> &[Cell] {
         <Self as Constraint>::cells(self)
     }
+
+    /// Returns the operators legal for a cage covering `cells`.
+    ///
+    /// Singleton cages permit only [`Operator::Given`]; two-cell cages permit any binary
+    /// operator; cages of three or more cells permit only the commutative operators
+    /// [`Operator::Add`] and [`Operator::Multiply`]. An empty cell slice yields no operators.
+    #[must_use]
+    pub fn valid_operators(cells: &[Cell]) -> Vec<Operator> {
+        match cells.len() {
+            0 => Vec::new(),
+            1 => vec![Operator::Given],
+            2 => vec![
+                Operator::Add,
+                Operator::Subtract,
+                Operator::Multiply,
+                Operator::Divide,
+            ],
+            _ => vec![Operator::Add, Operator::Multiply],
+        }
+    }
+
+    /// Returns an iterator yielding the [`Operation`] values whose `(operator, target)` pair is
+    /// legal for a cage covering `cells` on an `n`×`n` grid, in ascending target order.
+    ///
+    /// The iterator is lazy: targets are evaluated on demand, so callers that only need a few
+    /// (e.g., to populate a dropdown) need not pay for the full range. If `op` is not in
+    /// [`Self::valid_operators`] for `cells`, the iterator is empty.
+    #[must_use]
+    pub fn valid_targets(
+        cells: &[Cell],
+        op: Operator,
+        n: N,
+    ) -> Box<dyn Iterator<Item = Operation>> {
+        if !Self::valid_operators(cells).contains(&op) {
+            return Box::new(std::iter::empty());
+        }
+        let polyomino = Polyomino::new(cells);
+        let k = polyomino.len();
+        match op {
+            Operator::Given => Box::new((1..=n).map(Operation::Given)),
+            Operator::Subtract => Box::new((1..=n.saturating_sub(1)).filter_map(move |t| {
+                let cage = Cage::new(n, polyomino.clone(), Operation::Subtract(t));
+                (!cage.tuples().is_empty()).then_some(Operation::Subtract(t))
+            })),
+            Operator::Divide => Box::new((2..=n).filter_map(move |t| {
+                let cage = Cage::new(n, polyomino.clone(), Operation::Divide(t));
+                (!cage.tuples().is_empty()).then_some(Operation::Divide(t))
+            })),
+            Operator::Add => {
+                let max = N::try_from(usize::from(n).saturating_mul(k)).unwrap_or(N::MAX);
+                Box::new((1..=max).filter_map(move |t| {
+                    let cage = Cage::new(n, polyomino.clone(), Operation::Add(t));
+                    (!cage.tuples().is_empty()).then_some(Operation::Add(t))
+                }))
+            }
+            Operator::Multiply => {
+                let exp = u32::try_from(k).unwrap_or(u32::MAX);
+                let max = M::from(n).saturating_pow(exp);
+                Box::new((1..=max).filter_map(move |t| {
+                    let cage = Cage::new(n, polyomino.clone(), Operation::Multiply(t));
+                    (!cage.tuples().is_empty()).then_some(Operation::Multiply(t))
+                }))
+            }
+        }
+    }
+
+    /// Returns true if `operation` is a legal `(operator, target)` for a cage covering `cells`
+    /// on an `n`×`n` grid.
+    ///
+    /// Equivalent to checking that `operation`'s operator is in [`Self::valid_operators`] and
+    /// that the cage admits at least one tuple consistent with its row/column groups. Targets
+    /// outside the conventional ranges (`Subtract(0)`, `Divide(0..=1)`, `Given` outside
+    /// `1..=n`) are rejected even when the underlying tuple search would succeed.
+    #[must_use]
+    pub fn is_valid(cells: &[Cell], operation: Operation, n: N) -> bool {
+        if !Self::valid_operators(cells).contains(&Operator::of(operation)) {
+            return false;
+        }
+        match operation {
+            Operation::Given(v) => return (1..=n).contains(&v),
+            Operation::Subtract(0) | Operation::Divide(0 | 1) => return false,
+            _ => {}
+        }
+        let polyomino = Polyomino::new(cells);
+        !Cage::new(n, polyomino, operation).tuples().is_empty()
+    }
 }
 
 impl Constraint for Cage {
@@ -187,6 +273,33 @@ pub enum Operation {
     Multiply(M),
     Divide(N),
     Given(N),
+}
+
+/// The operator portion of an [`Operation`], without an associated target.
+///
+/// Used by [`Cage::valid_operators`] to enumerate the operators legal for a cage shape, and by
+/// [`Cage::valid_targets`] to select an operator for which to enumerate legal targets.
+#[derive(Debug, Clone, Copy, Eq, PartialEq, Hash)]
+pub enum Operator {
+    Add,
+    Subtract,
+    Multiply,
+    Divide,
+    Given,
+}
+
+impl Operator {
+    /// Returns the operator of `operation`.
+    #[must_use]
+    pub const fn of(operation: Operation) -> Self {
+        match operation {
+            Operation::Add(_) => Self::Add,
+            Operation::Subtract(_) => Self::Subtract,
+            Operation::Multiply(_) => Self::Multiply,
+            Operation::Divide(_) => Self::Divide,
+            Operation::Given(_) => Self::Given,
+        }
+    }
 }
 
 /// A partial map from cells to candidate values representing a constraint's effect on a grid;
@@ -532,6 +645,267 @@ mod tests {
         let result = a * b;
         assert!(result.0.contains_key(&cell(0, 0)));
         assert!(result.0.contains_key(&cell(1, 1)));
+    }
+
+    fn cells_of(positions: &[(Index, Index)]) -> Vec<Cell> {
+        positions.iter().map(|&(r, c)| Cell::new(r, c)).collect()
+    }
+
+    fn add_targets(cells: &[Cell], n: N) -> Vec<N> {
+        Cage::valid_targets(cells, Operator::Add, n)
+            .map(|op| match op {
+                Operation::Add(t) => t,
+                _ => panic!("expected Add"),
+            })
+            .collect()
+    }
+
+    fn multiply_targets(cells: &[Cell], n: N) -> Vec<M> {
+        Cage::valid_targets(cells, Operator::Multiply, n)
+            .map(|op| match op {
+                Operation::Multiply(t) => t,
+                _ => panic!("expected Multiply"),
+            })
+            .collect()
+    }
+
+    #[test]
+    fn valid_operators_singleton_returns_given_only() {
+        let cells = cells_of(&[(0, 0)]);
+        assert_eq!(Cage::valid_operators(&cells), vec![Operator::Given]);
+    }
+
+    #[test]
+    fn valid_operators_two_cells_returns_all_binary_ops() {
+        let cells = cells_of(&[(0, 0), (0, 1)]);
+        let ops = Cage::valid_operators(&cells);
+        assert_eq!(
+            ops,
+            vec![
+                Operator::Add,
+                Operator::Subtract,
+                Operator::Multiply,
+                Operator::Divide,
+            ]
+        );
+    }
+
+    #[test]
+    fn valid_operators_three_cells_returns_add_and_multiply() {
+        let cells = cells_of(&[(0, 0), (0, 1), (0, 2)]);
+        assert_eq!(
+            Cage::valid_operators(&cells),
+            vec![Operator::Add, Operator::Multiply]
+        );
+    }
+
+    #[test]
+    fn valid_operators_four_cells_returns_add_and_multiply() {
+        let cells = cells_of(&[(0, 0), (0, 1), (1, 0), (1, 1)]);
+        assert_eq!(
+            Cage::valid_operators(&cells),
+            vec![Operator::Add, Operator::Multiply]
+        );
+    }
+
+    #[test]
+    fn valid_operators_empty_cells_returns_empty() {
+        assert_eq!(Cage::valid_operators(&[]), Vec::<Operator>::new());
+    }
+
+    #[test]
+    fn valid_targets_singleton_given_yields_one_through_n() {
+        let cells = cells_of(&[(0, 0)]);
+        let targets: Vec<Operation> = Cage::valid_targets(&cells, Operator::Given, 5).collect();
+        assert_eq!(
+            targets,
+            (1..=5u8).map(Operation::Given).collect::<Vec<_>>()
+        );
+    }
+
+    #[test]
+    fn valid_targets_singleton_non_given_is_empty() {
+        let cells = cells_of(&[(0, 0)]);
+        for op in [
+            Operator::Add,
+            Operator::Subtract,
+            Operator::Multiply,
+            Operator::Divide,
+        ] {
+            assert_eq!(Cage::valid_targets(&cells, op, 5).count(), 0);
+        }
+    }
+
+    #[test]
+    fn valid_targets_two_cell_subtract_yields_one_through_n_minus_one() {
+        let cells = cells_of(&[(0, 0), (0, 1)]);
+        let targets: Vec<Operation> =
+            Cage::valid_targets(&cells, Operator::Subtract, 5).collect();
+        assert_eq!(
+            targets,
+            (1..=4u8).map(Operation::Subtract).collect::<Vec<_>>()
+        );
+    }
+
+    #[test]
+    fn valid_targets_two_cell_divide_yields_two_through_n() {
+        let cells = cells_of(&[(0, 0), (0, 1)]);
+        let targets: Vec<Operation> = Cage::valid_targets(&cells, Operator::Divide, 6).collect();
+        assert_eq!(
+            targets,
+            (2..=6u8).map(Operation::Divide).collect::<Vec<_>>()
+        );
+    }
+
+    #[test]
+    fn valid_targets_two_cell_same_row_add_excludes_doubles() {
+        // n=4 same-row 2-cell cage requires a≠b. Pairs: (1,2)=3, (1,3)=4, (1,4)=5,
+        // (2,3)=5, (2,4)=6, (3,4)=7. Sums 2 and 8 require doubles.
+        let cells = cells_of(&[(0, 0), (0, 1)]);
+        assert_eq!(add_targets(&cells, 4), vec![3, 4, 5, 6, 7]);
+    }
+
+    #[test]
+    fn valid_targets_two_cell_l_shape_add_includes_doubles() {
+        // L-shaped (different row and column) 2-cell cage has no row/col group, so
+        // (a, a) tuples are kept: sums 2 (1+1), 4 (2+2), 6 (3+3), 8 (4+4) join the list.
+        let cells = cells_of(&[(0, 0), (1, 1)]);
+        assert_eq!(add_targets(&cells, 4), vec![2, 3, 4, 5, 6, 7, 8]);
+    }
+
+    #[test]
+    fn valid_targets_two_cell_same_row_multiply_excludes_squares() {
+        // 1*2=2, 1*3=3, 1*4=4, 2*3=6, 2*4=8, 3*4=12.
+        let cells = cells_of(&[(0, 0), (0, 1)]);
+        assert_eq!(multiply_targets(&cells, 4), vec![2, 3, 4, 6, 8, 12]);
+    }
+
+    #[test]
+    fn valid_targets_three_cell_line_add() {
+        // 3 cells in a row, n=4: triplets {a,b,c} all-different, sums {1,2,3}=6,
+        // {1,2,4}=7, {1,3,4}=8, {2,3,4}=9.
+        let cells = cells_of(&[(0, 0), (0, 1), (0, 2)]);
+        assert_eq!(add_targets(&cells, 4), vec![6, 7, 8, 9]);
+    }
+
+    #[test]
+    fn valid_targets_three_cell_line_multiply() {
+        // 3 cells in a row, n=4: 1*2*3=6, 1*2*4=8, 1*3*4=12, 2*3*4=24.
+        let cells = cells_of(&[(0, 0), (0, 1), (0, 2)]);
+        assert_eq!(multiply_targets(&cells, 4), vec![6, 8, 12, 24]);
+    }
+
+    #[test]
+    fn valid_targets_three_cell_l_shape_add_drops_uniform_extremes() {
+        // L-shape (0,0), (1,0), (1,1): col-0 group {pos 0, 1}, row-1 group {pos 1, 2}.
+        // Position 1 must differ from both neighbors, so (v, v, v) tuples are filtered.
+        let cells = cells_of(&[(0, 0), (1, 0), (1, 1)]);
+        let targets = add_targets(&cells, 4);
+        assert!(!targets.contains(&3), "got {targets:?}");
+        assert!(!targets.contains(&12), "got {targets:?}");
+        assert!(targets.contains(&4));
+        assert!(targets.contains(&11));
+        assert!(targets.windows(2).all(|w| w[0] < w[1]), "not ascending: {targets:?}");
+    }
+
+    #[test]
+    fn valid_targets_unsupported_operator_for_cells_is_empty() {
+        let three = cells_of(&[(0, 0), (0, 1), (0, 2)]);
+        assert_eq!(
+            Cage::valid_targets(&three, Operator::Subtract, 5).count(),
+            0
+        );
+        assert_eq!(Cage::valid_targets(&three, Operator::Divide, 5).count(), 0);
+        assert_eq!(Cage::valid_targets(&three, Operator::Given, 5).count(), 0);
+
+        let one = cells_of(&[(0, 0)]);
+        assert_eq!(Cage::valid_targets(&one, Operator::Add, 5).count(), 0);
+    }
+
+    #[test]
+    fn is_valid_singleton_given_in_range() {
+        let cells = cells_of(&[(0, 0)]);
+        assert!(Cage::is_valid(&cells, Operation::Given(1), 5));
+        assert!(Cage::is_valid(&cells, Operation::Given(5), 5));
+        assert!(!Cage::is_valid(&cells, Operation::Given(0), 5));
+        assert!(!Cage::is_valid(&cells, Operation::Given(6), 5));
+    }
+
+    #[test]
+    fn is_valid_singleton_rejects_non_given_operators() {
+        let cells = cells_of(&[(0, 0)]);
+        assert!(!Cage::is_valid(&cells, Operation::Add(3), 5));
+        assert!(!Cage::is_valid(&cells, Operation::Subtract(2), 5));
+        assert!(!Cage::is_valid(&cells, Operation::Multiply(3), 5));
+        assert!(!Cage::is_valid(&cells, Operation::Divide(2), 5));
+    }
+
+    #[test]
+    fn is_valid_three_cells_rejects_subtract_and_divide() {
+        let cells = cells_of(&[(0, 0), (0, 1), (0, 2)]);
+        assert!(!Cage::is_valid(&cells, Operation::Subtract(1), 5));
+        assert!(!Cage::is_valid(&cells, Operation::Divide(2), 5));
+        assert!(Cage::is_valid(&cells, Operation::Add(6), 5));
+        assert!(Cage::is_valid(&cells, Operation::Multiply(6), 5));
+    }
+
+    #[test]
+    fn is_valid_two_cell_subtract_zero_rejected() {
+        let cells = cells_of(&[(0, 0), (0, 1)]);
+        assert!(!Cage::is_valid(&cells, Operation::Subtract(0), 5));
+    }
+
+    #[test]
+    fn is_valid_two_cell_divide_below_two_rejected() {
+        // Reject Divide(0) and Divide(1) on every shape, including L-shapes where
+        // (a, a) tuples would otherwise pass the row/col filter.
+        let row = cells_of(&[(0, 0), (0, 1)]);
+        let l_shape = cells_of(&[(0, 0), (1, 1)]);
+        for cells in [&row, &l_shape] {
+            assert!(!Cage::is_valid(cells, Operation::Divide(0), 5));
+            assert!(!Cage::is_valid(cells, Operation::Divide(1), 5));
+        }
+    }
+
+    #[test]
+    fn is_valid_two_cell_same_row_subtract_in_range() {
+        let cells = cells_of(&[(0, 0), (0, 1)]);
+        assert!(Cage::is_valid(&cells, Operation::Subtract(1), 5));
+        assert!(Cage::is_valid(&cells, Operation::Subtract(4), 5));
+        assert!(!Cage::is_valid(&cells, Operation::Subtract(5), 5));
+    }
+
+    #[test]
+    fn is_valid_two_cell_same_row_add_rejects_double() {
+        // Sum 2 requires (1, 1), filtered by the row's all-different group.
+        let cells = cells_of(&[(0, 0), (0, 1)]);
+        assert!(!Cage::is_valid(&cells, Operation::Add(2), 4));
+        assert!(Cage::is_valid(&cells, Operation::Add(3), 4));
+    }
+
+    #[test]
+    fn is_valid_two_cell_l_shape_add_accepts_double() {
+        // (0, 0) and (1, 1) share neither row nor column, so Add(2) via (1, 1) is legal.
+        let cells = cells_of(&[(0, 0), (1, 1)]);
+        assert!(Cage::is_valid(&cells, Operation::Add(2), 4));
+    }
+
+    #[test]
+    fn valid_targets_iterator_is_lazy() {
+        // Multiply on a 5-cell cage in a 9x9 grid has up to 9^5 = 59049 candidate targets.
+        // Taking just the first should not require evaluating the full range.
+        let cells = cells_of(&[(0, 0), (0, 1), (0, 2), (0, 3), (0, 4)]);
+        let first = Cage::valid_targets(&cells, Operator::Multiply, 9).next();
+        assert_eq!(first, Some(Operation::Multiply(120))); // 1*2*3*4*5
+    }
+
+    #[test]
+    fn operator_of_operation_round_trips_each_variant() {
+        assert_eq!(Operator::of(Operation::Add(3)), Operator::Add);
+        assert_eq!(Operator::of(Operation::Subtract(3)), Operator::Subtract);
+        assert_eq!(Operator::of(Operation::Multiply(6)), Operator::Multiply);
+        assert_eq!(Operator::of(Operation::Divide(2)), Operator::Divide);
+        assert_eq!(Operator::of(Operation::Given(4)), Operator::Given);
     }
 
     #[test]

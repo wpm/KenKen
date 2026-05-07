@@ -5,8 +5,8 @@
 
 use kenken::{
     Cage, Cell, DEFAULT_SIZE_DISTRIBUTION, Delta, Grid, Index, N, NarrowingScore, Operation,
-    Polyomino, Puzzle, SizeDistribution, Uniqueness, Values, default_op_policy, generate,
-    generate_with,
+    Operator, Polyomino, Puzzle, SizeDistribution, Uniqueness, Values, default_op_policy,
+    generate, generate_with,
 };
 use rand::SeedableRng;
 use rand_chacha::ChaCha8Rng;
@@ -259,6 +259,66 @@ fn rank_tuples_for_cage_is_public_and_returns_scored_entries() {
     assert!(ranked.iter().all(|(_, post, _)| post.is_valid()));
     let score: NarrowingScore = ranked[0].2;
     assert!(score.total_reduction > 0);
+}
+
+#[test]
+fn cage_valid_operators_branches_by_cell_count() {
+    assert_eq!(
+        Cage::valid_operators(&[Cell::new(0, 0)]),
+        vec![Operator::Given]
+    );
+    assert_eq!(
+        Cage::valid_operators(&[Cell::new(0, 0), Cell::new(0, 1)]),
+        vec![
+            Operator::Add,
+            Operator::Subtract,
+            Operator::Multiply,
+            Operator::Divide,
+        ]
+    );
+    assert_eq!(
+        Cage::valid_operators(&[Cell::new(0, 0), Cell::new(0, 1), Cell::new(0, 2)]),
+        vec![Operator::Add, Operator::Multiply]
+    );
+}
+
+#[test]
+fn cage_valid_targets_yields_legal_targets_in_ascending_order() {
+    let cells = [Cell::new(0, 0), Cell::new(0, 1)];
+    let subtract: Vec<Operation> = Cage::valid_targets(&cells, Operator::Subtract, 4).collect();
+    assert_eq!(
+        subtract,
+        vec![
+            Operation::Subtract(1),
+            Operation::Subtract(2),
+            Operation::Subtract(3),
+        ]
+    );
+    let divide: Vec<Operation> = Cage::valid_targets(&cells, Operator::Divide, 4).collect();
+    assert_eq!(
+        divide,
+        vec![
+            Operation::Divide(2),
+            Operation::Divide(3),
+            Operation::Divide(4),
+        ]
+    );
+}
+
+#[test]
+fn cage_is_valid_filters_operator_target_pairs() {
+    let singleton = [Cell::new(0, 0)];
+    assert!(Cage::is_valid(&singleton, Operation::Given(3), 4));
+    assert!(!Cage::is_valid(&singleton, Operation::Add(3), 4));
+
+    let pair = [Cell::new(0, 0), Cell::new(0, 1)];
+    assert!(Cage::is_valid(&pair, Operation::Subtract(2), 4));
+    assert!(!Cage::is_valid(&pair, Operation::Subtract(0), 4));
+    assert!(!Cage::is_valid(&pair, Operation::Divide(1), 4));
+
+    let triple = [Cell::new(0, 0), Cell::new(0, 1), Cell::new(0, 2)];
+    assert!(Cage::is_valid(&triple, Operation::Add(6), 4));
+    assert!(!Cage::is_valid(&triple, Operation::Subtract(1), 4));
 }
 
 #[test]
