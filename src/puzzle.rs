@@ -4,13 +4,13 @@
 #![allow(dead_code)]
 
 use crate::Cage;
-use crate::all_different::AllDifferent;
-use crate::constraint::{Constraint, ValueFilter};
-use crate::delta::Delta;
-use crate::grid::Grid;
-use crate::shape::Polyomino;
-use crate::solver::{Solver, State};
-use crate::tiling::Tiling;
+use crate::constraints::all_different::AllDifferent;
+use crate::constraints::constraint::{Constraint, ValueFilter};
+use crate::geometry::grid::Grid;
+use crate::geometry::shape::Polyomino;
+use crate::geometry::tiling::Tiling;
+use crate::solver::delta::Delta;
+use crate::solver::solve::{Solver, State};
 use crate::types::{Cell, Error, Index, N, Values};
 use std::collections::HashMap;
 use std::sync::Arc;
@@ -47,7 +47,7 @@ pub struct NarrowingScore {
 /// A KenKen puzzle: a candidate-value grid paired with a fixed set of all-different and
 /// cage constraints.
 ///
-/// Construct one via [`crate::generate`] or [`crate::generate_with`]; the public surface is
+/// Construct one via [`crate::generate()`] or [`crate::generate_with`]; the public surface is
 /// [`Puzzle::n`], [`Puzzle::uniqueness`], and [`Puzzle::solutions`].
 ///
 /// ## Cloning during search
@@ -397,7 +397,7 @@ impl State for Puzzle {
 #[allow(clippy::unwrap_used)]
 mod tests {
     use super::*;
-    use crate::cage::operation::Operation;
+    use crate::constraints::cage::operation::Operation;
     use crate::types::Cell;
 
     fn make_cage(cells: &[(usize, usize)], n: u8) -> Cage {

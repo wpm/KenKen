@@ -1,6 +1,6 @@
 #![allow(dead_code)]
 
-use crate::shape::Polyomino;
+use crate::geometry::shape::Polyomino;
 use crate::types::Cell;
 use rand::{Rng, RngExt};
 use std::collections::HashSet;
@@ -162,7 +162,7 @@ fn grid_neighbors(cell: Cell, n: usize) -> impl Iterator<Item = Cell> {
 #[allow(clippy::unwrap_used)]
 mod tests {
     use super::*;
-    use crate::shape::is_connected;
+    use crate::geometry::shape::is_connected;
     use rand::SeedableRng;
     use rand_chacha::ChaCha8Rng;
 

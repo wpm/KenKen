@@ -1,9 +1,9 @@
-use crate::cage::arithmetic::{
+use crate::constraints::cage::arithmetic::{
     addition_multisets, division_multisets, multiplication_multisets, subtraction_multisets,
 };
-use crate::cage::operation::{Operation, Operator};
-use crate::constraint::{Constraint, ValueFilter};
-use crate::shape::Cells;
+use crate::constraints::cage::operation::{Operation, Operator};
+use crate::constraints::constraint::{Constraint, ValueFilter};
+use crate::geometry::shape::Cells;
 use crate::types::{Cell, Index};
 use crate::{Error, Grid, M, N, Polyomino, Values};
 use std::collections::HashMap;
@@ -183,8 +183,8 @@ fn possible_operators(grid: &Grid, polyomino: &Polyomino) -> Vec<Operator> {
 /// the polyomino's cells satisfies the operation and the collinearity constraints.
 ///
 /// Subtract and Divide are only valid for 2-cell polyominoes; any other size yields an empty map.
-#[allow(dead_code)]
-fn operator_tuples(
+#[must_use]
+pub fn operator_tuples(
     n: N,
     polyomino: &Polyomino,
     operator: Operator,
