@@ -26,7 +26,7 @@ pub enum Uniqueness {
 ///
 /// Produced by [`Puzzle::rank_tuples_for_cage`] to rank a cage's tuples by how
 /// informative each choice is. The score is *coupled to the puzzle's current
-/// inference engine*: a stronger engine (for instance Régin's filter for
+/// inference engine*: a stronger engine (for instance, Régin's filter for
 /// `AllDifferent` versus a weaker pairwise filter) reaches a different fixpoint
 /// after `narrow`, so the same input tuple yields a different score. This
 /// coupling is intentional — "informativeness given your inference engine" is
@@ -229,7 +229,7 @@ impl Puzzle {
     }
 
     /// Apply `delta` by intersecting per-cell with the current grid, then propagate to
-    /// fixed point. Always returns a `Puzzle`; the caller inspects [`Self::is_valid`].
+    /// the fixed point. Always returns a `Puzzle`; the caller inspects [`Self::is_valid`].
     ///
     /// # Panics
     /// Panics if `delta.n()` does not match `self.n()`.
@@ -238,7 +238,7 @@ impl Puzzle {
     }
 
     /// Apply `delta` by unioning per-cell with the current grid, then propagate to
-    /// fixed point. Always returns a `Puzzle`; the caller inspects [`Self::is_valid`].
+    /// the fixed point. Always returns a `Puzzle`; the caller inspects [`Self::is_valid`].
     ///
     /// # Panics
     /// Panics if `delta.n()` does not match `self.n()`.
@@ -930,7 +930,7 @@ mod tests {
 
     #[test]
     fn widen_re_narrows_to_constraint_implications() {
-        // Start from the fully-propagated puzzle (every cell singleton). Widen with the
+        // Start from the fully propagated puzzle (every cell singleton). Widen with the
         // identity delta unions full {1,2} into every cell, then propagation re-narrows
         // to the same fixed point.
         let p = Puzzle::new(2).unwrap().insert_cage(given(0, 0, 1)).unwrap();

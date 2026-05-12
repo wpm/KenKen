@@ -351,7 +351,7 @@ fn delta_narrow_widen_and_propagate_fully_are_public() {
     let invalid = Puzzle::new(2).unwrap().narrow(&emptying);
     assert!(!invalid.is_valid());
 
-    // Widen with the identity over a fully-propagated puzzle re-narrows back to the
+    // Widen with the identity over a fully propagated puzzle re-narrows back to the
     // same fixed point.
     let solved = Puzzle::new(2)
         .unwrap()
