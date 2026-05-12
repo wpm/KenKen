@@ -278,7 +278,7 @@ fn transpose(cage_size: usize, tuples: &[Vec<N>]) -> Vec<Values> {
 /// An arithmetic operation that defines a polyomino.
 ///
 /// Every variant carries its target as an [`M`] (u16). The product target needs the wider
-/// type; the others fit in [`N`] but use [`M`] so the API is uniform and consumers can read
+/// type; the others fit in [`N`] but use [`M`], so the API is uniform and consumers can read
 /// `target` without matching on the variant.
 #[derive(Debug, Clone, Copy, Eq, PartialEq)]
 pub enum Operation {

@@ -102,8 +102,7 @@ impl Polyomino {
     /// # Errors
     /// - [`Error::CellNotCovered`] if `cell` is not in `self`.
     /// - [`Error::RemovalWouldEmptyPolyomino`] if `self` has only one cell.
-    /// - [`Error::FlipWouldDisconnect`] if removal would leave the remaining cells
-    ///   disconnected.
+    /// - [`Error::FlipWouldDisconnect`] if removal leaves the remaining cells disconnected.
     pub fn without(&self, cell: Cell) -> Result<Self, Error> {
         if !self.contains_cell(cell) {
             return Err(Error::CellNotCovered(cell));
