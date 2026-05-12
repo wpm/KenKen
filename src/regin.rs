@@ -25,7 +25,7 @@ use crate::types::{N, Values};
 /// fixes this by adding a sink node connected to free values; this
 /// implementation omits that step. See issue #30.
 ///
-/// The only current caller (`AllDifferent::grid_value_filter`) always passes
+/// The only current caller (`AllDifferent::value_filter`) always passes
 /// a full row or column of an `n`×`n` grid with values `{1..=n}`, so the
 /// precondition holds. New callers must ensure it before using `regin`.
 use std::collections::HashMap;

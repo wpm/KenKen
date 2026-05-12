@@ -1,0 +1,742 @@
+use crate::cage::arithmetic::{
+    addition_multisets, division_multisets, multiplication_multisets, subtraction_multisets,
+};
+use crate::cage::operation::{Operation, Operator};
+use crate::constraint::{Constraint, ValueFilter};
+use crate::shape::Cells;
+use crate::types::{Cell, Index};
+use crate::{Error, Grid, M, N, Polyomino, Values};
+use std::collections::HashMap;
+use strum::IntoEnumIterator;
+
+#[allow(dead_code)]
+pub type Tuple = Vec<N>;
+
+/// A polyomino constraint defined by a set of cells and an arithmetic operation.
+///
+/// Stores the valid ordered tuples for the operation after filtering out assignments that
+/// repeat a value within any shared row or column of the polyomino.
+#[must_use]
+#[derive(Debug, Clone)]
+pub struct Cage {
+    polyomino: Polyomino,
+    operation: Operation,
+    tuples: Vec<Tuple>,
+}
+
+impl Cage {
+    /// Creates a cage over the given polyomino. Stores valid ordered tuples for `operation`,
+    /// with tuples that repeat a value within any shared row or column dropped.
+    pub fn new(n: N, polyomino: Polyomino, operation: Operation) -> Self {
+        let pairs = collinear_pairs(polyomino.as_slice());
+        let tuples = raw_tuples(n, polyomino.len(), operation)
+            .iter()
+            .filter(|t| pairs.iter().all(|&(i, j)| t[i] != t[j]))
+            .cloned()
+            .collect();
+        Self {
+            polyomino,
+            operation,
+            tuples,
+        }
+    }
+
+    /// Returns the polyomino covered by this cage.
+    pub const fn polyomino(&self) -> &Polyomino {
+        &self.polyomino
+    }
+
+    /// Returns this cage's operation.
+    #[must_use]
+    pub const fn operation(&self) -> Operation {
+        self.operation
+    }
+
+    /// Returns the cells covered by this cage.
+    pub fn cells(&self) -> &[Cell] {
+        self.polyomino.as_slice()
+    }
+
+    /// Returns a slice over the cage's precomputed valid ordered tuples.
+    #[must_use]
+    pub fn tuples(&self) -> &[Tuple] {
+        &self.tuples
+    }
+
+    /// Returns the operators legal for a cage covering `cells`.
+    ///
+    /// Singleton cages permit only [`Operator::Given`]; 2-cell cages permit all operators;
+    /// larger cages permit only [`Operator::Add`] and [`Operator::Multiply`].
+    #[must_use]
+    pub fn valid_operators(cells: &[Cell]) -> Vec<Operator> {
+        match cells.len() {
+            0 => vec![],
+            1 => vec![Operator::Given],
+            2 => vec![
+                Operator::Add,
+                Operator::Subtract,
+                Operator::Multiply,
+                Operator::Divide,
+            ],
+            _ => vec![Operator::Add, Operator::Multiply],
+        }
+    }
+
+    /// Returns an iterator over [`Operation`] values whose `(operator, target)` pair is legal
+    /// for a cage covering `cells` on an `n`×`n` grid, in ascending target order.
+    ///
+    /// If `op` is not in [`Self::valid_operators`] for `cells`, the iterator is empty.
+    #[must_use]
+    pub fn valid_targets(
+        cells: &[Cell],
+        op: Operator,
+        n: N,
+    ) -> Box<dyn Iterator<Item = Operation>> {
+        if !Self::valid_operators(cells).contains(&op) {
+            return Box::new(std::iter::empty());
+        }
+        let polyomino = Polyomino::new(cells);
+        let k = polyomino.len();
+        let n_m = M::from(n);
+        match op {
+            Operator::Given => Box::new((1..=n_m).map(Operation::Given)),
+            Operator::Subtract => Box::new((1..=n_m.saturating_sub(1)).map(Operation::Subtract)),
+            Operator::Divide => Box::new((2..=n_m).map(Operation::Divide)),
+            Operator::Add => {
+                let max = M::try_from(usize::from(n).saturating_mul(k)).unwrap_or(M::MAX);
+                let pairs = collinear_pairs(polyomino.as_slice());
+                Box::new((1..=max).filter_map(move |t| {
+                    let op = Operation::Add(t);
+                    has_admissible_tuple(n, k, op, &pairs).then_some(op)
+                }))
+            }
+            Operator::Multiply => {
+                let exp = u32::try_from(k).unwrap_or(u32::MAX);
+                let max = n_m.saturating_pow(exp);
+                let pairs = collinear_pairs(polyomino.as_slice());
+                Box::new((1..=max).filter_map(move |t| {
+                    let op = Operation::Multiply(t);
+                    has_admissible_tuple(n, k, op, &pairs).then_some(op)
+                }))
+            }
+        }
+    }
+
+    /// Returns true if `operation` is legal for a cage of the given cells on an `n`×`n` grid.
+    ///
+    /// The operator must be in [`Self::valid_operators`] for the cell count, the target must
+    /// be in its conventional range, and at least one tuple must survive collinearity filtering.
+    #[must_use]
+    pub fn is_valid(cells: &[Cell], operation: Operation, n: N) -> bool {
+        if !Self::valid_operators(cells).contains(&Operator::of(operation)) {
+            return false;
+        }
+        match operation {
+            Operation::Given(v) => return (1..=M::from(n)).contains(&v),
+            Operation::Subtract(0) | Operation::Divide(0 | 1) => return false,
+            _ => {}
+        }
+        let polyomino = Polyomino::new(cells);
+        let pairs = collinear_pairs(polyomino.as_slice());
+        has_admissible_tuple(n, polyomino.len(), operation, &pairs)
+    }
+}
+
+/// Returns true if any tuple from `raw_tuples` satisfies every collinear pair constraint.
+fn has_admissible_tuple(n: N, k: usize, operation: Operation, pairs: &[(usize, usize)]) -> bool {
+    raw_tuples(n, k, operation)
+        .iter()
+        .any(|t| pairs.iter().all(|&(i, j)| t[i] != t[j]))
+}
+
+impl Cells for Cage {
+    fn cells(&self) -> &[Cell] {
+        self.polyomino.as_slice()
+    }
+}
+
+impl Constraint for Cage {
+    /// Returns a filter mapping each cell to the union of values it takes across all valid tuples.
+    ///
+    /// For example, a 2-cell `Add(3)` cage on a 4×4 grid has valid tuples `[1,2]` and `[2,1]`.
+    /// The filter maps cell 0 → `{1, 2}` and cell 1 → `{1, 2}`.
+    fn value_filter(&self, _grid: &Grid) -> Result<ValueFilter, Error> {
+        let n = self.cells().len();
+        let mut cols = vec![Values::default(); n];
+        for tuple in self.tuples() {
+            for (col, &val) in cols.iter_mut().zip(tuple.iter()) {
+                *col = *col | Values::new([val]);
+            }
+        }
+        Ok(self.cells().iter().copied().zip(cols).collect())
+    }
+}
+
+/// Returns the operators for which at least one valid operation exists for the given polyomino
+/// in the context of the grid.
+///
+/// An operator is included only if [`operation_tuples`] yields at least one [`Operation`]
+/// for it — i.e. there exists some target value that is consistent with the grid constraints.
+#[allow(dead_code)]
+fn possible_operators(grid: &Grid, polyomino: &Polyomino) -> Vec<Operator> {
+    Operator::iter()
+        .filter(|operator| !operation_tuples(grid, polyomino, *operator).is_empty())
+        .collect()
+}
+
+/// Returns a map from each valid [`Operation`] to the ordered tuples that realize it, for the
+/// given operator applied to the polyomino on the grid.
+///
+/// Each key is an `(operator, target)` pair for which at least one assignment of grid values to
+/// the polyomino's cells satisfies the operation and the grid's row/column all-different
+/// constraints. The value is the list of ordered tuples (one entry per permutation of each
+/// multiset) that satisfy both the operation and the collinearity constraints.
+///
+/// Subtract and Divide are only valid for 2-cell polyominoes; any other size yields an empty map.
+#[allow(dead_code)]
+fn operation_tuples(
+    grid: &Grid,
+    polyomino: &Polyomino,
+    operator: Operator,
+) -> HashMap<Operation, Vec<Tuple>> {
+    #[allow(clippy::cast_possible_truncation)]
+    let n = grid.n() as N;
+    let k = polyomino.len();
+    let pairs = collinear_pairs(polyomino.as_slice());
+
+    match operator {
+        Operator::Given => {
+            if k != 1 {
+                return HashMap::new();
+            }
+            (1..=n)
+                .map(|v| (Operation::Given(M::from(v)), vec![vec![v]]))
+                .collect()
+        }
+        Operator::Subtract => {
+            if k != 2 {
+                return HashMap::new();
+            }
+            (1..n)
+                .flat_map(|d| {
+                    let op = Operation::Subtract(M::from(d));
+                    subtraction_multisets(n, d)
+                        .flat_map(|ms| {
+                            ordered_tuples(&ms, &pairs)
+                                .map(move |t| (op, t))
+                                .collect::<Vec<_>>()
+                        })
+                        .collect::<Vec<_>>()
+                })
+                .fold(HashMap::new(), |mut map, (op, t)| {
+                    map.entry(op).or_default().push(t);
+                    map
+                })
+        }
+        Operator::Divide => {
+            if k != 2 {
+                return HashMap::new();
+            }
+            (2..=n)
+                .flat_map(|q| {
+                    let op = Operation::Divide(M::from(q));
+                    division_multisets(n, q)
+                        .flat_map(|ms| {
+                            ordered_tuples(&ms, &pairs)
+                                .map(move |t| (op, t))
+                                .collect::<Vec<_>>()
+                        })
+                        .collect::<Vec<_>>()
+                })
+                .fold(HashMap::new(), |mut map, (op, t)| {
+                    map.entry(op).or_default().push(t);
+                    map
+                })
+        }
+        Operator::Add => {
+            if k < 2 {
+                return HashMap::new();
+            }
+            #[allow(clippy::cast_possible_truncation)]
+            let max_target = M::from(n) * M::try_from(k).unwrap_or(M::MAX);
+            (1..=max_target)
+                .filter_map(|s| {
+                    N::try_from(s).map_or(None, |s_n| {
+                        let tuples: Vec<Tuple> = addition_multisets(n, k, s_n)
+                            .flat_map(|ms| ordered_tuples(&ms, &pairs).collect::<Vec<_>>())
+                            .collect();
+                        if tuples.is_empty() {
+                            None
+                        } else {
+                            Some((Operation::Add(s), tuples))
+                        }
+                    })
+                })
+                .collect()
+        }
+        Operator::Multiply => {
+            if k < 2 {
+                return HashMap::new();
+            }
+            #[allow(clippy::cast_possible_truncation)]
+            let max_target = M::from(n).saturating_pow(u32::try_from(k).unwrap_or(u32::MAX));
+            (1..=max_target)
+                .filter_map(|s| {
+                    let tuples: Vec<Tuple> = multiplication_multisets(n, k, s)
+                        .flat_map(|ms| ordered_tuples(&ms, &pairs).collect::<Vec<_>>())
+                        .collect();
+                    if tuples.is_empty() {
+                        None
+                    } else {
+                        Some((Operation::Multiply(s), tuples))
+                    }
+                })
+                .collect()
+        }
+    }
+}
+
+/// Returns all ordered tuples for `operation` on a `k`-cell cage in an `n`×`n` grid, without
+/// any collinearity filtering.
+fn raw_tuples(n: N, k: usize, operation: Operation) -> Vec<Tuple> {
+    match operation {
+        Operation::Given(v) => N::try_from(v).map_or_else(|_| vec![], |v_n| vec![vec![v_n]]),
+        Operation::Subtract(d) => N::try_from(d).map_or_else(
+            |_| vec![],
+            |d_n| {
+                subtraction_multisets(n, d_n)
+                    .flat_map(|ms| permutations(&ms).collect::<Vec<_>>())
+                    .collect()
+            },
+        ),
+        Operation::Divide(q) => N::try_from(q).map_or_else(
+            |_| vec![],
+            |q_n| {
+                division_multisets(n, q_n)
+                    .flat_map(|ms| permutations(&ms).collect::<Vec<_>>())
+                    .collect()
+            },
+        ),
+        Operation::Add(s) => N::try_from(s).map_or(vec![], |s_n| {
+            addition_multisets(n, k, s_n)
+                .flat_map(|ms| permutations(&ms).collect::<Vec<_>>())
+                .collect()
+        }),
+        Operation::Multiply(s) => multiplication_multisets(n, k, s)
+            .flat_map(|ms| permutations(&ms).collect::<Vec<_>>())
+            .collect(),
+    }
+}
+
+/// Returns pairs of cell indices within `cells` that share a row or column.
+///
+/// Each pair `(i, j)` with `i < j` means `cells[i]` and `cells[j]` must hold distinct values.
+fn collinear_pairs(cells: &[Cell]) -> Vec<(usize, usize)> {
+    let mut by_row: HashMap<Index, Vec<usize>> = HashMap::new();
+    let mut by_col: HashMap<Index, Vec<usize>> = HashMap::new();
+    for (i, cell) in cells.iter().enumerate() {
+        by_row.entry(cell.row).or_default().push(i);
+        by_col.entry(cell.column).or_default().push(i);
+    }
+    let mut pairs = Vec::new();
+    for group in by_row.into_values().chain(by_col.into_values()) {
+        for a in 0..group.len() {
+            for b in (a + 1)..group.len() {
+                pairs.push((group[a], group[b]));
+            }
+        }
+    }
+    pairs
+}
+
+/// Returns an iterator over all ordered permutations of `multiset` that satisfy the collinearity
+/// constraint: for every `(i, j)` in `pairs`, the values at positions `i` and `j` differ.
+fn ordered_tuples<'a>(
+    multiset: &'a [N],
+    pairs: &'a [(usize, usize)],
+) -> impl Iterator<Item = Tuple> + 'a {
+    permutations(multiset).filter(move |t| pairs.iter().all(|&(i, j)| t[i] != t[j]))
+}
+
+/// Returns an iterator over all distinct permutations of `values` in lexicographic order.
+fn permutations(values: &[N]) -> impl Iterator<Item = Tuple> {
+    let mut perm = values.to_vec();
+    perm.sort_unstable();
+    let mut all = vec![perm.clone()];
+    while next_permutation(&mut perm) {
+        all.push(perm.clone());
+    }
+    all.into_iter()
+}
+
+/// Advances `perm` to the next lexicographic permutation in place. Returns `false` if it was
+/// already the last permutation.
+fn next_permutation(perm: &mut [N]) -> bool {
+    let n = perm.len();
+    if n < 2 {
+        return false;
+    }
+    let mut i = n - 1;
+    while i > 0 && perm[i - 1] >= perm[i] {
+        i -= 1;
+    }
+    if i == 0 {
+        return false;
+    }
+    let pivot = i - 1;
+    let mut j = n - 1;
+    while perm[j] <= perm[pivot] {
+        j -= 1;
+    }
+    perm.swap(pivot, j);
+    perm[i..].reverse();
+    true
+}
+
+#[cfg(test)]
+#[allow(clippy::unwrap_used)]
+mod tests {
+    use super::*;
+    use crate::types::Cell;
+
+    fn cells(positions: &[(usize, usize)]) -> Vec<Cell> {
+        positions.iter().map(|&(r, c)| Cell::new(r, c)).collect()
+    }
+
+    fn poly(positions: &[(usize, usize)]) -> Polyomino {
+        Polyomino::new(&cells(positions))
+    }
+
+    fn grid(n: usize) -> Grid {
+        Grid::new(n).unwrap()
+    }
+
+    // --- collinear_pairs ---
+
+    #[test]
+    fn collinear_pairs_single_cell_is_empty() {
+        assert!(collinear_pairs(&cells(&[(0, 0)])).is_empty());
+    }
+
+    #[test]
+    fn collinear_pairs_same_row() {
+        let mut pairs = collinear_pairs(&cells(&[(0, 0), (0, 1), (0, 2)]));
+        pairs.sort_unstable();
+        assert_eq!(pairs, vec![(0, 1), (0, 2), (1, 2)]);
+    }
+
+    #[test]
+    fn collinear_pairs_same_column() {
+        let mut pairs = collinear_pairs(&cells(&[(0, 0), (1, 0)]));
+        pairs.sort_unstable();
+        assert_eq!(pairs, vec![(0, 1)]);
+    }
+
+    #[test]
+    fn collinear_pairs_diagonal_is_empty() {
+        // (0,0) and (1,1) share neither row nor column.
+        assert!(collinear_pairs(&cells(&[(0, 0), (1, 1)])).is_empty());
+    }
+
+    #[test]
+    fn collinear_pairs_l_shape() {
+        // (0,0), (1,0), (1,1): col-0 gives (0,1); row-1 gives (1,2).
+        let mut pairs = collinear_pairs(&cells(&[(0, 0), (1, 0), (1, 1)]));
+        pairs.sort_unstable();
+        assert_eq!(pairs, vec![(0, 1), (1, 2)]);
+    }
+
+    // --- permutations / next_permutation ---
+
+    #[test]
+    fn permutations_single_element() {
+        assert_eq!(permutations(&[1]).collect::<Vec<_>>(), vec![vec![1]]);
+    }
+
+    #[test]
+    fn permutations_two_distinct_elements() {
+        assert_eq!(
+            permutations(&[1, 2]).collect::<Vec<_>>(),
+            vec![vec![1, 2], vec![2, 1]]
+        );
+    }
+
+    #[test]
+    fn permutations_two_equal_elements() {
+        assert_eq!(permutations(&[2, 2]).collect::<Vec<_>>(), vec![vec![2, 2]]);
+    }
+
+    #[test]
+    fn permutations_three_distinct_elements_count() {
+        assert_eq!(permutations(&[1, 2, 3]).count(), 6);
+    }
+
+    #[test]
+    fn permutations_multiset_with_repeat() {
+        // [1,1,2] has 3 distinct permutations
+        assert_eq!(permutations(&[1, 1, 2]).count(), 3);
+    }
+
+    // --- ordered_tuples ---
+
+    #[test]
+    fn ordered_tuples_no_pairs_returns_all_permutations() {
+        // Diagonal pair: no collinearity constraint.
+        let pairs = vec![];
+        let result: Vec<Tuple> = ordered_tuples(&[1, 2], &pairs).collect();
+        assert_eq!(result, vec![vec![1, 2], vec![2, 1]]);
+    }
+
+    #[test]
+    fn ordered_tuples_same_row_filters_equal_values() {
+        // Row pair: (0,1) must differ.
+        let pairs = vec![(0, 1)];
+        assert!(ordered_tuples(&[2, 2], &pairs).next().is_none());
+    }
+
+    // --- operation_tuples ---
+
+    #[test]
+    fn operation_tuples_given_singleton() {
+        let g = grid(4);
+        let p = poly(&[(0, 0)]);
+        let map = operation_tuples(&g, &p, Operator::Given);
+        assert_eq!(map.len(), 4);
+        assert_eq!(map[&Operation::Given(1)], vec![vec![1]]);
+        assert_eq!(map[&Operation::Given(4)], vec![vec![4]]);
+    }
+
+    #[test]
+    fn operation_tuples_given_non_singleton_is_empty() {
+        let g = grid(4);
+        let p = poly(&[(0, 0), (0, 1)]);
+        assert!(operation_tuples(&g, &p, Operator::Given).is_empty());
+    }
+
+    #[test]
+    fn operation_tuples_subtract_non_pair_is_empty() {
+        let g = grid(4);
+        let p = poly(&[(0, 0), (0, 1), (0, 2)]);
+        assert!(operation_tuples(&g, &p, Operator::Subtract).is_empty());
+    }
+
+    #[test]
+    fn operation_tuples_subtract_pair_same_row() {
+        // Same row: (1,2) gives diff=1 → both orderings [1,2] and [2,1].
+        let g = grid(4);
+        let p = poly(&[(0, 0), (0, 1)]);
+        let map = operation_tuples(&g, &p, Operator::Subtract);
+        let mut t = map[&Operation::Subtract(1)].clone();
+        t.sort();
+        assert!(t.contains(&vec![1, 2]));
+        assert!(t.contains(&vec![2, 1]));
+    }
+
+    #[test]
+    fn operation_tuples_add_same_row_excludes_doubles() {
+        // n=4, same-row 2-cell: Add(2) requires [1,1] which violates collinearity.
+        let g = grid(4);
+        let p = poly(&[(0, 0), (0, 1)]);
+        let map = operation_tuples(&g, &p, Operator::Add);
+        assert!(!map.contains_key(&Operation::Add(2)));
+        assert!(map.contains_key(&Operation::Add(3)));
+    }
+
+    #[test]
+    fn operation_tuples_add_diagonal_includes_doubles() {
+        // Diagonal pair has no collinearity: Add(2) via [1,1] is valid.
+        let g = grid(4);
+        let p = poly(&[(0, 0), (1, 1)]);
+        let map = operation_tuples(&g, &p, Operator::Add);
+        assert!(map.contains_key(&Operation::Add(2)));
+    }
+
+    #[test]
+    fn operation_tuples_multiply_same_row() {
+        let g = grid(4);
+        let p = poly(&[(0, 0), (0, 1)]);
+        let map = operation_tuples(&g, &p, Operator::Multiply);
+        // 1*2=2, 1*3=3, 1*4=4, 2*3=6, 2*4=8, 3*4=12 (no squares in same row)
+        // 1*2=2, 1*3=3, 1*4=4, 2*3=6, 2*4=8, 3*4=12; squares (1*1, 2*2, etc.) filtered by row.
+        assert!(map.contains_key(&Operation::Multiply(6)));
+        assert!(map.contains_key(&Operation::Multiply(4))); // 1*4, not 2*2
+        assert!(!map.contains_key(&Operation::Multiply(1))); // only 1*1, filtered
+        assert!(!map.contains_key(&Operation::Multiply(9))); // only 3*3, filtered
+    }
+
+    #[test]
+    fn operation_tuples_subtract_pair_all_differences() {
+        // n=4 diagonal pair: Subtract(1) through Subtract(3) should all appear.
+        let g = grid(4);
+        let p = poly(&[(0, 0), (1, 1)]);
+        let map = operation_tuples(&g, &p, Operator::Subtract);
+        assert!(map.contains_key(&Operation::Subtract(1)));
+        assert!(map.contains_key(&Operation::Subtract(2)));
+        assert!(map.contains_key(&Operation::Subtract(3)));
+    }
+
+    #[test]
+    fn operation_tuples_divide_pair_all_quotients() {
+        // n=6 diagonal pair: Divide(2) through Divide(6) should all appear.
+        let g = grid(6);
+        let p = poly(&[(0, 0), (1, 1)]);
+        let map = operation_tuples(&g, &p, Operator::Divide);
+        assert!(map.contains_key(&Operation::Divide(2)));
+        assert!(map.contains_key(&Operation::Divide(3)));
+        assert!(map.contains_key(&Operation::Divide(6)));
+    }
+
+    #[test]
+    fn operation_tuples_divide_non_pair_is_empty() {
+        let g = grid(4);
+        let p = poly(&[(0, 0), (0, 1), (0, 2)]);
+        assert!(operation_tuples(&g, &p, Operator::Divide).is_empty());
+    }
+
+    // --- possible_operators ---
+
+    #[test]
+    fn possible_operators_singleton() {
+        let g = grid(4);
+        let p = poly(&[(0, 0)]);
+        assert_eq!(possible_operators(&g, &p), vec![Operator::Given]);
+    }
+
+    #[test]
+    fn possible_operators_two_cell_pair_includes_all() {
+        let g = grid(4);
+        let p = poly(&[(0, 0), (0, 1)]);
+        let ops = possible_operators(&g, &p);
+        assert!(ops.contains(&Operator::Add));
+        assert!(ops.contains(&Operator::Subtract));
+        assert!(ops.contains(&Operator::Multiply));
+        assert!(ops.contains(&Operator::Divide));
+    }
+
+    #[test]
+    fn possible_operators_three_cell_line_excludes_subtract_divide_given() {
+        let g = grid(4);
+        let p = poly(&[(0, 0), (0, 1), (0, 2)]);
+        let ops = possible_operators(&g, &p);
+        assert!(ops.contains(&Operator::Add));
+        assert!(ops.contains(&Operator::Multiply));
+        assert!(!ops.contains(&Operator::Subtract));
+        assert!(!ops.contains(&Operator::Divide));
+        assert!(!ops.contains(&Operator::Given));
+    }
+
+    // --- Cage ---
+
+    #[test]
+    fn cage_new_given_singleton() {
+        let p = poly(&[(0, 0)]);
+        let cage = Cage::new(4, p, Operation::Given(3));
+        assert_eq!(cage.tuples(), &[vec![3u8]]);
+    }
+
+    #[test]
+    fn cage_new_prunes_horizontal_pair_add_six() {
+        // Raw tuples: [2,4],[4,2],[3,3] — [3,3] filtered by row collinearity.
+        let p = poly(&[(0, 0), (0, 1)]);
+        let cage = Cage::new(4, p, Operation::Add(6));
+        let mut tuples = cage.tuples().to_vec();
+        tuples.sort_unstable();
+        assert_eq!(tuples, vec![vec![2u8, 4], vec![4, 2]]);
+    }
+
+    #[test]
+    fn cage_new_leaves_l_shape_doubles_intact() {
+        // (0,0) and (1,1) share neither row nor column — [3,3] survives.
+        let p = poly(&[(0, 0), (1, 1)]);
+        let cage = Cage::new(4, p, Operation::Add(6));
+        assert!(cage.tuples().contains(&vec![3u8, 3]));
+    }
+
+    #[test]
+    fn cage_new_prunes_l_shape_add_six() {
+        // (0,0),(1,0),(1,1): col-0 pair (0,1), row-1 pair (1,2).
+        // 10 raw permutations from {1,1,4},{1,2,3},{2,2,2} → 7 survive.
+        let p = poly(&[(0, 0), (1, 0), (1, 1)]);
+        let cage = Cage::new(4, p, Operation::Add(6));
+        assert_eq!(cage.tuples().len(), 7);
+        assert!(!cage.tuples().contains(&vec![1u8, 1, 4]));
+        assert!(!cage.tuples().contains(&vec![2, 2, 2]));
+    }
+
+    #[test]
+    fn cage_valid_operators_singleton() {
+        assert_eq!(
+            Cage::valid_operators(&cells(&[(0, 0)])),
+            vec![Operator::Given]
+        );
+    }
+
+    #[test]
+    fn cage_valid_operators_two_cells() {
+        assert_eq!(
+            Cage::valid_operators(&cells(&[(0, 0), (0, 1)])),
+            vec![
+                Operator::Add,
+                Operator::Subtract,
+                Operator::Multiply,
+                Operator::Divide,
+            ]
+        );
+    }
+
+    #[test]
+    fn cage_valid_operators_three_cells() {
+        assert_eq!(
+            Cage::valid_operators(&cells(&[(0, 0), (0, 1), (0, 2)])),
+            vec![Operator::Add, Operator::Multiply]
+        );
+    }
+
+    #[test]
+    fn cage_is_valid_singleton_given_in_range() {
+        let cells = cells(&[(0, 0)]);
+        assert!(Cage::is_valid(&cells, Operation::Given(1), 5));
+        assert!(Cage::is_valid(&cells, Operation::Given(5), 5));
+        assert!(!Cage::is_valid(&cells, Operation::Given(0), 5));
+        assert!(!Cage::is_valid(&cells, Operation::Given(6), 5));
+    }
+
+    #[test]
+    fn cage_is_valid_two_cell_subtract_zero_rejected() {
+        let cs = cells(&[(0, 0), (0, 1)]);
+        assert!(!Cage::is_valid(&cs, Operation::Subtract(0), 5));
+        assert!(Cage::is_valid(&cs, Operation::Subtract(1), 5));
+    }
+
+    #[test]
+    fn cage_is_valid_two_cell_divide_below_two_rejected() {
+        let cs = cells(&[(0, 0), (0, 1)]);
+        assert!(!Cage::is_valid(&cs, Operation::Divide(0), 5));
+        assert!(!Cage::is_valid(&cs, Operation::Divide(1), 5));
+        assert!(Cage::is_valid(&cs, Operation::Divide(2), 5));
+    }
+
+    #[test]
+    fn cage_is_valid_same_row_add_rejects_double() {
+        // Sum 2 requires [1,1] which is filtered by row collinearity.
+        let cs = cells(&[(0, 0), (0, 1)]);
+        assert!(!Cage::is_valid(&cs, Operation::Add(2), 4));
+        assert!(Cage::is_valid(&cs, Operation::Add(3), 4));
+    }
+
+    #[test]
+    fn cage_is_valid_l_shape_add_accepts_double() {
+        // (0,0) and (1,1) share neither row nor column, so Add(2) via [1,1] is legal.
+        let cs = cells(&[(0, 0), (1, 1)]);
+        assert!(Cage::is_valid(&cs, Operation::Add(2), 4));
+    }
+
+    #[test]
+    fn cage_is_valid_three_cells_rejects_subtract_and_divide() {
+        let cs = cells(&[(0, 0), (0, 1), (0, 2)]);
+        assert!(!Cage::is_valid(&cs, Operation::Subtract(1), 5));
+        assert!(!Cage::is_valid(&cs, Operation::Divide(2), 5));
+        assert!(Cage::is_valid(&cs, Operation::Add(6), 5));
+        assert!(Cage::is_valid(&cs, Operation::Multiply(6), 5));
+    }
+}

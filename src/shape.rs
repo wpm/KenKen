@@ -3,22 +3,6 @@
 use crate::types::{Cell, Error};
 use std::collections::HashSet;
 
-/// All cells in a single row of an `n`×`n` grid.
-#[must_use]
-#[derive(Debug, Clone, PartialEq, Eq, Hash)]
-pub struct Row {
-    n: usize,
-    row: usize,
-}
-
-/// All cells in a single column of an `n`×`n` grid.
-#[must_use]
-#[derive(Debug, Clone, PartialEq, Eq, Hash)]
-pub struct Column {
-    n: usize,
-    column: usize,
-}
-
 /// An arbitrary set of cells forming a polyomino, stored in sorted order without duplicates.
 ///
 /// `Polyomino`s are ordered by the row-major position of their upper-left-hand cell, with
@@ -31,21 +15,7 @@ pub struct Polyomino(Vec<Cell>);
 
 /// A shape that covers a set of cells in the grid.
 pub trait Cells {
-    fn cells(&self) -> Vec<Cell>;
-}
-
-impl Cells for Row {
-    fn cells(&self) -> Vec<Cell> {
-        (0..self.n)
-            .map(|column| Cell::new(self.row, column))
-            .collect()
-    }
-}
-
-impl Cells for Column {
-    fn cells(&self) -> Vec<Cell> {
-        (0..self.n).map(|row| Cell::new(row, self.column)).collect()
-    }
+    fn cells(&self) -> &[Cell];
 }
 
 impl Polyomino {
@@ -120,8 +90,8 @@ impl Polyomino {
 }
 
 impl Cells for Polyomino {
-    fn cells(&self) -> Vec<Cell> {
-        self.0.clone()
+    fn cells(&self) -> &[Cell] {
+        &self.0
     }
 }
 
@@ -156,20 +126,6 @@ pub fn is_connected_set<S: std::hash::BuildHasher>(cells: &HashSet<Cell, S>) -> 
 #[allow(clippy::unwrap_used)]
 mod tests {
     use super::*;
-
-    #[test]
-    fn row_cells_all_in_correct_row() {
-        let row = Row { n: 4, row: 2 };
-        let expected: Vec<Cell> = (0..4).map(|c| Cell::new(2, c)).collect();
-        assert_eq!(row.cells(), expected);
-    }
-
-    #[test]
-    fn column_cells_all_in_correct_column() {
-        let col = Column { n: 4, column: 1 };
-        let expected: Vec<Cell> = (0..4).map(|r| Cell::new(r, 1)).collect();
-        assert_eq!(col.cells(), expected);
-    }
 
     #[test]
     fn polyomino_cells_are_sorted() {

@@ -2,12 +2,17 @@
 //! between them. Cloning is cheap (the constraints share an `Arc`).
 
 #![allow(dead_code)]
-use crate::constraints::{AllDifferent, Cage, Cages, PuzzleConstraints};
+
+use crate::Cage;
+use crate::all_different::AllDifferent;
+use crate::constraint::{Constraint, ValueFilter};
 use crate::delta::Delta;
 use crate::grid::Grid;
 use crate::shape::Polyomino;
 use crate::solver::{Solver, State};
+use crate::tiling::Tiling;
 use crate::types::{Cell, Error, Index, N, Values};
+use std::collections::HashMap;
 use std::sync::Arc;
 
 /// Three-bucket classification of a puzzle's solution count.
@@ -55,7 +60,7 @@ pub struct NarrowingScore {
 ///   stored behind an [`Arc`]. Cloning bumps a reference count rather than duplicating data.
 ///   Mutating methods use [`Arc::make_mut`] to copy-on-write only when necessary.
 #[must_use]
-#[derive(Debug, Clone)]
+#[derive(Clone)]
 pub struct Puzzle {
     grid: Grid,
     constraints: Arc<PuzzleConstraints>,
@@ -392,7 +397,7 @@ impl State for Puzzle {
 #[allow(clippy::unwrap_used)]
 mod tests {
     use super::*;
-    use crate::constraints::Operation;
+    use crate::cage::operation::Operation;
     use crate::types::Cell;
 
     fn make_cage(cells: &[(usize, usize)], n: u8) -> Cage {
@@ -1067,5 +1072,130 @@ mod tests {
                 .collect::<Vec<_>>()
         };
         assert_eq!(project(&a), project(&b));
+    }
+}
+
+/// The set of constraints for a single KenKen puzzle.
+///
+/// Stored behind an [`Arc`] so that cloning a [`Puzzle`] during search shares this allocation
+/// instead of duplicating it.
+#[derive(Clone)]
+pub struct PuzzleConstraints {
+    pub row: Vec<AllDifferent>,
+    pub column: Vec<AllDifferent>,
+    pub cage: Cages,
+}
+
+impl PuzzleConstraints {
+    /// # Errors
+    /// Returns `Error` if any cell in any constraint is outside the grid.
+    pub fn apply(&self, grid: &Grid) -> Result<ValueFilter, Error> {
+        let a = self.cage_filter(grid)?;
+        let b = self.all_different_filter(grid)?;
+        Ok(a * b)
+    }
+    fn cage_filter(&self, grid: &Grid) -> Result<ValueFilter, Error> {
+        let mut filter = ValueFilter::default();
+        for cage in self.cage.iter() {
+            filter = filter * cage.value_filter(grid)?;
+        }
+        Ok(filter)
+    }
+    fn all_different_filter(&self, grid: &Grid) -> Result<ValueFilter, Error> {
+        let mut filter = ValueFilter::default();
+        for row in &self.row {
+            filter = filter * row.value_filter(grid)?;
+        }
+        for column in &self.column {
+            filter = filter * column.value_filter(grid)?;
+        }
+        Ok(filter)
+    }
+}
+
+/// The set of [`Cage`] constraints for a puzzle, backed by a [`Tiling`] that tracks cell
+/// coverage and a `HashMap` from polyomino to cage data.
+///
+/// A cell may belong to at most one cage. Conflict detection on insert scans the new cage's
+/// cells against the tiling, which is acceptable because cages are only added at construction
+/// time.
+#[must_use]
+#[derive(Clone)]
+pub struct Cages {
+    tiling: Tiling,
+    data: HashMap<Polyomino, Cage>,
+}
+
+impl Cages {
+    /// Creates an empty `Cages` for an `n`×`n` grid.
+    pub fn empty(n: Index) -> Self {
+        Self {
+            tiling: Tiling::empty(n),
+            data: HashMap::new(),
+        }
+    }
+
+    /// Returns a new cage set with the cage inserted.
+    ///
+    /// Idempotent: if the exact same cage (by polyomino) is already present, returns unchanged.
+    /// # Errors
+    /// Returns `Error` if any cell in the cage is already claimed by a *different* cage.
+    pub fn insert(mut self, cage: Cage) -> Result<Self, Error> {
+        if self.data.contains_key(cage.polyomino()) {
+            return Ok(self);
+        }
+        for cell in cage.cells() {
+            if let Some(existing_poly) = self.tiling.find_cell(*cell) {
+                debug_assert!(
+                    self.data.contains_key(existing_poly),
+                    "Cages tiling and data are out of sync: {existing_poly:?} in tiling but not in data",
+                );
+                let existing = self.data[existing_poly].clone();
+                return Err(Error::CageConflict(Box::new(cage), Box::new(existing)));
+            }
+        }
+        self.tiling.insert(cage.polyomino().clone());
+        self.data.insert(cage.polyomino().clone(), cage);
+        Ok(self)
+    }
+
+    /// Returns a new cage set with the cage removed.
+    ///
+    /// Idempotent: if no such cage exists, returns unchanged.
+    pub fn remove(mut self, polyomino: &Polyomino) -> Self {
+        self.tiling.remove(polyomino);
+        self.data.remove(polyomino);
+        self
+    }
+
+    #[must_use]
+    pub fn get(&self, polyomino: &Polyomino) -> Option<&Cage> {
+        self.data.get(polyomino)
+    }
+
+    #[must_use]
+    pub fn contains(&self, polyomino: &Polyomino) -> bool {
+        self.data.contains_key(polyomino)
+    }
+
+    #[must_use]
+    pub fn len(&self) -> usize {
+        self.data.len()
+    }
+
+    #[must_use]
+    pub fn is_empty(&self) -> bool {
+        self.data.is_empty()
+    }
+
+    /// Iterates over every cage in this set.
+    pub fn iter(&self) -> impl Iterator<Item = &Cage> + '_ {
+        self.data.values()
+    }
+
+    /// Returns the cage covering `cell`, or `None` if no cage covers it.
+    #[must_use]
+    pub fn get_at(&self, cell: Cell) -> Option<&Cage> {
+        self.tiling.find_cell(cell).and_then(|p| self.data.get(p))
     }
 }
