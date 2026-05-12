@@ -1,5 +1,6 @@
-mod arithmetic;
-mod constraints;
+pub mod all_different;
+mod cage;
+mod constraint;
 mod delta;
 mod generation;
 mod grid;
@@ -11,7 +12,8 @@ mod solver;
 mod tiling;
 mod types;
 
-pub use constraints::{Cage, Operation, Operator};
+pub use cage::builder::Cage;
+pub use cage::operation::{Operation, Operator};
 pub use delta::Delta;
 pub use generation::{DEFAULT_SIZE_DISTRIBUTION, default_op_policy, generate, generate_with};
 pub use grid::Grid;

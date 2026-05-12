@@ -1,5 +1,6 @@
 #![allow(dead_code)]
 
+use crate::Cage;
 use std::ops::{BitAnd, BitOr};
 
 /// Possible cell value: a number in the range `1..=9`.
@@ -119,9 +120,9 @@ pub enum Error {
     /// A referenced cell is not present in the grid.
     InvalidCell(Cell),
     /// A new cage conflicts with an existing cage: `(new_cage, existing_cage)`.
-    CageConflict(Box<crate::constraints::Cage>, Box<crate::constraints::Cage>),
+    CageConflict(Box<Cage>, Box<Cage>),
     /// A cage passed to a `Puzzle` method is not present in that puzzle (looked up by polyomino).
-    CageNotInPuzzle(Box<crate::constraints::Cage>),
+    CageNotInPuzzle(Box<Cage>),
     /// A tiling operation referenced a cell that no polyomino covers.
     CellNotCovered(Cell),
     /// Removing a cell from a polyomino would leave the remaining cells disconnected.

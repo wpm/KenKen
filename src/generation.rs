@@ -1,4 +1,5 @@
-use crate::constraints::{Cage, Operation};
+use crate::Cage;
+use crate::cage::operation::Operation;
 use crate::latin_square::generate_latin_square;
 use crate::puzzle::Puzzle;
 use crate::tiling::{SizeDistribution, Tiling};

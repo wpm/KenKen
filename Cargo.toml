@@ -6,6 +6,8 @@ edition = "2024"
 [dependencies]
 itertools = "0.14.0"
 rand = "0.10.1"
+strum = { version = "0.28", features = ["derive"] }
+
 
 [dev-dependencies]
 rand_chacha = "0.10.0"
