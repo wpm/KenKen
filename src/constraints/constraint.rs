@@ -1,7 +1,7 @@
 #![allow(dead_code)]
 
-use crate::grid::Grid;
-use crate::shape::Cells;
+use crate::geometry::grid::Grid;
+use crate::geometry::shape::Cells;
 use crate::types::Error::InvalidCell;
 use crate::types::{Cell, Error, Values};
 use std::collections::HashMap;
@@ -79,7 +79,7 @@ impl Mul for ValueFilter {
 #[cfg(test)]
 #[allow(clippy::unwrap_used)]
 mod tests {
-    use crate::constraint::ValueFilter;
+    use crate::constraints::constraint::ValueFilter;
     use crate::{Cell, Index, Values};
 
     fn filter(pairs: &[(Cell, Values)]) -> ValueFilter {

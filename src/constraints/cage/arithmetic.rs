@@ -1,4 +1,4 @@
-use crate::cage::builder::Tuple;
+use crate::constraints::cage::builder::Tuple;
 use crate::{M, N};
 
 /// Returns an iterator over all non-decreasing `k`-tuples with values in `1..=n` that sum to `s`.

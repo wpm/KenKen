@@ -4,7 +4,7 @@
 
 #![allow(dead_code)]
 
-use crate::grid::Grid;
+use crate::geometry::grid::Grid;
 use crate::types::{Cell, Error, Index, Values};
 
 /// An overlay of candidate-value sets, shaped like a [`Grid`] but distinguished from it

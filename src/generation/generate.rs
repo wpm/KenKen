@@ -1,8 +1,8 @@
 use crate::Cage;
-use crate::cage::operation::Operation;
-use crate::latin_square::generate_latin_square;
+use crate::constraints::cage::operation::Operation;
+use crate::generation::latin_square::generate_latin_square;
+use crate::geometry::tiling::{SizeDistribution, Tiling};
 use crate::puzzle::Puzzle;
-use crate::tiling::{SizeDistribution, Tiling};
 use crate::types::{Error, Index, M, N};
 use rand::Rng;
 

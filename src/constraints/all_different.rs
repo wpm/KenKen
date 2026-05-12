@@ -1,6 +1,6 @@
-use crate::constraint::{Constraint, ValueFilter};
-use crate::regin::regin;
-use crate::shape::Cells;
+use crate::constraints::constraint::{Constraint, ValueFilter};
+use crate::constraints::regin::regin;
+use crate::geometry::shape::Cells;
 use crate::{Cell, Error, Grid, Index, Values};
 
 /// A constraint that ensures each cell in a row or column has a different value.
@@ -48,8 +48,8 @@ impl Cells for AllDifferent {
 #[cfg(test)]
 mod tests {
     use crate::Cell;
-    use crate::all_different::AllDifferent;
-    use crate::shape::Cells;
+    use crate::constraints::all_different::AllDifferent;
+    use crate::geometry::shape::Cells;
 
     #[test]
     fn line_row_has_correct_cells() {
