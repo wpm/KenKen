@@ -138,6 +138,11 @@ mod tests {
     }
 
     #[test]
+    fn zero_has_no_factors() {
+        assert_eq!(factors(0), vec![]);
+    }
+
+    #[test]
     fn large_semiprime() {
         // 9_999_991 = 3_163 × 3_163? No — check it's prime.
         // 997 × 1009 = 1_005_973

@@ -15,6 +15,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `M`, `Index`, and `N` type aliases removed from the public API; signatures now use
   `u16`, `usize`, and `u8` directly.
 - `Error::FlipWouldDisconnect` renamed to `Error::WouldDisconnect`.
+- `Constraint::value_filter` and `ValueFilter::apply` are now infallible; the previous
+  `Result` returns were never observed in practice and represented unreachable paths
+  for any puzzle constructed via `Puzzle::new`.
+
+### Internal
+- Test coverage raised to 100% (LCOV line coverage). CI now gates new code on
+  `cargo llvm-cov --fail-under-lines 100`.
 
 ## [0.1.0] - 2026-05-12
 

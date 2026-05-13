@@ -201,4 +201,10 @@ mod tests {
             vec![vec![9, 9, 9]]
         );
     }
+
+    #[test]
+    #[should_panic(expected = "tuple must have at least one element")]
+    fn apply_panics_on_empty_tuple() {
+        let _ = apply(|a, b| a + M::from(b), &Tuple::new());
+    }
 }

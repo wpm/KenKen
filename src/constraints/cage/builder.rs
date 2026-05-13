@@ -5,7 +5,7 @@ use crate::constraints::cage::operation::{Operation, Operator};
 use crate::constraints::constraint::{Constraint, ValueFilter};
 use crate::geometry::shape::Cells;
 use crate::types::{Cell, Index, M, N};
-use crate::{Error, Grid, Polyomino, Values};
+use crate::{Grid, Polyomino, Values};
 use std::collections::HashMap;
 
 /// An ordered assignment of values to the cells of a cage, one value per cell.
@@ -149,7 +149,7 @@ impl Constraint for Cage {
     ///
     /// For example, a 2-cell `Add(3)` cage on a 4×4 grid has valid tuples `[1,2]` and `[2,1]`.
     /// The filter maps cell 0 → `{1, 2}` and cell 1 → `{1, 2}`.
-    fn value_filter(&self, _grid: &Grid) -> Result<ValueFilter, Error> {
+    fn value_filter(&self, _grid: &Grid) -> ValueFilter {
         let n = self.cells().len();
         let mut cols = vec![Values::default(); n];
         for tuple in self.tuples() {
@@ -157,7 +157,7 @@ impl Constraint for Cage {
                 *col = *col | Values::new([val]);
             }
         }
-        Ok(self.cells().iter().copied().zip(cols).collect())
+        self.cells().iter().copied().zip(cols).collect()
     }
 }
 
@@ -725,6 +725,120 @@ mod tests {
         // (0,0) and (1,1) share neither row nor column, so Add(2) via [1,1] is legal.
         let cs = cells(&[(0, 0), (1, 1)]);
         assert!(Cage::is_valid(&cs, Operation::Add(2), 4));
+    }
+
+    #[test]
+    fn valid_operators_empty_cells_is_empty() {
+        assert!(Cage::valid_operators(&[]).is_empty());
+    }
+
+    #[test]
+    fn valid_targets_invalid_operator_for_shape_is_empty() {
+        // Given is only valid for 1-cell cages; called on a 2-cell shape, returns empty.
+        let cs = cells(&[(0, 0), (0, 1)]);
+        let got: Vec<Operation> = Cage::valid_targets(&cs, Operator::Given, 4).collect();
+        assert!(got.is_empty());
+    }
+
+    #[test]
+    fn valid_targets_given_singleton_enumerates_one_through_n() {
+        let cs = cells(&[(0, 0)]);
+        let got: Vec<Operation> = Cage::valid_targets(&cs, Operator::Given, 4).collect();
+        assert_eq!(
+            got,
+            vec![
+                Operation::Given(1),
+                Operation::Given(2),
+                Operation::Given(3),
+                Operation::Given(4),
+            ]
+        );
+    }
+
+    #[test]
+    fn valid_targets_subtract_pair_enumerates_one_through_n_minus_one() {
+        let cs = cells(&[(0, 0), (0, 1)]);
+        let got: Vec<Operation> = Cage::valid_targets(&cs, Operator::Subtract, 4).collect();
+        assert_eq!(
+            got,
+            vec![
+                Operation::Subtract(1),
+                Operation::Subtract(2),
+                Operation::Subtract(3),
+            ]
+        );
+    }
+
+    #[test]
+    fn valid_targets_divide_pair_enumerates_two_through_n() {
+        let cs = cells(&[(0, 0), (0, 1)]);
+        let got: Vec<Operation> = Cage::valid_targets(&cs, Operator::Divide, 4).collect();
+        assert_eq!(
+            got,
+            vec![
+                Operation::Divide(2),
+                Operation::Divide(3),
+                Operation::Divide(4),
+            ]
+        );
+    }
+
+    #[test]
+    fn valid_targets_add_pair_filters_by_admissibility() {
+        // n=4, 2-cell same row: Add(2) requires [1,1] which violates collinearity.
+        let cs = cells(&[(0, 0), (0, 1)]);
+        let got: Vec<Operation> = Cage::valid_targets(&cs, Operator::Add, 4).collect();
+        assert!(!got.contains(&Operation::Add(2)));
+        assert!(got.contains(&Operation::Add(3)));
+        assert!(got.contains(&Operation::Add(7)));
+    }
+
+    #[test]
+    fn valid_targets_multiply_pair_filters_by_admissibility() {
+        // n=4, 2-cell same row: Multiply(1) requires [1,1] which violates collinearity.
+        let cs = cells(&[(0, 0), (0, 1)]);
+        let got: Vec<Operation> = Cage::valid_targets(&cs, Operator::Multiply, 4).collect();
+        assert!(!got.contains(&Operation::Multiply(1)));
+        assert!(got.contains(&Operation::Multiply(2)));
+    }
+
+    #[test]
+    fn cage_cells_via_trait_returns_same_as_inherent() {
+        let p = poly(&[(0, 0), (0, 1)]);
+        let cage = Cage::new(4, p, Operation::Add(3));
+        let via_trait: &[Cell] = <Cage as Cells>::cells(&cage);
+        assert_eq!(via_trait, cage.cells());
+    }
+
+    #[test]
+    fn operator_tuples_add_singleton_is_empty() {
+        let p = poly(&[(0, 0)]);
+        assert!(operator_tuples(4, &p, Operator::Add).is_empty());
+    }
+
+    #[test]
+    fn operator_tuples_multiply_singleton_is_empty() {
+        let p = poly(&[(0, 0)]);
+        assert!(operator_tuples(4, &p, Operator::Multiply).is_empty());
+    }
+
+    #[test]
+    fn cage_new_with_target_above_n_max_yields_no_tuples() {
+        let p = poly(&[(0, 0)]);
+        assert!(Cage::new(4, p, Operation::Given(300)).tuples().is_empty());
+
+        let p = poly(&[(0, 0), (0, 1)]);
+        assert!(
+            Cage::new(4, p, Operation::Subtract(300))
+                .tuples()
+                .is_empty()
+        );
+
+        let p = poly(&[(0, 0), (0, 1)]);
+        assert!(Cage::new(4, p, Operation::Divide(300)).tuples().is_empty());
+
+        let p = poly(&[(0, 0), (0, 1)]);
+        assert!(Cage::new(4, p, Operation::Add(300)).tuples().is_empty());
     }
 
     #[test]

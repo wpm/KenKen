@@ -203,4 +203,73 @@ mod tests {
         assert!(!Values::new([1, 2]).is_singleton());
         assert!(!Values::full(4).is_singleton());
     }
+
+    #[test]
+    fn is_empty_true_for_default() {
+        assert!(Values::default().is_empty());
+    }
+
+    #[test]
+    fn is_empty_false_for_non_empty() {
+        assert!(!Values::new([1]).is_empty());
+        assert!(!Values::full(9).is_empty());
+    }
+
+    #[test]
+    fn len_matches_number_of_values() {
+        assert_eq!(Values::default().len(), 0);
+        assert_eq!(Values::new([3]).len(), 1);
+        assert_eq!(Values::new([1, 5, 9]).len(), 3);
+        assert_eq!(Values::full(9).len(), 9);
+    }
+
+    #[test]
+    fn remove_drops_a_present_value() {
+        assert_eq!(Values::new([1, 2, 3]).remove(2), Values::new([1, 3]));
+    }
+
+    #[test]
+    fn remove_absent_value_is_noop() {
+        assert_eq!(Values::new([1, 3]).remove(2), Values::new([1, 3]));
+    }
+
+    #[test]
+    fn bitor_union() {
+        assert_eq!(
+            Values::new([1, 2]) | Values::new([2, 3]),
+            Values::new([1, 2, 3])
+        );
+    }
+
+    #[test]
+    fn bitor_disjoint() {
+        assert_eq!(
+            Values::new([1, 2]) | Values::new([3, 4]),
+            Values::new([1, 2, 3, 4])
+        );
+    }
+
+    #[test]
+    fn from_iterator_collects_values() {
+        let v: Values = [1u8, 2, 3].into_iter().collect();
+        assert_eq!(v, Values::new([1, 2, 3]));
+    }
+
+    #[test]
+    fn neighbors_4_interior_yields_four() {
+        let n: Vec<Cell> = Cell::new(2, 2).neighbors_4().collect();
+        assert_eq!(n.len(), 4);
+        assert!(n.contains(&Cell::new(1, 2)));
+        assert!(n.contains(&Cell::new(3, 2)));
+        assert!(n.contains(&Cell::new(2, 1)));
+        assert!(n.contains(&Cell::new(2, 3)));
+    }
+
+    #[test]
+    fn neighbors_4_top_left_corner_yields_two() {
+        let n: Vec<Cell> = Cell::new(0, 0).neighbors_4().collect();
+        assert_eq!(n.len(), 2);
+        assert!(n.contains(&Cell::new(1, 0)));
+        assert!(n.contains(&Cell::new(0, 1)));
+    }
 }

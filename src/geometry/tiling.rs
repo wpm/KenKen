@@ -192,6 +192,15 @@ mod tests {
     }
 
     #[test]
+    fn contains_finds_inserted_polyomino() {
+        let mut t = Tiling::empty(3);
+        let p = poly(&[(0, 0), (0, 1)]);
+        t.insert(p.clone());
+        assert!(t.contains(&p));
+        assert!(!t.contains(&poly(&[(2, 2)])));
+    }
+
+    #[test]
     fn covers_finds_inserted_cell() {
         let mut t = Tiling::empty(3);
         t.insert(poly(&[(0, 0), (0, 1)]));

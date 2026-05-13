@@ -43,6 +43,14 @@ impl Grid {
             .ok_or(InvalidCell(*cell))
     }
 
+    /// Returns the candidate values for `cell`, or [`Values::default`] (the empty set) if
+    /// `cell` is outside the grid. Used by constraints whose well-typed construction already
+    /// guarantees in-bounds cells but who want to avoid a fallible signature.
+    pub fn get_or_default(&self, cell: &Cell) -> Values {
+        self.index(cell)
+            .map_or_else(Values::default, |i| self.cells[i])
+    }
+
     /// Returns a new grid with `cell` set to `values`.
     pub fn set(mut self, cell: &Cell, values: Values) -> Self {
         if let Some(i) = self.index(cell) {
@@ -219,6 +227,14 @@ mod tests {
             }
         }
         assert!(g.is_invalid());
+    }
+
+    #[test]
+    fn set_out_of_bounds_is_noop() {
+        let g = Grid::new(3).unwrap();
+        let before = g.clone();
+        let after = g.set(&Cell::new(9, 9), Values::new([1]));
+        assert_eq!(after, before);
     }
 
     #[test]

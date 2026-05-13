@@ -2,7 +2,7 @@ use crate::constraints::constraint::{Constraint, ValueFilter};
 use crate::constraints::regin::regin;
 use crate::geometry::shape::Cells;
 use crate::types::Index;
-use crate::{Cell, Error, Grid, Values};
+use crate::{Cell, Grid, Values};
 
 /// A constraint that ensures each cell in a row or column has a different value.
 #[must_use]
@@ -19,24 +19,14 @@ impl AllDifferent {
     pub fn column(n: Index, column: Index) -> Self {
         Self((0..n).map(|row| Cell::new(row, column)).collect())
     }
-
-    /// Returns the current candidate sets for each of this constraint's cells, in order.
-    ///
-    /// # Errors
-    /// Returns `Error` if any cell in this constraint is outside the grid.
-    fn cell_values(&self, grid: &Grid) -> Result<Vec<Values>, Error> {
-        self.cells().iter().map(|cell| grid.get(cell)).collect()
-    }
 }
 
 impl Constraint for AllDifferent {
-    fn value_filter(&self, grid: &Grid) -> Result<ValueFilter, Error> {
-        let grid_values = self.cell_values(grid)?;
-        let all_different_values = regin(&grid_values);
+    fn value_filter(&self, grid: &Grid) -> ValueFilter {
         let cells = self.cells();
-        Ok(ValueFilter(
-            cells.iter().copied().zip(all_different_values).collect(),
-        ))
+        let grid_values: Vec<Values> = cells.iter().map(|c| grid.get_or_default(c)).collect();
+        let all_different_values = regin(&grid_values);
+        cells.iter().copied().zip(all_different_values).collect()
     }
 }
 

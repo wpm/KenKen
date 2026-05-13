@@ -2,8 +2,7 @@
 
 use crate::geometry::grid::Grid;
 use crate::geometry::shape::Cells;
-use crate::types::Error::InvalidCell;
-use crate::types::{Cell, Error, Values};
+use crate::types::{Cell, Values};
 use std::collections::HashMap;
 use std::ops::Mul;
 
@@ -16,9 +15,10 @@ pub trait Constraint: Cells {
     /// with at least one valid assignment for this constraint. Applying the filter narrows
     /// the grid; if any cell's set becomes empty, the grid is contradicted.
     ///
-    /// # Errors
-    /// Returns `Error` if any cell in this constraint is outside the grid.
-    fn value_filter(&self, grid: &Grid) -> Result<ValueFilter, Error>;
+    /// Cells in the constraint that lie outside the grid (a misconfiguration that does not
+    /// arise in puzzles constructed via [`crate::Puzzle::new`]) are treated as carrying the
+    /// empty value set; they contribute no constraint information.
+    fn value_filter(&self, grid: &Grid) -> ValueFilter;
 }
 
 /// A map from cells to candidate values representing a constraint's effect on a grid;
@@ -27,25 +27,18 @@ pub trait Constraint: Cells {
 pub struct ValueFilter(pub HashMap<Cell, Values>);
 
 impl ValueFilter {
-    /// The allowed values for `cell`, or `Error` if the cell is not in this filter.
-    fn get(&self, cell: Cell) -> Result<Values, Error> {
-        self.0.get(&cell).copied().ok_or(InvalidCell(cell))
-    }
-
     /// Returns a new grid with each cell's candidates intersected with this filter's values.
     ///
     /// Cells absent from the filter are left unchanged. A cell whose intersection becomes empty
-    /// is kept as-is (empty set); callers can detect this via [`Grid::is_invalid`].
-    ///
-    /// # Errors
-    /// Returns `Error` if any cell in this filter is outside the grid.
-    pub fn apply(&self, grid: &Grid) -> Result<Grid, Error> {
+    /// is kept as-is (empty set); callers can detect this via [`Grid::is_invalid`]. Cells in
+    /// the filter that lie outside the grid are silently skipped (matching [`Grid::set`]).
+    pub fn apply(&self, grid: &Grid) -> Grid {
         let mut grid = grid.clone();
         for (cell, u) in &self.0 {
-            let v = grid.get(cell)?;
+            let v = grid.get_or_default(cell);
             grid = grid.set(cell, *u & v);
         }
-        Ok(grid)
+        grid
     }
 }
 
@@ -80,23 +73,11 @@ impl Mul for ValueFilter {
 #[allow(clippy::unwrap_used)]
 mod tests {
     use crate::constraints::constraint::ValueFilter;
-    use crate::types::Index;
+    use crate::geometry::grid::Grid;
     use crate::{Cell, Values};
 
     fn filter(pairs: &[(Cell, Values)]) -> ValueFilter {
         ValueFilter(pairs.iter().copied().collect())
-    }
-
-    #[test]
-    fn value_filter_get_present_cell() {
-        let f = filter(&[(Cell::new(0, 0), Values::new([1, 2]))]);
-        assert_eq!(f.get(Cell::new(0, 0)).unwrap(), Values::new([1, 2]));
-    }
-
-    #[test]
-    fn value_filter_get_missing_cell_is_err() {
-        let f = filter(&[]);
-        assert!(f.get(Cell::new(0, 0)).is_err());
     }
 
     #[test]
@@ -129,6 +110,14 @@ mod tests {
     }
 
     #[test]
+    fn value_filter_apply_silently_skips_cells_outside_grid() {
+        let f = filter(&[(Cell::new(9, 9), Values::new([1]))]);
+        let grid = Grid::new(3).unwrap();
+        let after = f.apply(&grid);
+        assert_eq!(after, grid);
+    }
+
+    #[test]
     fn value_filter_mul_disjoint_cells_keeps_all() {
         let a = filter(&[(Cell::new(0, 0), Values::new([1, 2]))]);
         let b = filter(&[(Cell::new(1, 1), Values::new([3, 4]))]);
@@ -137,9 +126,6 @@ mod tests {
         assert!(result.0.contains_key(&Cell::new(1, 1)));
     }
 
-    fn cells_of(positions: &[(Index, Index)]) -> Vec<Cell> {
-        positions.iter().map(|&(r, c)| Cell::new(r, c)).collect()
-    }
     #[test]
     fn value_filter_mul_overlap_and_disjoint() {
         let a = filter(&[
