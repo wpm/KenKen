@@ -7,9 +7,8 @@ use crate::geometry::shape::Cells;
 use crate::types::{Cell, Index};
 use crate::{Error, Grid, M, N, Polyomino, Values};
 use std::collections::HashMap;
-use strum::IntoEnumIterator;
 
-#[allow(dead_code)]
+/// An ordered assignment of values to the cells of a cage, one value per cell.
 pub type Tuple = Vec<N>;
 
 /// A polyomino constraint defined by a set of cells and an arithmetic operation.
@@ -160,20 +159,6 @@ impl Constraint for Cage {
         }
         Ok(self.cells().iter().copied().zip(cols).collect())
     }
-}
-
-/// Returns the operators for which at least one valid operation exists for the given polyomino
-/// in the context of the grid.
-///
-/// An operator is included only if [`operator_tuples`] yields at least one [`Operation`]
-/// for it — i.e. there exists some target value that is consistent with the grid constraints.
-#[allow(dead_code)]
-fn possible_operators(grid: &Grid, polyomino: &Polyomino) -> Vec<Operator> {
-    #[allow(clippy::cast_possible_truncation)]
-    let n = grid.n() as N;
-    Operator::iter()
-        .filter(|operator| !operator_tuples(n, polyomino, *operator).is_empty())
-        .collect()
 }
 
 /// Returns a map from each valid [`Operation`] to the ordered tuples that realize it, for the
@@ -404,10 +389,6 @@ mod tests {
         Polyomino::new(&cells(positions))
     }
 
-    fn grid(n: usize) -> Grid {
-        Grid::new(n).unwrap()
-    }
-
     // --- collinear_pairs ---
 
     #[test]
@@ -577,38 +558,6 @@ mod tests {
     fn operator_tuples_divide_non_pair_is_empty() {
         let p = poly(&[(0, 0), (0, 1), (0, 2)]);
         assert!(operator_tuples(4, &p, Operator::Divide).is_empty());
-    }
-
-    // --- possible_operators ---
-
-    #[test]
-    fn possible_operators_singleton() {
-        let g = grid(4);
-        let p = poly(&[(0, 0)]);
-        assert_eq!(possible_operators(&g, &p), vec![Operator::Given]);
-    }
-
-    #[test]
-    fn possible_operators_two_cell_pair_includes_all() {
-        let g = grid(4);
-        let p = poly(&[(0, 0), (0, 1)]);
-        let ops = possible_operators(&g, &p);
-        assert!(ops.contains(&Operator::Add));
-        assert!(ops.contains(&Operator::Subtract));
-        assert!(ops.contains(&Operator::Multiply));
-        assert!(ops.contains(&Operator::Divide));
-    }
-
-    #[test]
-    fn possible_operators_three_cell_line_excludes_subtract_divide_given() {
-        let g = grid(4);
-        let p = poly(&[(0, 0), (0, 1), (0, 2)]);
-        let ops = possible_operators(&g, &p);
-        assert!(ops.contains(&Operator::Add));
-        assert!(ops.contains(&Operator::Multiply));
-        assert!(!ops.contains(&Operator::Subtract));
-        assert!(!ops.contains(&Operator::Divide));
-        assert!(!ops.contains(&Operator::Given));
     }
 
     // --- Cage::new ---

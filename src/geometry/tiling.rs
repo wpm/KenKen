@@ -11,7 +11,12 @@ pub enum SizeDistribution {
     /// Every polyomino has the same target size.
     Fixed(usize),
     /// Target size sampled uniformly from `min..=max`.
-    Uniform { min: usize, max: usize },
+    Uniform {
+        /// Smallest allowed cage size.
+        min: usize,
+        /// Largest allowed cage size.
+        max: usize,
+    },
 }
 
 impl SizeDistribution {
@@ -50,11 +55,13 @@ impl Tiling {
         self.n
     }
 
+    /// Returns the number of polyominos in the tiling.
     #[must_use]
     pub fn len(&self) -> usize {
         self.polyominos.len()
     }
 
+    /// Returns `true` if the tiling contains no polyominos.
     #[must_use]
     pub fn is_empty(&self) -> bool {
         self.polyominos.is_empty()

@@ -2,48 +2,23 @@ use crate::constraints::cage::builder::Tuple;
 use crate::{M, N};
 
 /// Returns an iterator over all non-decreasing `k`-tuples with values in `1..=n` that sum to `s`.
-#[allow(dead_code)]
 pub fn addition_multisets(n: N, k: usize, s: N) -> impl Iterator<Item = Tuple> {
     simplex_multisets(n, k, |acc, i| acc + M::from(i), M::from(s))
 }
 
 /// Returns all 2-element tuples `[i, j]` with `j - i == d` and `1 <= i < j <= max`.
-#[allow(dead_code)]
 pub fn subtraction_multisets(max: N, d: N) -> impl Iterator<Item = Tuple> {
     (1..=max.saturating_sub(d)).map(move |i| vec![i, i + d])
 }
 
 /// Returns an iterator over all non-decreasing `k`-tuples with values in `1..=n` whose product is `s`.
-#[allow(dead_code)]
 pub fn multiplication_multisets(n: N, k: usize, s: M) -> impl Iterator<Item = Tuple> {
     simplex_multisets(n, k, |acc, i| acc * M::from(i), s)
 }
 
 /// Returns all 2-element tuples `[i, j]` with `j / i == q` and `1 <= i < j <= max`.
-#[allow(dead_code)]
 pub fn division_multisets(max: N, q: N) -> impl Iterator<Item = Tuple> {
     (1..=max / q).map(move |i| vec![i, i * q])
-}
-
-/// Returns an iterator over all non-decreasing `k`-tuples with values in `1..=n`.
-///
-/// Each tuple is a multiset drawn from `1..=n` stored in non-decreasing order. The number of
-/// tuples is the multiset coefficient C(n+k-1, k). The base case `k == 0` yields a single empty tuple.
-#[allow(dead_code)]
-fn simplex(n: N, k: usize) -> Box<dyn Iterator<Item = Tuple>> {
-    if k == 0 {
-        return Box::new(std::iter::once(vec![]));
-    }
-    Box::new(simplex(n, k - 1).flat_map(move |t| {
-        let last = t.last().copied().unwrap_or(1);
-        (last..=n)
-            .map(move |i| {
-                let mut t = t.clone();
-                t.push(i);
-                t
-            })
-            .collect::<Vec<_>>()
-    }))
 }
 
 /// Returns an iterator over all non-decreasing `tuple_size`-tuples with values in `1..=n` where
@@ -153,47 +128,6 @@ mod tests {
             division_multisets(5, 7).collect::<Vec<_>>(),
             Vec::<Tuple>::new()
         );
-    }
-
-    #[test]
-    fn simplex_k0_yields_empty_tuple() {
-        assert_eq!(simplex(3, 0).collect::<Vec<_>>(), vec![vec![]]);
-    }
-
-    #[test]
-    fn simplex_k1_yields_singletons() {
-        assert_eq!(
-            simplex(3, 1).collect::<Vec<_>>(),
-            vec![vec![1], vec![2], vec![3]]
-        );
-    }
-
-    #[test]
-    fn simplex_k2_yields_nondecreasing_pairs() {
-        assert_eq!(
-            simplex(3, 2).collect::<Vec<_>>(),
-            vec![
-                vec![1, 1],
-                vec![1, 2],
-                vec![1, 3],
-                vec![2, 2],
-                vec![2, 3],
-                vec![3, 3]
-            ]
-        );
-    }
-
-    #[test]
-    fn simplex_k3_count() {
-        // C(n+k-1, k) = C(3+3-1, 3) = C(5,3) = 10
-        assert_eq!(simplex(3, 3).count(), 10);
-    }
-
-    #[test]
-    fn simplex_tuples_are_nondecreasing() {
-        for tuple in simplex(4, 3) {
-            assert!(tuple.windows(2).all(|w| w[0] <= w[1]));
-        }
     }
 
     #[test]

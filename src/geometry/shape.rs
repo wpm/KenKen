@@ -3,7 +3,7 @@
 use crate::types::{Cell, Error};
 use std::collections::HashSet;
 
-/// An arbitrary set of cells forming a polyomino, stored in sorted order without duplicates.
+/// A set of conitguous cells forming a polyomino, stored in sorted order without duplicates.
 ///
 /// `Polyomino`s are ordered by the row-major position of their upper-left-hand cell, with
 /// the remaining cells breaking ties so the order is total and consistent with `Eq`. This
@@ -32,11 +32,13 @@ impl Polyomino {
         &self.0
     }
 
+    /// Returns the number of cells in the polyomino.
     #[must_use]
     pub const fn len(&self) -> usize {
         self.0.len()
     }
 
+    /// Returns `true` if the polyomino contains no cells.
     #[must_use]
     pub const fn is_empty(&self) -> bool {
         self.0.is_empty()
