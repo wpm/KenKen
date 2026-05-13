@@ -2,6 +2,12 @@
 name = "kenken"
 version = "0.1.0"
 edition = "2024"
+description = "KenKen puzzle generator and solver"
+license = "MIT"
+repository = "https://github.com/wpm/KenKen"
+keywords = ["kenken", "puzzle", "generator", "solver"]
+categories = ["games"]
+readme = "README.md"
 
 [dependencies]
 itertools = "0.14.0"
