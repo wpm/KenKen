@@ -60,7 +60,7 @@ pub struct NarrowingScore {
 ///   stored behind an [`Arc`]. Cloning bumps a reference count rather than duplicating data.
 ///   Mutating methods use [`Arc::make_mut`] to copy-on-write only when necessary.
 #[must_use]
-#[derive(Clone)]
+#[derive(Debug, Clone)]
 pub struct Puzzle {
     grid: Grid,
     constraints: Arc<PuzzleConstraints>,
@@ -1079,7 +1079,7 @@ mod tests {
 ///
 /// Stored behind an [`Arc`] so that cloning a [`Puzzle`] during search shares this allocation
 /// instead of duplicating it.
-#[derive(Clone)]
+#[derive(Debug, Clone)]
 pub struct PuzzleConstraints {
     pub row: Vec<AllDifferent>,
     pub column: Vec<AllDifferent>,
@@ -1120,7 +1120,7 @@ impl PuzzleConstraints {
 /// cells against the tiling, which is acceptable because cages are only added at construction
 /// time.
 #[must_use]
-#[derive(Clone)]
+#[derive(Debug, Clone)]
 pub struct Cages {
     tiling: Tiling,
     data: HashMap<Polyomino, Cage>,
