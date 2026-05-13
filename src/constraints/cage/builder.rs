@@ -4,8 +4,8 @@ use crate::constraints::cage::arithmetic::{
 use crate::constraints::cage::operation::{Operation, Operator};
 use crate::constraints::constraint::{Constraint, ValueFilter};
 use crate::geometry::shape::Cells;
-use crate::types::{Cell, Index};
-use crate::{Error, Grid, M, N, Polyomino, Values};
+use crate::types::{Cell, Index, M, N};
+use crate::{Error, Grid, Polyomino, Values};
 use std::collections::HashMap;
 
 /// An ordered assignment of values to the cells of a cage, one value per cell.

@@ -1,5 +1,5 @@
 use crate::constraints::cage::builder::Tuple;
-use crate::{M, N};
+use crate::types::{M, N};
 
 /// Returns an iterator over all non-decreasing `k`-tuples with values in `1..=n` that sum to `s`.
 pub fn addition_multisets(n: N, k: usize, s: N) -> impl Iterator<Item = Tuple> {

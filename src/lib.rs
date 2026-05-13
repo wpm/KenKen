@@ -23,4 +23,4 @@ pub use geometry::shape::Polyomino;
 pub use geometry::tiling::SizeDistribution;
 pub use puzzle::{NarrowingScore, Puzzle, Uniqueness};
 pub use solver::delta::Delta;
-pub use types::{Cell, Error, Index, M, N, Values};
+pub use types::{Cell, Error, Values};

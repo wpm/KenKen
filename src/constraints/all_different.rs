@@ -1,7 +1,8 @@
 use crate::constraints::constraint::{Constraint, ValueFilter};
 use crate::constraints::regin::regin;
 use crate::geometry::shape::Cells;
-use crate::{Cell, Error, Grid, Index, Values};
+use crate::types::Index;
+use crate::{Cell, Error, Grid, Values};
 
 /// A constraint that ensures each cell in a row or column has a different value.
 #[must_use]
