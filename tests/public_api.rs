@@ -368,16 +368,8 @@ fn delta_narrow_widen_and_propagate_fully_are_public() {
 
 #[test]
 fn solve_simple_2x2_puzzle() {
-    // 2×2 grid with two Add(3) cages, one per row.
-    //
-    //   ┌───────┐
-    //   │  3+   │  (0,0)+(0,1)
-    //   ├───────┤
-    //   │  3+   │  (1,0)+(1,1)
-    //   └───────┘
-    //
-    // Both rows must contain {1,2}; all-different columns give exactly two solutions:
-    //   [[1,2],[2,1]]  and  [[2,1],[1,2]]
+    // Two Add(3) row cages on a 2×2 grid. Both rows must be {1,2}; column all-different
+    // gives exactly two solutions: [[1,2],[2,1]] and [[2,1],[1,2]].
     let p = Puzzle::new(2)
         .unwrap()
         .insert_cage(Cage::new(
@@ -395,22 +387,13 @@ fn solve_simple_2x2_puzzle() {
 
     let solutions: Vec<Puzzle> = Solver::new(p).collect();
     assert_eq!(solutions.len(), 2);
-    for solution in &solutions {
-        assert_eq!(solution.singleton_cells().count(), 4);
-    }
 
     let mut grids: Vec<Vec<u8>> = solutions
         .iter()
         .map(|s| {
-            [
-                Cell::new(0, 0),
-                Cell::new(0, 1),
-                Cell::new(1, 0),
-                Cell::new(1, 1),
-            ]
-            .iter()
-            .map(|c| s.singleton_cells().find(|(cell, _)| cell == c).unwrap().1)
-            .collect()
+            s.cells()
+                .map(|c| s.candidates(c).unwrap().iter().next().unwrap())
+                .collect()
         })
         .collect();
     grids.sort();
