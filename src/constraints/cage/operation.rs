@@ -6,13 +6,17 @@ use strum::EnumIter;
 /// Every variant carries its target as an `M` (u16). The product target needs the wider
 /// type; the others fit in `N` but use `M`, so the API is uniform and consumers can read
 /// `target` without matching on the variant.
-#[allow(dead_code)]
 #[derive(Debug, Clone, Copy, Eq, PartialEq, Hash)]
 pub enum Operation {
+    /// Cells sum to the target.
     Add(M),
+    /// Two cells differ by the target.
     Subtract(M),
+    /// Cells multiply to the target.
     Multiply(M),
+    /// Two cells have a ratio equal to the target.
     Divide(M),
+    /// A single cell is fixed to the target value.
     Given(M),
 }
 
@@ -22,14 +26,18 @@ pub enum Operation {
 /// `Cage::valid_targets` to select an operator for which to enumerate legal targets.
 #[derive(Debug, Clone, Copy, Eq, PartialEq, Hash, EnumIter)]
 pub enum Operator {
+    /// Cells sum to a target.
     Add,
+    /// Two cells differ by a target.
     Subtract,
+    /// Cells multiply to a target.
     Multiply,
+    /// Two cells have a ratio equal to a target.
     Divide,
+    /// A single cell is fixed to a target value.
     Given,
 }
 
-#[allow(dead_code)]
 impl Operator {
     /// Returns the operator of `operation`.
     #[must_use]

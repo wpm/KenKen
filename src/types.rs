@@ -13,11 +13,14 @@ pub type M = u16;
 #[must_use]
 #[derive(Ord, Eq, PartialEq, PartialOrd, Debug, Copy, Clone, Hash)]
 pub struct Cell {
+    /// 0-based row index.
     pub row: Index,
+    /// 0-based column index.
     pub column: Index,
 }
 
 impl Cell {
+    /// Creates a cell at the given `row` and `column`.
     pub const fn new(row: Index, column: Index) -> Self {
         Self { row, column }
     }

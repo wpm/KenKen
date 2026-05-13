@@ -20,9 +20,9 @@ git config core.hooksPath .githooks
 
 ## What the library provides
 
-**Generate puzzles** with `generate(n, rng)` for a random n×n puzzle, or
-`generate_with(n, rng, op_policy, size_distribution)` to control how cage operations are assigned and
-how cage sizes are distributed.
+**Build puzzles** with `Puzzle::new(n)`, then add cages via `insert_cage` and remove them via
+`remove_cage`. Each `Cage` is a `Polyomino` paired with an `Operation` (`Add`, `Subtract`,
+`Multiply`, `Divide`, or `Given`).
 
 **Query solution counts** on any `Puzzle`:
 
@@ -32,9 +32,9 @@ how cage sizes are distributed.
 - `solutions_at_most(k)` — count up to `k` solutions; useful for capping runtime when only a threshold
   matters.
 
-**Customize generation** via two named knobs:
+**Generate puzzles** randomly with `generate(n, rng)`, or use `generate_with(n, rng, op_policy,
+size_distribution)` to control how cage operations are assigned and how cage sizes are distributed:
 
-- `default_op_policy` / custom closure — maps a cage's cell values to an `Operation` (`Add`,
-  `Subtract`, `Multiply`, `Divide`, or `Given`).
+- `default_op_policy` / custom closure — maps a cage's cell values to an `Operation`.
 - `DEFAULT_SIZE_DISTRIBUTION` / `SizeDistribution` — controls cage-size sampling (`Fixed(n)` or
   `Uniform { min, max }`).

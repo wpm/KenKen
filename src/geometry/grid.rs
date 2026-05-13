@@ -51,11 +51,13 @@ impl Grid {
         self
     }
 
+    /// Returns `true` if every cell has been narrowed to a single value.
     #[must_use]
     pub fn is_solved(&self) -> bool {
         self.cells.iter().all(|values| values.is_singleton())
     }
 
+    /// Returns `true` if any cell has no remaining candidate values.
     #[must_use]
     pub fn is_invalid(&self) -> bool {
         self.cells.iter().any(|values| values.is_empty())

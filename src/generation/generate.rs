@@ -1,3 +1,5 @@
+//! Core puzzle generation: assigns operations and targets to cages over a solved Latin square.
+
 use crate::Cage;
 use crate::constraints::cage::operation::Operation;
 use crate::generation::latin_square::generate_latin_square;
