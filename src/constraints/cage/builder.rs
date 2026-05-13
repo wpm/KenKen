@@ -824,21 +824,16 @@ mod tests {
 
     #[test]
     fn cage_new_with_target_above_n_max_yields_no_tuples() {
-        let p = poly(&[(0, 0)]);
-        assert!(Cage::new(4, p, Operation::Given(300)).tuples().is_empty());
-
-        let p = poly(&[(0, 0), (0, 1)]);
-        assert!(
-            Cage::new(4, p, Operation::Subtract(300))
-                .tuples()
-                .is_empty()
-        );
-
-        let p = poly(&[(0, 0), (0, 1)]);
-        assert!(Cage::new(4, p, Operation::Divide(300)).tuples().is_empty());
-
-        let p = poly(&[(0, 0), (0, 1)]);
-        assert!(Cage::new(4, p, Operation::Add(300)).tuples().is_empty());
+        let singleton = || poly(&[(0, 0)]);
+        let pair = || poly(&[(0, 0), (0, 1)]);
+        for (p, op) in [
+            (singleton(), Operation::Given(300)),
+            (pair(), Operation::Subtract(300)),
+            (pair(), Operation::Divide(300)),
+            (pair(), Operation::Add(300)),
+        ] {
+            assert!(Cage::new(4, p, op).tuples().is_empty());
+        }
     }
 
     #[test]
