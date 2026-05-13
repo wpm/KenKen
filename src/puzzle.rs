@@ -202,16 +202,11 @@ impl Puzzle {
     }
 
     /// One round of constraint propagation: builds a value filter from every constraint
-    /// against the current grid and applies it. Always returns a `Puzzle`; the resulting
-    /// grid may be invalid when constraints contradict. Best-effort: returns `self`
-    /// unchanged on the unreachable error path from `apply`.
+    /// against the current grid and applies it. The resulting grid may be invalid when
+    /// constraints contradict; callers inspect [`Self::is_valid`] to detect that.
     fn propagate_round(self) -> Self {
-        let Ok(filter) = self.constraints.apply(&self.grid) else {
-            return self;
-        };
-        let Ok(grid) = filter.apply(&self.grid) else {
-            return self;
-        };
+        let filter = self.constraints.apply(&self.grid);
+        let grid = filter.apply(&self.grid);
         Self {
             grid,
             constraints: self.constraints,
@@ -375,11 +370,8 @@ impl State for Puzzle {
     fn branch(self) -> impl Iterator<Item = Self> {
         let pivot = self
             .grid
-            .iter()
-            .filter_map(|cell| {
-                let values = self.grid.get(&cell).ok()?;
-                (!values.is_singleton()).then_some((cell, values))
-            })
+            .iter_with_values()
+            .filter(|(_, values)| !values.is_singleton())
             .min_by_key(|(cell, values)| (values.len(), *cell));
         let Some((cell, values)) = pivot else {
             return itertools::Either::Left(std::iter::empty());
@@ -485,12 +477,13 @@ mod tests {
         let existing_poly = existing.polyomino().clone();
         let new_poly = new.polyomino().clone();
         let puzzle = Puzzle::new(4).unwrap().insert_cage(existing).unwrap();
-        if let Err(Error::CageConflict(got_new, got_existing)) = puzzle.insert_cage(new) {
-            assert_eq!(got_new.polyomino(), &new_poly);
-            assert_eq!(got_existing.polyomino(), &existing_poly);
-        } else {
-            unreachable!("expected CageConflict");
-        }
+        let result = puzzle.insert_cage(new);
+        assert!(matches!(
+            &result,
+            Err(Error::CageConflict(got_new, got_existing))
+                if got_new.polyomino() == &new_poly
+                && got_existing.polyomino() == &existing_poly
+        ));
     }
 
     #[test]
@@ -1061,6 +1054,46 @@ mod tests {
     }
 
     #[test]
+    fn uniqueness_none_for_unsolvable() {
+        let p = Puzzle::new(2)
+            .unwrap()
+            .insert_cage(given(0, 0, 1))
+            .unwrap()
+            .insert_cage(given(0, 1, 1))
+            .unwrap();
+        assert_eq!(p.uniqueness(), Uniqueness::None);
+    }
+
+    #[test]
+    fn uniqueness_unique_for_single_solution() {
+        let p = Puzzle::new(2).unwrap().insert_cage(given(0, 0, 1)).unwrap();
+        assert_eq!(p.uniqueness(), Uniqueness::Unique);
+    }
+
+    #[test]
+    fn uniqueness_multiple_for_multi_solution() {
+        let p = Puzzle::new(2)
+            .unwrap()
+            .insert_cage(row_add(2, 0, 3))
+            .unwrap()
+            .insert_cage(row_add(2, 1, 3))
+            .unwrap();
+        assert_eq!(p.uniqueness(), Uniqueness::Multiple);
+    }
+
+    #[test]
+    fn cages_is_empty_true_for_fresh_puzzle() {
+        let p = Puzzle::new(2).unwrap();
+        assert!(p.constraints.cage.is_empty());
+    }
+
+    #[test]
+    fn cages_is_empty_false_after_insert() {
+        let p = Puzzle::new(2).unwrap().insert_cage(given(0, 0, 1)).unwrap();
+        assert!(!p.constraints.cage.is_empty());
+    }
+
+    #[test]
     fn rank_is_deterministic() {
         let cage = add_cage(&[(0, 0), (0, 1)], 4, 5);
         let p = Puzzle::new(4).unwrap().insert_cage(cage.clone()).unwrap();
@@ -1087,29 +1120,25 @@ pub struct PuzzleConstraints {
 }
 
 impl PuzzleConstraints {
-    /// # Errors
-    /// Returns `Error` if any cell in any constraint is outside the grid.
-    pub fn apply(&self, grid: &Grid) -> Result<ValueFilter, Error> {
-        let a = self.cage_filter(grid)?;
-        let b = self.all_different_filter(grid)?;
-        Ok(a * b)
+    pub fn apply(&self, grid: &Grid) -> ValueFilter {
+        self.cage_filter(grid) * self.all_different_filter(grid)
     }
-    fn cage_filter(&self, grid: &Grid) -> Result<ValueFilter, Error> {
+    fn cage_filter(&self, grid: &Grid) -> ValueFilter {
         let mut filter = ValueFilter::default();
         for cage in self.cage.iter() {
-            filter = filter * cage.value_filter(grid)?;
+            filter = filter * cage.value_filter(grid);
         }
-        Ok(filter)
+        filter
     }
-    fn all_different_filter(&self, grid: &Grid) -> Result<ValueFilter, Error> {
+    fn all_different_filter(&self, grid: &Grid) -> ValueFilter {
         let mut filter = ValueFilter::default();
         for row in &self.row {
-            filter = filter * row.value_filter(grid)?;
+            filter = filter * row.value_filter(grid);
         }
         for column in &self.column {
-            filter = filter * column.value_filter(grid)?;
+            filter = filter * column.value_filter(grid);
         }
-        Ok(filter)
+        filter
     }
 }
 
