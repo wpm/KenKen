@@ -4,8 +4,8 @@
 #![allow(clippy::unwrap_used)]
 
 use kenken::{
-    Cage, Cell, DEFAULT_SIZE_DISTRIBUTION, Delta, Grid, Index, N, NarrowingScore, Operation,
-    Operator, Polyomino, Puzzle, SizeDistribution, Uniqueness, Values, default_op_policy, generate,
+    Cage, Cell, DEFAULT_SIZE_DISTRIBUTION, Delta, Grid, NarrowingScore, Operation, Operator,
+    Polyomino, Puzzle, SizeDistribution, Uniqueness, Values, default_op_policy, generate,
     generate_with,
 };
 use rand::SeedableRng;
@@ -104,7 +104,7 @@ fn uniqueness_and_solutions_buckets_agree() {
 
 #[test]
 fn custom_op_policy_overrides_default() {
-    let policy = |values: &[N], n: Index| {
+    let policy = |values: &[u8], n: usize| {
         if values.len() == 2 {
             Operation::Add(values.iter().map(|&v| u16::from(v)).sum())
         } else {
@@ -157,7 +157,7 @@ fn size_distribution_uniform_is_constructible() {
     assert_ne!(p.uniqueness(), Uniqueness::None);
 }
 
-fn given_cage(row: Index, column: Index, value: N) -> Cage {
+fn given_cage(row: usize, column: usize, value: u8) -> Cage {
     let cell = Cell::new(row, column);
     Cage::new(
         value,
@@ -223,7 +223,7 @@ fn fresh_puzzle_has_no_singletons_or_empty_cells() {
 fn singleton_grid_yields_its_only_cell() {
     // 1×1: the lone cell holds {1}, which is a singleton by construction.
     let p = Puzzle::new(1).unwrap();
-    let singletons: Vec<(Cell, N)> = p.singleton_cells().collect();
+    let singletons: Vec<(Cell, u8)> = p.singleton_cells().collect();
     assert_eq!(singletons, vec![(Cell::new(0, 0), 1)]);
 }
 
@@ -257,8 +257,8 @@ fn rank_tuples_for_cage_is_public_and_returns_scored_entries() {
     let cells = [Cell::new(0, 0), Cell::new(0, 1)];
     let cage = Cage::new(4, Polyomino::new(&cells), Operation::Add(3));
     let p = Puzzle::new(4).unwrap().insert_cage(cage.clone()).unwrap();
-    let ranked: Vec<(Vec<N>, Puzzle, NarrowingScore)> = p.rank_tuples_for_cage(&cage).unwrap();
-    let tuples: Vec<Vec<N>> = ranked.iter().map(|(t, _, _)| t.clone()).collect();
+    let ranked: Vec<(Vec<u8>, Puzzle, NarrowingScore)> = p.rank_tuples_for_cage(&cage).unwrap();
+    let tuples: Vec<Vec<u8>> = ranked.iter().map(|(t, _, _)| t.clone()).collect();
     assert_eq!(tuples, vec![vec![1, 2], vec![2, 1]]);
     assert!(ranked.iter().all(|(_, post, _)| post.is_valid()));
     let score: NarrowingScore = ranked[0].2;

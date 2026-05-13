@@ -1,4 +1,4 @@
-use crate::M;
+use crate::types::M;
 use strum::EnumIter;
 
 /// An arithmetic operation that defines a polyomino.

@@ -80,7 +80,8 @@ impl Mul for ValueFilter {
 #[allow(clippy::unwrap_used)]
 mod tests {
     use crate::constraints::constraint::ValueFilter;
-    use crate::{Cell, Index, Values};
+    use crate::types::Index;
+    use crate::{Cell, Values};
 
     fn filter(pairs: &[(Cell, Values)]) -> ValueFilter {
         ValueFilter(pairs.iter().copied().collect())
