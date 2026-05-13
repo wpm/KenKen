@@ -202,9 +202,18 @@ mod tests {
         );
     }
 
+    fn add_acc(a: M, b: N) -> M {
+        a + M::from(b)
+    }
+
+    #[test]
+    fn apply_with_named_function_folds_correctly() {
+        assert_eq!(apply(add_acc, &vec![3, 4, 5]), 12);
+    }
+
     #[test]
     #[should_panic(expected = "tuple must have at least one element")]
     fn apply_panics_on_empty_tuple() {
-        let _ = apply(|a, b| a + M::from(b), &Tuple::new());
+        let _ = apply(add_acc, &Tuple::new());
     }
 }
