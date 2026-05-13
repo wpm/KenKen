@@ -8,6 +8,7 @@ repository = "https://github.com/wpm/KenKen"
 keywords = ["kenken", "puzzle", "generator", "solver"]
 categories = ["games"]
 readme = "README.md"
+exclude = ["CLAUDE.md", ".githooks", ".github"]
 
 [dependencies]
 itertools = "0.14.0"
