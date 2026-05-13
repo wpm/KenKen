@@ -3,9 +3,8 @@ use strum::EnumIter;
 
 /// An arithmetic operation that defines a polyomino.
 ///
-/// Every variant carries its target as an `M` (u16). The product target needs the wider
-/// type; the others fit in `N` but use `M`, so the API is uniform and consumers can read
-/// `target` without matching on the variant.
+/// Every variant carries its target as a `u16`. All targets use the same wide type so the
+/// API is uniform — consumers can read the target without matching on the variant.
 #[derive(Debug, Clone, Copy, Eq, PartialEq, Hash)]
 pub enum Operation {
     /// Cells sum to the target.
@@ -26,15 +25,10 @@ pub enum Operation {
 /// `Cage::valid_targets` to select an operator for which to enumerate legal targets.
 #[derive(Debug, Clone, Copy, Eq, PartialEq, Hash, EnumIter)]
 pub enum Operator {
-    /// Cells sum to a target.
     Add,
-    /// Two cells differ by a target.
     Subtract,
-    /// Cells multiply to a target.
     Multiply,
-    /// Two cells have a ratio equal to a target.
     Divide,
-    /// A single cell is fixed to a target value.
     Given,
 }
 

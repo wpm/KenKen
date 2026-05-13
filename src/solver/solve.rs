@@ -1,8 +1,8 @@
 /// A search state that can be propagated to a fixed point and branched into sub-states.
 pub trait State: Sized {
-    /// Applies constraint propagation, returning `None` if the state is invalid.
+    /// Propagates constraints to a fixed point; returns `None` to prune this branch.
     fn propagate(self) -> Option<Self>;
-    /// Returns an iterator over branched sub-states. An empty iterator signals a solution.
+    /// Returns sub-states to explore. An empty iterator signals a solution.
     fn branch(self) -> impl Iterator<Item = Self>;
 }
 
