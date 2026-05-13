@@ -74,7 +74,7 @@ impl Polyomino {
     /// # Errors
     /// - [`Error::CellNotCovered`] if `cell` is not in `self`.
     /// - [`Error::RemovalWouldEmptyPolyomino`] if `self` has only one cell.
-    /// - [`Error::FlipWouldDisconnect`] if removal leaves the remaining cells disconnected.
+    /// - [`Error::WouldDisconnect`] if removal leaves the remaining cells disconnected.
     pub fn without(&self, cell: Cell) -> Result<Self, Error> {
         if !self.contains_cell(cell) {
             return Err(Error::CellNotCovered(cell));
@@ -85,7 +85,7 @@ impl Polyomino {
         let mut remaining = self.0.clone();
         remaining.retain(|c| *c != cell);
         if !is_connected(&remaining) {
-            return Err(Error::FlipWouldDisconnect(cell));
+            return Err(Error::WouldDisconnect(cell));
         }
         Ok(Self(remaining))
     }
@@ -225,7 +225,7 @@ mod tests {
     fn without_errors_when_removal_disconnects() {
         let p = Polyomino::new(&[Cell::new(0, 0), Cell::new(0, 1), Cell::new(0, 2)]);
         let r = p.without(Cell::new(0, 1));
-        assert!(matches!(r, Err(Error::FlipWouldDisconnect(_))));
+        assert!(matches!(r, Err(Error::WouldDisconnect(_))));
     }
 
     #[test]

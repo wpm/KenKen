@@ -130,7 +130,7 @@ pub enum Error {
     CellNotCovered(Cell),
     /// Removing a cell from a polyomino would leave the remaining cells disconnected.
     /// Raised by `Polyomino::without`.
-    FlipWouldDisconnect(Cell),
+    WouldDisconnect(Cell),
     /// A target cell is not 4-adjacent to any cell of the polyomino it was applied to.
     TargetNotAdjacent,
     /// A cell passed to `Polyomino::extend` is already in the polyomino.
