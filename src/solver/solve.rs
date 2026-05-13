@@ -1,16 +1,23 @@
-#![allow(dead_code)]
-
+/// A search state that can be propagated to a fixed point and branched into sub-states.
 pub trait State: Sized {
+    /// Applies constraint propagation, returning `None` if the state is invalid.
     fn propagate(self) -> Option<Self>;
+    /// Returns an iterator over branched sub-states. An empty iterator signals a solution.
     fn branch(self) -> impl Iterator<Item = Self>;
 }
 
+/// A depth-first backtracking solver over any [`State`].
+///
+/// Each call to [`Iterator::next`] returns one solution — a state for which [`State::branch`]
+/// yields no children. [`Puzzle`](crate::Puzzle) implements [`State`], so `Solver<Puzzle>`
+/// enumerates all solutions to a puzzle.
 #[must_use]
 pub struct Solver<S> {
     stack: Vec<S>,
 }
 
 impl<S: State> Solver<S> {
+    /// Creates a new solver starting from `root`.
     pub fn new(root: S) -> Self {
         Self { stack: vec![root] }
     }

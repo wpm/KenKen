@@ -5,7 +5,7 @@
 
 use kenken::{
     Cage, Cell, DEFAULT_SIZE_DISTRIBUTION, Delta, Grid, NarrowingScore, Operation, Operator,
-    Polyomino, Puzzle, SizeDistribution, Uniqueness, Values, default_op_policy, generate,
+    Polyomino, Puzzle, SizeDistribution, Solver, Uniqueness, Values, default_op_policy, generate,
     generate_with,
 };
 use rand::SeedableRng;
@@ -364,4 +364,55 @@ fn delta_narrow_widen_and_propagate_fully_are_public() {
         rewidened.candidates(Cell::new(1, 1)).unwrap(),
         Values::new([1]),
     );
+}
+
+#[test]
+fn solve_simple_2x2_puzzle() {
+    // 2×2 grid with two Add(3) cages, one per row.
+    //
+    //   ┌───────┐
+    //   │  3+   │  (0,0)+(0,1)
+    //   ├───────┤
+    //   │  3+   │  (1,0)+(1,1)
+    //   └───────┘
+    //
+    // Both rows must contain {1,2}; all-different columns give exactly two solutions:
+    //   [[1,2],[2,1]]  and  [[2,1],[1,2]]
+    let p = Puzzle::new(2)
+        .unwrap()
+        .insert_cage(Cage::new(
+            2,
+            Polyomino::new(&[Cell::new(0, 0), Cell::new(0, 1)]),
+            Operation::Add(3),
+        ))
+        .unwrap()
+        .insert_cage(Cage::new(
+            2,
+            Polyomino::new(&[Cell::new(1, 0), Cell::new(1, 1)]),
+            Operation::Add(3),
+        ))
+        .unwrap();
+
+    let solutions: Vec<Puzzle> = Solver::new(p).collect();
+    assert_eq!(solutions.len(), 2);
+    for solution in &solutions {
+        assert_eq!(solution.singleton_cells().count(), 4);
+    }
+
+    let mut grids: Vec<Vec<u8>> = solutions
+        .iter()
+        .map(|s| {
+            [
+                Cell::new(0, 0),
+                Cell::new(0, 1),
+                Cell::new(1, 0),
+                Cell::new(1, 1),
+            ]
+            .iter()
+            .map(|c| s.singleton_cells().find(|(cell, _)| cell == c).unwrap().1)
+            .collect()
+        })
+        .collect();
+    grids.sort();
+    assert_eq!(grids, vec![vec![1, 2, 2, 1], vec![2, 1, 1, 2]]);
 }

@@ -32,6 +32,9 @@ git config core.hooksPath .githooks
 - `solutions_at_most(k)` — count up to `k` solutions; useful for capping runtime when only a threshold
   matters.
 
+**Enumerate solutions** directly with `Solver::new(puzzle)`, a depth-first backtracking iterator
+that yields one solved `Puzzle` per solution.
+
 **Generate puzzles** randomly with `generate(n, rng)`, or use `generate_with(n, rng, op_policy,
 size_distribution)` to control how cage operations are assigned and how cage sizes are distributed:
 

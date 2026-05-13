@@ -4,6 +4,9 @@
 //! [`Puzzle::insert_cage`], and inspect solutions with [`Puzzle::uniqueness`] and
 //! [`Puzzle::solutions`].
 //!
+//! For direct enumeration of solutions, [`Solver`] is a depth-first backtracking iterator
+//! over any type that implements [`State`]; [`Puzzle`] implements [`State`].
+//!
 //! Puzzles can also be generated randomly via [`generate()`] or [`generate_with`].
 
 mod constraints;
@@ -23,4 +26,5 @@ pub use geometry::shape::Polyomino;
 pub use geometry::tiling::SizeDistribution;
 pub use puzzle::{NarrowingScore, Puzzle, Uniqueness};
 pub use solver::delta::Delta;
+pub use solver::solve::{Solver, State};
 pub use types::{Cell, Error, Values};
