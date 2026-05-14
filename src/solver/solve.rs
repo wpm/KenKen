@@ -1,16 +1,18 @@
-/// A search state that can be propagated to a fixed point and branched into sub-states.
+/// A search state that can be propagated to a fixed point and branched into
+/// substates.
 pub trait State: Sized {
-    /// Propagates constraints to a fixed point; returns `None` to prune this branch.
+    /// Propagates constraints to a fixed point; returns `None` to prune this
+    /// branch.
     fn propagate(self) -> Option<Self>;
-    /// Returns sub-states to explore. An empty iterator signals a solution.
+    /// Returns substates to explore. An empty iterator signals a solution.
     fn branch(self) -> impl Iterator<Item = Self>;
 }
 
 /// A depth-first backtracking solver over any [`State`].
 ///
-/// Each call to [`Iterator::next`] returns one solution — a state for which [`State::branch`]
-/// yields no children. [`Puzzle`](crate::Puzzle) implements [`State`], so `Solver<Puzzle>`
-/// enumerates all solutions to a puzzle.
+/// Each call to [`Iterator::next`] returns one solution — a state for which
+/// [`State::branch`] yields no children. [`Puzzle`](crate::Puzzle) implements
+/// [`State`], so `Solver<Puzzle>` enumerates all solutions to a puzzle.
 #[must_use]
 pub struct Solver<S> {
     stack: Vec<S>,
@@ -47,7 +49,8 @@ mod tests {
     use super::*;
 
     /// Search state for prime factorization of `n`.
-    /// `candidate` is the next factor to try; `factors` accumulates confirmed factors.
+    /// `candidate` is the next factor to try; `factors` accumulates confirmed
+    /// factors.
     #[derive(Clone, Debug)]
     struct Factoring {
         remaining: u64,

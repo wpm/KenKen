@@ -1,14 +1,22 @@
-//! Core puzzle generation: assigns operations and targets to cages over a solved Latin square.
+//! Core puzzle generation: assigns operations and targets to cages over a
+//! solved Latin square.
 
-use crate::Cage;
-use crate::constraints::cage::operation::Operation;
-use crate::generation::latin_square::generate_latin_square;
-use crate::geometry::tiling::{SizeDistribution, Tiling};
-use crate::puzzle::Puzzle;
-use crate::types::{Error, Index, M, N};
 use rand::Rng;
 
-/// Default size distribution used by [`generate`]: cage sizes drawn uniformly from `1..=4`.
+use crate::{
+    Cage,
+    constraints::{
+        cage::operation::Operation,
+        cover::Cover,
+        tiling::{SizeDistribution, Tiling},
+    },
+    generator::latin_square::generate_latin_square,
+    puzzle::Puzzle,
+    types::{Error, Index, M, N},
+};
+
+/// Default size distribution used by [`generate`]: cage sizes drawn uniformly
+/// from `1..=4`.
 pub const DEFAULT_SIZE_DISTRIBUTION: SizeDistribution =
     SizeDistribution::Uniform { min: 1, max: 4 };
 
@@ -16,12 +24,11 @@ pub const DEFAULT_SIZE_DISTRIBUTION: SizeDistribution =
 ///
 /// - 1 cell: [`Operation::Given`].
 /// - 2 cells: [`Operation::Divide`] when divisible, otherwise [`Operation::Subtract`].
-/// - 3+ cells: [`Operation::Multiply`] when the product fits in `n²`, otherwise
-///   [`Operation::Add`].
+/// - 3+ cells: [`Operation::Multiply`] when the product fits in `n²`, otherwise [`Operation::Add`].
 ///
 /// # Panics
-/// Panics if `values` is empty. A cage always covers at least one cell, so callers that obtain
-/// `values` from a cage's cells will never trigger this.
+/// Panics if `values` is empty. A cage always covers at least one cell, so
+/// callers that obtain `values` from a cage's cells will never trigger this.
 #[must_use]
 #[allow(clippy::panic)]
 pub fn default_op_policy(values: &[N], n: Index) -> Operation {
@@ -58,18 +65,20 @@ pub fn generate<R: Rng>(n: Index, rng: &mut R) -> Result<Puzzle, Error> {
     generate_with(n, rng, default_op_policy, DEFAULT_SIZE_DISTRIBUTION)
 }
 
-/// Generates a random `n`×`n` puzzle with caller-supplied op policy and cage-size distribution.
+/// Generates a random `n`×`n` puzzle with caller-supplied op policy and
+/// cage-size distribution.
 ///
 /// The pipeline is:
 /// 1. Sample a uniformly random Latin square as the puzzle's solution.
 /// 2. Tile the grid with random polyominos sized by `sizes`.
-/// 3. For each polyomino, look up the Latin-square values at its cells (in row-major sorted
-///    order) and pass them to `op` to choose the cage's operation.
+/// 3. For each polyomino, look up the Latin-square values at its cells (in row-major sorted order)
+///    and pass them to `op` to choose the cage's operation.
 ///
 /// # Errors
-/// Returns `Error` if `n` is not in `1..=9`. The `?` on `insert_cage` is structurally
-/// unreachable because the tiling's polyominos are disjoint, but is kept rather than panicking
-/// to avoid load-bearing assertions inside the generator.
+/// Returns `Error` if `n` is not in `1..=9`. The `?` on `insert_cage` is
+/// structurally unreachable because the tiling's polyominos are disjoint, but
+/// is kept rather than panicking to avoid load-bearing assertions inside the
+/// generator.
 #[allow(clippy::cast_possible_truncation)]
 pub fn generate_with<R: Rng, F>(
     n: Index,
@@ -87,7 +96,7 @@ where
 
     for polyomino in tiling.into_polyominos() {
         let values: Vec<N> = polyomino
-            .as_slice()
+            .cells()
             .iter()
             .map(|cell| latin_square[cell.row][cell.column])
             .collect();

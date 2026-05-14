@@ -1,6 +1,3 @@
-#![allow(dead_code)]
-
-use crate::types::{N, Values};
 /// Régin's arc-consistency algorithm for the all-different constraint.
 ///
 /// Given a list of domains (one per variable), removes any value from a domain
@@ -11,8 +8,8 @@ use crate::types::{N, Values};
 /// 1. Find a maximum bipartite matching between variables and values.
 /// 2. Build the residual graph of the matching.
 /// 3. Compute SCCs of the residual graph.
-/// 4. An edge (variable → value) is arc-consistent iff it is in the matching
-///    OR both endpoints lie in the same SCC. Remove all other edges.
+/// 4. An edge (variable → value) is arc-consistent iff it is in the matching OR both endpoints
+///    lie in the same SCC. Remove all other edges.
 ///
 /// # Precondition
 ///
@@ -20,19 +17,21 @@ use crate::types::{N, Values};
 /// (equivalently, every feasible assignment is a perfect matching that uses
 /// every value). When there are more values than variables, some values are
 /// "free" (unmatched) and the SCC-only residual graph used here isolates them
-/// in their own component, causing edges to those values to be pruned even
-/// when they participate in valid assignments. The full Régin construction
-/// fixes this by adding a sink node connected to free values; this
-/// implementation omits that step. See issue #30.
+/// in their own component, causing edges to those values to be pruned even when
+/// they participate in valid assignments. The full Régin construction fixes
+/// this by adding a sink node connected to free values; this implementation
+/// omits that step. See issue #30.
 ///
 /// The only current caller (`AllDifferent::value_filter`) always passes
 /// a full row or column of an `n`×`n` grid with values `{1..=n}`, so the
 /// precondition holds. New callers must ensure it before using `regin`.
 use std::collections::HashMap;
 
+use crate::types::{Fill, N};
+
 #[must_use]
 #[allow(clippy::similar_names)]
-pub fn regin(domains: &[Values]) -> Vec<Values> {
+pub fn regin(domains: &[Fill]) -> Vec<Fill> {
     let n = domains.len();
     if n == 0 {
         return vec![];
@@ -41,7 +40,7 @@ pub fn regin(domains: &[Values]) -> Vec<Values> {
     // Collect all values that appear in at least one domain.
     let all_values: Vec<N> = domains
         .iter()
-        .fold(Values::default(), |acc, d| acc | *d)
+        .fold(Fill::default(), |acc, d| acc | *d)
         .iter()
         .collect();
 
@@ -99,7 +98,7 @@ pub fn regin(domains: &[Values]) -> Vec<Values> {
 
     // An unmatched edge (var → value) is consistent iff both endpoints are in
     // the same SCC. Remove all others.
-    let mut result: Vec<Values> = domains.to_vec();
+    let mut result: Vec<Fill> = domains.to_vec();
 
     for var in 0..n {
         let matched_vi = var_match[var];
@@ -109,7 +108,7 @@ pub fn regin(domains: &[Values]) -> Vec<Values> {
                 let vi = value_index[&val_v];
                 matched_vi == Some(vi) || scc[var] == scc[n + vi]
             })
-            .collect::<Values>();
+            .collect::<Fill>();
     }
 
     result
@@ -215,7 +214,7 @@ mod tests {
 
     #[test]
     fn singleton_domains_unchanged() {
-        let domains = vec![Values::new([1]), Values::new([2]), Values::new([3])];
+        let domains = vec![Fill::new([1]), Fill::new([2]), Fill::new([3])];
         let result = regin(&domains);
         assert_eq!(result, domains);
     }
@@ -226,20 +225,20 @@ mod tests {
         // Var1 must be 2, so 2 is pruned from Var0, leaving Var0:{1}.
         // Var0 must then be 1, so 1 is pruned from Var2, leaving Var2:{3}.
         // Valid assignment: Var0=1, Var1=2, Var2=3.
-        let domains = vec![Values::new([1, 2]), Values::new([2]), Values::new([1, 3])];
+        let domains = vec![Fill::new([1, 2]), Fill::new([2]), Fill::new([1, 3])];
         let result = regin(&domains);
-        assert_eq!(result[0], Values::new([1]));
-        assert_eq!(result[1], Values::new([2]));
-        assert_eq!(result[2], Values::new([3]));
+        assert_eq!(result[0], Fill::new([1]));
+        assert_eq!(result[1], Fill::new([2]));
+        assert_eq!(result[2], Fill::new([3]));
     }
 
     #[test]
     fn full_overlap_no_pruning() {
         // 3 variables each with domain {1,2,3}: any permutation is valid, no pruning.
         let domains = vec![
-            Values::new([1, 2, 3]),
-            Values::new([1, 2, 3]),
-            Values::new([1, 2, 3]),
+            Fill::new([1, 2, 3]),
+            Fill::new([1, 2, 3]),
+            Fill::new([1, 2, 3]),
         ];
         let result = regin(&domains);
         assert_eq!(result, domains);
@@ -248,7 +247,7 @@ mod tests {
     #[test]
     fn fixed_third_var_no_pruning_on_pair() {
         // Var2 is fixed to 3, not in Var0/Var1 domains — no pruning occurs.
-        let domains = vec![Values::new([1, 2]), Values::new([1, 2]), Values::new([3])];
+        let domains = vec![Fill::new([1, 2]), Fill::new([1, 2]), Fill::new([3])];
         let result = regin(&domains);
         assert_eq!(result, domains);
     }
@@ -257,11 +256,7 @@ mod tests {
     fn all_values_reachable_no_pruning() {
         // Var0:{1,3}, Var1:{2,3}, Var2:{1,2}
         // Valid: 0=3,1=2,2=1; 0=1,1=3,2=2. All values participate in some solution.
-        let domains = vec![
-            Values::new([1, 3]),
-            Values::new([2, 3]),
-            Values::new([1, 2]),
-        ];
+        let domains = vec![Fill::new([1, 3]), Fill::new([2, 3]), Fill::new([1, 2])];
         let result = regin(&domains);
         assert_eq!(result, domains);
     }

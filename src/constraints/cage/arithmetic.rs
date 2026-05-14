@@ -1,33 +1,39 @@
-use crate::constraints::cage::builder::Tuple;
-use crate::types::{M, N};
+use crate::{
+    Tuple,
+    types::{M, N},
+};
 
-/// Returns an iterator over all non-decreasing `k`-tuples with values in `1..=n` that sum to `s`.
+/// Returns an iterator over all non-decreasing `k`-tuples with values in
+/// `1..=n` that sum to `s`.
 pub fn addition_multisets(n: N, k: usize, s: N) -> impl Iterator<Item = Tuple> {
     simplex_multisets(n, k, |acc, i| acc + M::from(i), M::from(s))
 }
 
-/// Returns all 2-element tuples `[i, j]` with `j - i == d` and `1 <= i < j <= max`.
+/// Returns all 2-element tuples `[i, j]` with `j - i == d` and `1 <= i < j <=
+/// max`.
 pub fn subtraction_multisets(max: N, d: N) -> impl Iterator<Item = Tuple> {
     (1..=max.saturating_sub(d)).map(move |i| vec![i, i + d])
 }
 
-/// Returns an iterator over all non-decreasing `k`-tuples with values in `1..=n` whose product is `s`.
+/// Returns an iterator over all non-decreasing `k`-tuples with values in
+/// `1..=n` whose product is `s`.
 pub fn multiplication_multisets(n: N, k: usize, s: M) -> impl Iterator<Item = Tuple> {
     simplex_multisets(n, k, |acc, i| acc * M::from(i), s)
 }
 
-/// Returns all 2-element tuples `[i, j]` with `j / i == q` and `1 <= i < j <= max`.
+/// Returns all 2-element tuples `[i, j]` with `j / i == q` and `1 <= i < j <=
+/// max`.
 pub fn division_multisets(max: N, q: N) -> impl Iterator<Item = Tuple> {
     (1..=max / q).map(move |i| vec![i, i * q])
 }
 
-/// Returns an iterator over all non-decreasing `tuple_size`-tuples with values in `1..=n` where
-/// applying `f` across the tuple (left fold) equals `s`.
+/// Returns an iterator over all non-decreasing `tuple_size`-tuples with values
+/// in `1..=n` where applying `f` across the tuple (left fold) equals `s`.
 ///
-/// `f` folds an `M` accumulator over each `N` element, so products that exceed `u8::MAX` are
-/// handled correctly. Partial tuples whose accumulated value already exceeds `s` are pruned,
-/// since extending them can only increase it. Complete tuples are yielded only when their
-/// value equals `s`.
+/// `f` folds an `M` accumulator over each `N` element, so products that exceed
+/// `u8::MAX` are handled correctly. Partial tuples whose accumulated value
+/// already exceeds `s` are pruned, since extending them can only increase it.
+/// Complete tuples are yielded only when their value equals `s`.
 #[allow(clippy::many_single_char_names)]
 fn simplex_multisets(
     n: N,
@@ -54,11 +60,12 @@ fn simplex_multisets(
                     t
                 })
                 .filter(move |t| {
-                    let v = apply(f, t);
+                    let v = sequence_operation(f, t);
                     if t.len() == tuple_size {
                         v == s
                     } else {
-                        // Prune partials whose accumulated value already exceeds s; extending them can only increase it.
+                        // Prune partials whose accumulated value already exceeds s; extending
+                        // them can only increase it.
                         v <= s
                     }
                 })
@@ -68,10 +75,10 @@ fn simplex_multisets(
     recurse(n, tuple_size, tuple_size, f, s)
 }
 
-/// Reduces `t` by left-folding `f` over its elements, starting from the first element widened
-/// to `M`. Panics if `t` is empty.
+/// Reduces `t` by left-folding `f` over its elements, starting from the first
+/// element widened to `M`. Panics if `t` is empty.
 #[allow(clippy::panic)]
-fn apply(f: impl Fn(M, N) -> M, t: &Tuple) -> M {
+fn sequence_operation(f: impl Fn(M, N) -> M, t: &[N]) -> M {
     let Some((&t_0, rest)) = t.split_first() else {
         panic!("tuple must have at least one element");
     };
@@ -207,13 +214,13 @@ mod tests {
     }
 
     #[test]
-    fn apply_with_named_function_folds_correctly() {
-        assert_eq!(apply(add_acc, &vec![3, 4, 5]), 12);
+    fn sequence_operation_with_named_function_folds_correctly() {
+        assert_eq!(sequence_operation(add_acc, &[3, 4, 5]), 12);
     }
 
     #[test]
     #[should_panic(expected = "tuple must have at least one element")]
-    fn apply_panics_on_empty_tuple() {
-        let _ = apply(add_acc, &Tuple::new());
+    fn sequence_operation_panics_on_empty_tuple() {
+        let _ = sequence_operation(add_acc, &Tuple::new());
     }
 }

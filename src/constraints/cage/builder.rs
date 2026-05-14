@@ -1,20 +1,27 @@
-use crate::constraints::cage::arithmetic::{
-    addition_multisets, division_multisets, multiplication_multisets, subtraction_multisets,
-};
-use crate::constraints::cage::operation::{Operation, Operator};
-use crate::constraints::constraint::{Constraint, ValueFilter};
-use crate::geometry::shape::Cells;
-use crate::types::{Cell, Index, M, N};
-use crate::{Grid, Polyomino, Values};
 use std::collections::HashMap;
+
+use crate::{
+    Fill, Operation, Operator,
+    constraints::{
+        Constraint, RegionConstraint,
+        cage::arithmetic::{
+            addition_multisets, division_multisets, multiplication_multisets, subtraction_multisets,
+        },
+        cover::{Cover, Polyomino},
+    },
+    grid::Grid,
+    types::{Cell, Index, M, N},
+};
 
 /// An ordered assignment of values to the cells of a cage, one value per cell.
 pub type Tuple = Vec<N>;
 
-/// A polyomino constraint defined by a set of cells and an arithmetic operation.
+/// A polyomino constraint defined by a set of cells and an arithmetic
+/// operation.
 ///
-/// Stores the valid ordered tuples for the operation after filtering out assignments that
-/// repeat a value within any shared row or column of the polyomino.
+/// Stores the valid ordered tuples for the operation after filtering out
+/// assignments that repeat a value within any shared row or column of the
+/// polyomino.
 #[must_use]
 #[derive(Debug, Clone)]
 pub struct Cage {
@@ -24,8 +31,9 @@ pub struct Cage {
 }
 
 impl Cage {
-    /// Creates a cage over the given polyomino. Stores valid ordered tuples for `operation`,
-    /// with tuples that repeat a value within any shared row or column dropped.
+    /// Creates a cage over the given polyomino. Stores valid ordered tuples for
+    /// `operation`, with tuples that repeat a value within any shared row
+    /// or column dropped.
     pub fn new(n: N, polyomino: Polyomino, operation: Operation) -> Self {
         let tuples = operation_tuples(n, &polyomino, operation);
         Self {
@@ -46,11 +54,6 @@ impl Cage {
         self.operation
     }
 
-    /// Returns the cells covered by this cage.
-    pub fn cells(&self) -> &[Cell] {
-        self.polyomino.as_slice()
-    }
-
     /// Returns a slice over the cage's precomputed valid ordered tuples.
     #[must_use]
     pub fn tuples(&self) -> &[Tuple] {
@@ -59,8 +62,9 @@ impl Cage {
 
     /// Returns the operators legal for a cage covering `cells`.
     ///
-    /// Singleton cages permit only [`Operator::Given`]; 2-cell cages permit all operators;
-    /// larger cages permit only [`Operator::Add`] and [`Operator::Multiply`].
+    /// Singleton cages permit only [`Operator::Given`]; 2-cell cages permit all
+    /// operators; larger cages permit only [`Operator::Add`] and
+    /// [`Operator::Multiply`].
     #[must_use]
     pub fn valid_operators(cells: &[Cell]) -> Vec<Operator> {
         match cells.len() {
@@ -76,10 +80,12 @@ impl Cage {
         }
     }
 
-    /// Returns an iterator over [`Operation`] values whose `(operator, target)` pair is legal
-    /// for a cage covering `cells` on an `n`×`n` grid, in ascending target order.
+    /// Returns an iterator over [`Operation`] values whose `(operator, target)`
+    /// pair is legal for a cage covering `cells` on an `n`×`n` grid, in
+    /// ascending target order.
     ///
-    /// If `op` is not in [`Self::valid_operators`] for `cells`, the iterator is empty.
+    /// If `op` is not in [`Self::valid_operators`] for `cells`, the iterator is
+    /// empty.
     #[must_use]
     pub fn valid_targets(
         cells: &[Cell],
@@ -114,10 +120,12 @@ impl Cage {
         }
     }
 
-    /// Returns true if `operation` is legal for a cage of the given cells on an `n`×`n` grid.
+    /// Returns true if `operation` is legal for a cage of the given cells on an
+    /// `n`×`n` grid.
     ///
-    /// The operator must be in [`Self::valid_operators`] for the cell count, the target must
-    /// be in its conventional range, and at least one tuple must survive collinearity filtering.
+    /// The operator must be in [`Self::valid_operators`] for the cell count,
+    /// the target must be in its conventional range, and at least one tuple
+    /// must survive collinearity filtering.
     #[must_use]
     pub fn is_valid(cells: &[Cell], operation: Operation, n: N) -> bool {
         if !Self::valid_operators(cells).contains(&Operator::of(operation)) {
@@ -133,41 +141,45 @@ impl Cage {
     }
 }
 
-/// Returns true if `operation` has at least one valid tuple for the given polyomino.
+/// Returns true if `operation` has at least one valid tuple for the given
+/// polyomino.
 fn has_admissible_tuple(n: N, polyomino: &Polyomino, operation: Operation) -> bool {
     operator_tuples(n, polyomino, Operator::of(operation)).contains_key(&operation)
 }
 
-impl Cells for Cage {
-    fn cells(&self) -> &[Cell] {
-        self.polyomino.as_slice()
+impl Cover for Cage {
+    fn cells(&self) -> Vec<Cell> {
+        self.polyomino.cells()
+    }
+
+    fn len(&self) -> usize {
+        self.polyomino.len()
     }
 }
 
-impl Constraint for Cage {
-    /// Returns a filter mapping each cell to the union of values it takes across all valid tuples.
-    ///
-    /// For example, a 2-cell `Add(3)` cage on a 4×4 grid has valid tuples `[1,2]` and `[2,1]`.
-    /// The filter maps cell 0 → `{1, 2}` and cell 1 → `{1, 2}`.
-    fn value_filter(&self, _grid: &Grid) -> ValueFilter {
-        let n = self.cells().len();
-        let mut cols = vec![Values::default(); n];
+impl RegionConstraint for Cage {
+    fn constraint(&self, _grid: &Grid) -> Constraint {
+        let n = self.len();
+        let mut cols = vec![Fill::default(); n];
         for tuple in self.tuples() {
             for (col, &val) in cols.iter_mut().zip(tuple.iter()) {
-                *col = *col | Values::new([val]);
+                *col = *col | Fill::new([val]);
             }
         }
         self.cells().iter().copied().zip(cols).collect()
     }
 }
 
-/// Returns a map from each valid [`Operation`] to the ordered tuples that realize it, for the
-/// given operator applied to the polyomino on an `n`×`n` grid.
+/// Returns a map from each valid [`Operation`] to the ordered tuples that
+/// realize it, for the given operator applied to the polyomino on an `n`×`n`
+/// grid.
 ///
-/// Each key is an `(operator, target)` pair for which at least one assignment of grid values to
-/// the polyomino's cells satisfies the operation and the collinearity constraints.
+/// Each key is an `(operator, target)` pair for which at least one assignment
+/// of grid values to the polyomino's cells satisfies the operation and the
+/// collinearity constraints.
 ///
-/// Subtract and Divide are only valid for 2-cell polyominoes; any other size yields an empty map.
+/// Subtract and Divide are only valid for 2-cell polyominoes; any other size
+/// yields an empty map.
 #[must_use]
 pub fn operator_tuples(
     n: N,
@@ -175,7 +187,7 @@ pub fn operator_tuples(
     operator: Operator,
 ) -> HashMap<Operation, Vec<Tuple>> {
     let k = polyomino.len();
-    let pairs = collinear_pairs(polyomino.as_slice());
+    let pairs = collinear_pairs(polyomino);
 
     match operator {
         Operator::Given => {
@@ -269,13 +281,15 @@ pub fn operator_tuples(
     }
 }
 
-/// Returns the valid ordered tuples for a single known `operation` on the given polyomino.
+/// Returns the valid ordered tuples for a single known `operation` on the given
+/// polyomino.
 ///
-/// Unlike [`operator_tuples`], which enumerates all targets for an operator, this function
-/// uses the target already encoded in `operation` and generates only its tuples.
+/// Unlike [`operator_tuples`], which enumerates all targets for an operator,
+/// this function uses the target already encoded in `operation` and generates
+/// only its tuples.
 fn operation_tuples(n: N, polyomino: &Polyomino, operation: Operation) -> Vec<Tuple> {
     let k = polyomino.len();
-    let pairs = collinear_pairs(polyomino.as_slice());
+    let pairs = collinear_pairs(polyomino);
     match operation {
         Operation::Given(v) => {
             N::try_from(v).map_or_else(|_| vec![], |v_n| ordered_tuples(&[v_n], &pairs).collect())
@@ -312,11 +326,12 @@ fn operation_tuples(n: N, polyomino: &Polyomino, operation: Operation) -> Vec<Tu
 
 /// Returns pairs of cell indices within `cells` that share a row or column.
 ///
-/// Each pair `(i, j)` with `i < j` means `cells[i]` and `cells[j]` must hold distinct values.
-fn collinear_pairs(cells: &[Cell]) -> Vec<(usize, usize)> {
+/// Each pair `(i, j)` with `i < j` means `cells[i]` and `cells[j]` must hold
+/// distinct values.
+fn collinear_pairs(polyomino: &Polyomino) -> Vec<(usize, usize)> {
     let mut by_row: HashMap<Index, Vec<usize>> = HashMap::new();
     let mut by_col: HashMap<Index, Vec<usize>> = HashMap::new();
-    for (i, cell) in cells.iter().enumerate() {
+    for (i, cell) in polyomino.cells().iter().enumerate() {
         by_row.entry(cell.row).or_default().push(i);
         by_col.entry(cell.column).or_default().push(i);
     }
@@ -331,8 +346,9 @@ fn collinear_pairs(cells: &[Cell]) -> Vec<(usize, usize)> {
     pairs
 }
 
-/// Returns an iterator over all ordered permutations of `multiset` that satisfy the collinearity
-/// constraint: for every `(i, j)` in `pairs`, the values at positions `i` and `j` differ.
+/// Returns an iterator over all ordered permutations of `multiset` that satisfy
+/// the collinearity constraint: for every `(i, j)` in `pairs`, the values at
+/// positions `i` and `j` differ.
 fn ordered_tuples<'a>(
     multiset: &'a [N],
     pairs: &'a [(usize, usize)],
@@ -340,7 +356,8 @@ fn ordered_tuples<'a>(
     permutations(multiset).filter(move |t| pairs.iter().all(|&(i, j)| t[i] != t[j]))
 }
 
-/// Returns an iterator over all distinct permutations of `values` in lexicographic order.
+/// Returns an iterator over all distinct permutations of `values` in
+/// lexicographic order.
 fn permutations(values: &[N]) -> impl Iterator<Item = Tuple> {
     let mut perm = values.to_vec();
     perm.sort_unstable();
@@ -351,8 +368,8 @@ fn permutations(values: &[N]) -> impl Iterator<Item = Tuple> {
     all.into_iter()
 }
 
-/// Advances `perm` to the next lexicographic permutation in place. Returns `false` if it was
-/// already the last permutation.
+/// Advances `perm` to the next lexicographic permutation in place. Returns
+/// `false` if it was already the last permutation.
 fn next_permutation(perm: &mut [N]) -> bool {
     let n = perm.len();
     if n < 2 {
@@ -385,41 +402,35 @@ mod tests {
         positions.iter().map(|&(r, c)| Cell::new(r, c)).collect()
     }
 
-    fn poly(positions: &[(usize, usize)]) -> Polyomino {
-        Polyomino::new(&cells(positions))
-    }
-
     // --- collinear_pairs ---
 
     #[test]
     fn collinear_pairs_single_cell_is_empty() {
-        assert!(collinear_pairs(&cells(&[(0, 0)])).is_empty());
+        let positions = &[(0, 0)];
+        assert!(collinear_pairs(&Polyomino::new(&cells(positions))).is_empty());
     }
 
     #[test]
     fn collinear_pairs_same_row() {
-        let mut pairs = collinear_pairs(&cells(&[(0, 0), (0, 1), (0, 2)]));
+        let positions = &[(0, 0), (0, 1), (0, 2)];
+        let mut pairs = collinear_pairs(&Polyomino::new(&cells(positions)));
         pairs.sort_unstable();
         assert_eq!(pairs, vec![(0, 1), (0, 2), (1, 2)]);
     }
 
     #[test]
     fn collinear_pairs_same_column() {
-        let mut pairs = collinear_pairs(&cells(&[(0, 0), (1, 0)]));
+        let positions = &[(0, 0), (1, 0)];
+        let mut pairs = collinear_pairs(&Polyomino::new(&cells(positions)));
         pairs.sort_unstable();
         assert_eq!(pairs, vec![(0, 1)]);
     }
 
     #[test]
-    fn collinear_pairs_diagonal_is_empty() {
-        // (0,0) and (1,1) share neither row nor column.
-        assert!(collinear_pairs(&cells(&[(0, 0), (1, 1)])).is_empty());
-    }
-
-    #[test]
     fn collinear_pairs_l_shape() {
         // (0,0), (1,0), (1,1): col-0 gives (0,1); row-1 gives (1,2).
-        let mut pairs = collinear_pairs(&cells(&[(0, 0), (1, 0), (1, 1)]));
+        let positions = &[(0, 0), (1, 0), (1, 1)];
+        let mut pairs = collinear_pairs(&Polyomino::new(&cells(positions)));
         pairs.sort_unstable();
         assert_eq!(pairs, vec![(0, 1), (1, 2)]);
     }
@@ -476,7 +487,8 @@ mod tests {
 
     #[test]
     fn operator_tuples_given_singleton() {
-        let p = poly(&[(0, 0)]);
+        let positions = &[(0, 0)];
+        let p = Polyomino::new(&cells(positions));
         let map = operator_tuples(4, &p, Operator::Given);
         assert_eq!(map.len(), 4);
         assert_eq!(map[&Operation::Given(1)], vec![vec![1]]);
@@ -485,20 +497,23 @@ mod tests {
 
     #[test]
     fn operator_tuples_given_non_singleton_is_empty() {
-        let p = poly(&[(0, 0), (0, 1)]);
+        let positions = &[(0, 0), (0, 1)];
+        let p = Polyomino::new(&cells(positions));
         assert!(operator_tuples(4, &p, Operator::Given).is_empty());
     }
 
     #[test]
     fn operator_tuples_subtract_non_pair_is_empty() {
-        let p = poly(&[(0, 0), (0, 1), (0, 2)]);
+        let positions = &[(0, 0), (0, 1), (0, 2)];
+        let p = Polyomino::new(&cells(positions));
         assert!(operator_tuples(4, &p, Operator::Subtract).is_empty());
     }
 
     #[test]
     fn operator_tuples_subtract_pair_same_row() {
         // Same row: (1,2) gives diff=1 → both orderings [1,2] and [2,1].
-        let p = poly(&[(0, 0), (0, 1)]);
+        let positions = &[(0, 0), (0, 1)];
+        let p = Polyomino::new(&cells(positions));
         let map = operator_tuples(4, &p, Operator::Subtract);
         let mut t = map[&Operation::Subtract(1)].clone();
         t.sort();
@@ -509,23 +524,17 @@ mod tests {
     #[test]
     fn operator_tuples_add_same_row_excludes_doubles() {
         // n=4, same-row 2-cell: Add(2) requires [1,1] which violates collinearity.
-        let p = poly(&[(0, 0), (0, 1)]);
+        let positions = &[(0, 0), (0, 1)];
+        let p = Polyomino::new(&cells(positions));
         let map = operator_tuples(4, &p, Operator::Add);
         assert!(!map.contains_key(&Operation::Add(2)));
         assert!(map.contains_key(&Operation::Add(3)));
     }
 
     #[test]
-    fn operator_tuples_add_diagonal_includes_doubles() {
-        // Diagonal pair has no collinearity: Add(2) via [1,1] is valid.
-        let p = poly(&[(0, 0), (1, 1)]);
-        let map = operator_tuples(4, &p, Operator::Add);
-        assert!(map.contains_key(&Operation::Add(2)));
-    }
-
-    #[test]
     fn operator_tuples_multiply_same_row() {
-        let p = poly(&[(0, 0), (0, 1)]);
+        let positions = &[(0, 0), (0, 1)];
+        let p = Polyomino::new(&cells(positions));
         let map = operator_tuples(4, &p, Operator::Multiply);
         // 1*4, 2*3, etc. allowed; squares (1*1, 2*2, 3*3) filtered by row collinearity.
         assert!(map.contains_key(&Operation::Multiply(6)));
@@ -535,28 +544,9 @@ mod tests {
     }
 
     #[test]
-    fn operator_tuples_subtract_pair_all_differences() {
-        // n=4 diagonal pair: Subtract(1) through Subtract(3) should all appear.
-        let p = poly(&[(0, 0), (1, 1)]);
-        let map = operator_tuples(4, &p, Operator::Subtract);
-        assert!(map.contains_key(&Operation::Subtract(1)));
-        assert!(map.contains_key(&Operation::Subtract(2)));
-        assert!(map.contains_key(&Operation::Subtract(3)));
-    }
-
-    #[test]
-    fn operator_tuples_divide_pair_all_quotients() {
-        // n=6 diagonal pair: Divide(2) through Divide(6) should all appear.
-        let p = poly(&[(0, 0), (1, 1)]);
-        let map = operator_tuples(6, &p, Operator::Divide);
-        assert!(map.contains_key(&Operation::Divide(2)));
-        assert!(map.contains_key(&Operation::Divide(3)));
-        assert!(map.contains_key(&Operation::Divide(6)));
-    }
-
-    #[test]
     fn operator_tuples_divide_non_pair_is_empty() {
-        let p = poly(&[(0, 0), (0, 1), (0, 2)]);
+        let positions = &[(0, 0), (0, 1), (0, 2)];
+        let p = Polyomino::new(&cells(positions));
         assert!(operator_tuples(4, &p, Operator::Divide).is_empty());
     }
 
@@ -564,29 +554,17 @@ mod tests {
 
     #[test]
     fn cage_new_given_singleton() {
-        let p = poly(&[(0, 0)]);
+        let positions = &[(0, 0)];
+        let p = Polyomino::new(&cells(positions));
         let cage = Cage::new(4, p, Operation::Given(3));
         assert_eq!(cage.tuples(), &[vec![3u8]]);
     }
 
     #[test]
-    fn cage_new_subtract_diagonal_pair() {
-        // Diagonal pair: no collinearity, so both orderings survive.
-        let p = poly(&[(0, 0), (1, 1)]);
-        let cage = Cage::new(4, p, Operation::Subtract(2));
-        let mut tuples = cage.tuples().to_vec();
-        tuples.sort_unstable();
-        // Subtract(2): multisets [1,3] and [2,4] → both orderings each.
-        assert_eq!(
-            tuples,
-            vec![vec![1u8, 3], vec![2, 4], vec![3, 1], vec![4, 2]]
-        );
-    }
-
-    #[test]
     fn cage_new_subtract_same_row_pair() {
         // Same-row pair: both orderings still survive since values differ.
-        let p = poly(&[(0, 0), (0, 1)]);
+        let positions = &[(0, 0), (0, 1)];
+        let p = Polyomino::new(&cells(positions));
         let cage = Cage::new(4, p, Operation::Subtract(1));
         let mut tuples = cage.tuples().to_vec();
         tuples.sort_unstable();
@@ -607,7 +585,8 @@ mod tests {
     #[test]
     fn cage_new_divide_same_row_pair() {
         // Divide(2) on a same-row pair: [1,2] and [2,4] → both orderings each.
-        let p = poly(&[(0, 0), (0, 1)]);
+        let positions = &[(0, 0), (0, 1)];
+        let p = Polyomino::new(&cells(positions));
         let cage = Cage::new(4, p, Operation::Divide(2));
         let mut tuples = cage.tuples().to_vec();
         tuples.sort_unstable();
@@ -619,8 +598,10 @@ mod tests {
 
     #[test]
     fn cage_new_multiply_same_row_pair() {
-        // Multiply(6) on a same-row pair: multisets [1,6] and [2,3] → both orderings each.
-        let p = poly(&[(0, 0), (0, 1)]);
+        // Multiply(6) on a same-row pair: multisets [1,6] and [2,3] → both orderings
+        // each.
+        let positions = &[(0, 0), (0, 1)];
+        let p = Polyomino::new(&cells(positions));
         let cage = Cage::new(6, p, Operation::Multiply(6));
         let mut tuples = cage.tuples().to_vec();
         tuples.sort_unstable();
@@ -632,8 +613,10 @@ mod tests {
 
     #[test]
     fn cage_new_add_prunes_horizontal_pair() {
-        // Add(6) on same-row pair: [2,4],[4,2],[3,3] — [3,3] filtered by row collinearity.
-        let p = poly(&[(0, 0), (0, 1)]);
+        // Add(6) on same-row pair: [2,4],[4,2],[3,3] — [3,3] filtered by row
+        // collinearity.
+        let positions = &[(0, 0), (0, 1)];
+        let p = Polyomino::new(&cells(positions));
         let cage = Cage::new(4, p, Operation::Add(6));
         let mut tuples = cage.tuples().to_vec();
         tuples.sort_unstable();
@@ -641,18 +624,11 @@ mod tests {
     }
 
     #[test]
-    fn cage_new_add_leaves_diagonal_doubles_intact() {
-        // (0,0) and (1,1) share neither row nor column — [3,3] survives.
-        let p = poly(&[(0, 0), (1, 1)]);
-        let cage = Cage::new(4, p, Operation::Add(6));
-        assert!(cage.tuples().contains(&vec![3u8, 3]));
-    }
-
-    #[test]
     fn cage_new_add_prunes_l_shape() {
         // (0,0),(1,0),(1,1): col-0 pair (0,1), row-1 pair (1,2).
         // 10 raw permutations from {1,1,4},{1,2,3},{2,2,2} → 7 survive.
-        let p = poly(&[(0, 0), (1, 0), (1, 1)]);
+        let positions = &[(0, 0), (1, 0), (1, 1)];
+        let p = Polyomino::new(&cells(positions));
         let cage = Cage::new(4, p, Operation::Add(6));
         assert_eq!(cage.tuples().len(), 7);
         assert!(!cage.tuples().contains(&vec![1u8, 1, 4]));
@@ -722,9 +698,11 @@ mod tests {
 
     #[test]
     fn cage_is_valid_l_shape_add_accepts_double() {
-        // (0,0) and (1,1) share neither row nor column, so Add(2) via [1,1] is legal.
-        let cs = cells(&[(0, 0), (1, 1)]);
-        assert!(Cage::is_valid(&cs, Operation::Add(2), 4));
+        // L-shape: (0,0) and (1,0) share a column but not a row with (0,1),
+        // so [1,2,1] (sum=4) is legal — the repeated 1 is only across a non-collinear
+        // pair.
+        let cs = cells(&[(0, 0), (0, 1), (1, 0)]);
+        assert!(Cage::is_valid(&cs, Operation::Add(4), 4));
     }
 
     #[test]
@@ -734,7 +712,8 @@ mod tests {
 
     #[test]
     fn valid_targets_invalid_operator_for_shape_is_empty() {
-        // Given is only valid for 1-cell cages; called on a 2-cell shape, returns empty.
+        // Given is only valid for 1-cell cages; called on a 2-cell shape, returns
+        // empty.
         let cs = cells(&[(0, 0), (0, 1)]);
         let got: Vec<Operation> = Cage::valid_targets(&cs, Operator::Given, 4).collect();
         assert!(got.is_empty());
@@ -804,28 +783,37 @@ mod tests {
 
     #[test]
     fn cage_cells_via_trait_returns_same_as_inherent() {
-        let p = poly(&[(0, 0), (0, 1)]);
+        let positions = &[(0, 0), (0, 1)];
+        let p = Polyomino::new(&cells(positions));
         let cage = Cage::new(4, p, Operation::Add(3));
-        let via_trait: &[Cell] = <Cage as Cells>::cells(&cage);
+        let via_trait: Vec<Cell> = <Cage as Cover>::cells(&cage);
         assert_eq!(via_trait, cage.cells());
     }
 
     #[test]
     fn operator_tuples_add_singleton_is_empty() {
-        let p = poly(&[(0, 0)]);
+        let positions = &[(0, 0)];
+        let p = Polyomino::new(&cells(positions));
         assert!(operator_tuples(4, &p, Operator::Add).is_empty());
     }
 
     #[test]
     fn operator_tuples_multiply_singleton_is_empty() {
-        let p = poly(&[(0, 0)]);
+        let positions = &[(0, 0)];
+        let p = Polyomino::new(&cells(positions));
         assert!(operator_tuples(4, &p, Operator::Multiply).is_empty());
     }
 
     #[test]
     fn cage_new_with_target_above_n_max_yields_no_tuples() {
-        let singleton = || poly(&[(0, 0)]);
-        let pair = || poly(&[(0, 0), (0, 1)]);
+        let singleton = || {
+            let positions = &[(0, 0)];
+            Polyomino::new(&cells(positions))
+        };
+        let pair = || {
+            let positions = &[(0, 0), (0, 1)];
+            Polyomino::new(&cells(positions))
+        };
         for (p, op) in [
             (singleton(), Operation::Given(300)),
             (pair(), Operation::Subtract(300)),

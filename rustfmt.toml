@@ -1,0 +1,30 @@
+# rustfmt.toml
+# Requires nightly rustfmt for unstable options:
+#   rustup toolchain install nightly --profile minimal --component rustfmt
+#   cargo +nightly fmt
+
+# === Stable ===
+
+max_width = 100
+use_field_init_shorthand = true      # Foo { x: x } → Foo { x }
+use_small_heuristics = "Default"         # less twitchy line-breaking
+
+# === Unstable (nightly only) ===
+
+unstable_features = true
+
+# Comments & doc formatting
+wrap_comments = true
+comment_width = 100
+format_code_in_doc_comments = true
+normalize_comments = true            # /* */ → //
+normalize_doc_attributes = true      # #[doc = "..."] → ///
+
+# Import organization
+imports_granularity = "Crate"        # merge use statements from same crate
+group_imports = "StdExternalCrate"   # std / external / crate-local blocks
+
+# Polish
+condense_wildcard_suffixes = true    # (a, _, _, _) → (a, ..)
+reorder_impl_items = true
+hex_literal_case = "Upper"           # 0xDEADBEEF style; flip to "Lower" if you prefer
