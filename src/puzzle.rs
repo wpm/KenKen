@@ -81,10 +81,12 @@ impl Puzzle {
         Ok(Self {
             grid: Grid::new(n)?,
             constraints: Arc::new(PuzzleConstraints {
-                row: (0..n).map(|row| AllDifferent::row(n, row)).collect(),
+                row: (0..n)
+                    .map(|row| AllDifferent::row(n, row))
+                    .collect::<Result<Vec<_>, _>>()?,
                 column: (0..n)
                     .map(|column| AllDifferent::column(n, column))
-                    .collect(),
+                    .collect::<Result<Vec<_>, _>>()?,
                 cage: Cages::empty(n),
             }),
         })
@@ -235,22 +237,24 @@ impl Puzzle {
     }
 
     /// Apply `delta` by intersecting per-cell with the current grid, then
-    /// propagate to the fixed point. Always returns a `Puzzle`; the caller
-    /// inspects [`Self::is_valid`].
+    /// propagate to the fixed point. On success the caller inspects
+    /// [`Self::is_valid`] to learn whether propagation produced a contradiction.
     ///
-    /// # Panics
-    /// Panics if `delta.n()` does not match `self.n()`.
-    pub fn narrow(&self, delta: &Delta) -> Self {
+    /// # Errors
+    /// Returns [`Error::DeltaSizeMismatch`] if `delta.n()` does not match
+    /// `self.n()`.
+    pub fn narrow(&self, delta: &Delta) -> Result<Self, Error> {
         self.apply_delta(delta, |a, b| a & b)
     }
 
     /// Apply `delta` by unioning per-cell with the current grid, then propagate
-    /// to the fixed point. Always returns a `Puzzle`; the caller inspects
-    /// [`Self::is_valid`].
+    /// to the fixed point. On success the caller inspects [`Self::is_valid`] to
+    /// learn whether propagation produced a contradiction.
     ///
-    /// # Panics
-    /// Panics if `delta.n()` does not match `self.n()`.
-    pub fn widen(&self, delta: &Delta) -> Self {
+    /// # Errors
+    /// Returns [`Error::DeltaSizeMismatch`] if `delta.n()` does not match
+    /// `self.n()`.
+    pub fn widen(&self, delta: &Delta) -> Result<Self, Error> {
         self.apply_delta(delta, |a, b| a | b)
     }
 
@@ -303,7 +307,7 @@ impl Puzzle {
             for (cell, &value) in cells.iter().zip(tuple.iter()) {
                 delta = delta.set(*cell, Fill::new([value]));
             }
-            let after = self.narrow(&delta);
+            let after = self.narrow(&delta)?;
             if !after.is_valid() {
                 continue;
             }
@@ -337,23 +341,23 @@ impl Puzzle {
         Ok(results)
     }
 
-    fn apply_delta(&self, delta: &Delta, op: impl Fn(Fill, Fill) -> Fill) -> Self {
-        assert_eq!(
-            delta.n(),
-            self.n(),
-            "delta size {} must match puzzle size {}",
-            delta.n(),
-            self.n(),
-        );
+    fn apply_delta(
+        &self,
+        delta: &Delta,
+        op: impl Fn(Fill, Fill) -> Fill,
+    ) -> Result<Self, Error> {
+        if delta.n() != self.n() {
+            return Err(Error::DeltaSizeMismatch(delta.n(), self.n()));
+        }
         let mut grid = self.grid.clone();
         for ((cell, current), (_, delta_v)) in self.grid.entries().zip(delta.grid().entries()) {
             grid = grid.set(&cell, op(current, delta_v));
         }
-        Self {
+        Ok(Self {
             grid,
             constraints: self.constraints.clone(),
         }
-        .propagate_fully()
+        .propagate_fully())
     }
 }
 
@@ -413,7 +417,11 @@ mod tests {
             .iter()
             .map(|&(row, column)| Cell::new(row, column))
             .collect();
-        Cage::new(n, Polyomino::new(&cells), Operation::Add(u16::from(n)))
+        Cage::new(
+            n,
+            Polyomino::new(&cells).unwrap(),
+            Operation::Add(u16::from(n)),
+        )
     }
 
     fn poly(cells: &[(usize, usize)]) -> Polyomino {
@@ -423,6 +431,7 @@ mod tests {
                 .map(|&(row, column)| Cell::new(row, column))
                 .collect::<Vec<_>>(),
         )
+        .unwrap()
     }
 
     #[test]
@@ -587,14 +596,18 @@ mod tests {
         let cell = Cell::new(row, column);
         Cage::new(
             value,
-            Polyomino::new(&[cell]),
+            Polyomino::new(&[cell]).unwrap(),
             Operation::Given(u16::from(value)),
         )
     }
 
     fn row_add(n: u8, row: usize, target: u8) -> Cage {
         let cells: Vec<Cell> = (0..n as usize).map(|col| Cell::new(row, col)).collect();
-        Cage::new(n, Polyomino::new(&cells), Operation::Add(u16::from(target)))
+        Cage::new(
+            n,
+            Polyomino::new(&cells).unwrap(),
+            Operation::Add(u16::from(target)),
+        )
     }
 
     #[test]
@@ -820,7 +833,11 @@ mod tests {
             .iter()
             .map(|&(row, column)| Cell::new(row, column))
             .collect();
-        Cage::new(n, Polyomino::new(&cells), Operation::Add(u16::from(target)))
+        Cage::new(
+            n,
+            Polyomino::new(&cells).unwrap(),
+            Operation::Add(u16::from(target)),
+        )
     }
 
     #[test]
@@ -896,7 +913,7 @@ mod tests {
     fn narrow_with_identity_delta_is_no_op() {
         let p = Puzzle::new(2).unwrap().insert_cage(given(0, 0, 1)).unwrap();
         let baseline = p.clone().propagate_fully();
-        let narrowed = p.narrow(&Delta::identity(2).unwrap());
+        let narrowed = p.narrow(&Delta::identity(2).unwrap()).unwrap();
         assert_eq!(narrowed.grid, baseline.grid);
     }
 
@@ -908,7 +925,7 @@ mod tests {
         let delta = Delta::identity(2)
             .unwrap()
             .set(Cell::new(0, 0), Fill::new([1]));
-        let narrowed = p.narrow(&delta);
+        let narrowed = p.narrow(&delta).unwrap();
         assert!(narrowed.is_valid());
         assert_eq!(narrowed.grid.get(&Cell::new(0, 0)).unwrap(), Fill::new([1]));
         assert_eq!(narrowed.grid.get(&Cell::new(0, 1)).unwrap(), Fill::new([2]));
@@ -922,7 +939,7 @@ mod tests {
         let delta = Delta::identity(2)
             .unwrap()
             .set(Cell::new(0, 0), Fill::default());
-        let narrowed = p.narrow(&delta);
+        let narrowed = p.narrow(&delta).unwrap();
         assert!(!narrowed.is_valid());
     }
 
@@ -930,7 +947,7 @@ mod tests {
     fn widen_with_identity_delta_is_no_op() {
         let p = Puzzle::new(2).unwrap().insert_cage(given(0, 0, 1)).unwrap();
         let baseline = p.clone().propagate_fully();
-        let widened = p.widen(&Delta::identity(2).unwrap());
+        let widened = p.widen(&Delta::identity(2).unwrap()).unwrap();
         assert_eq!(widened.grid, baseline.grid);
     }
 
@@ -941,7 +958,7 @@ mod tests {
         // to the same fixed point.
         let p = Puzzle::new(2).unwrap().insert_cage(given(0, 0, 1)).unwrap();
         let baseline = p.propagate_fully();
-        let widened = baseline.widen(&Delta::identity(2).unwrap());
+        let widened = baseline.widen(&Delta::identity(2).unwrap()).unwrap();
         assert!(widened.is_valid());
         for cell in widened.grid.cells() {
             assert!(widened.grid.get(&cell).unwrap().is_singleton());
@@ -949,17 +966,21 @@ mod tests {
     }
 
     #[test]
-    #[should_panic(expected = "delta size")]
-    fn narrow_panics_on_size_mismatch() {
+    fn narrow_size_mismatch_returns_err() {
         let p = Puzzle::new(2).unwrap();
-        let _ = p.narrow(&Delta::identity(3).unwrap());
+        assert!(matches!(
+            p.narrow(&Delta::identity(3).unwrap()),
+            Err(Error::DeltaSizeMismatch(3, 2))
+        ));
     }
 
     #[test]
-    #[should_panic(expected = "delta size")]
-    fn widen_panics_on_size_mismatch() {
+    fn widen_size_mismatch_returns_err() {
         let p = Puzzle::new(2).unwrap();
-        let _ = p.widen(&Delta::identity(3).unwrap());
+        assert!(matches!(
+            p.widen(&Delta::identity(3).unwrap()),
+            Err(Error::DeltaSizeMismatch(3, 2))
+        ));
     }
 
     fn sub_cage(cells: &[(usize, usize)], n: u8, target: u8) -> Cage {
@@ -969,7 +990,7 @@ mod tests {
             .collect();
         Cage::new(
             n,
-            Polyomino::new(&cells),
+            Polyomino::new(&cells).unwrap(),
             Operation::Subtract(u16::from(target)),
         )
     }

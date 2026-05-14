@@ -158,7 +158,10 @@ impl Tiling {
                 covered.insert(*c);
             }
             let cells: Vec<Cell> = cells.into_iter().collect();
-            tiling.polyominos.insert(Polyomino::new(&cells));
+            // `cells` is non-empty (the seed is always inserted) and
+            // edge-connected (grown only via `grid_neighbors`), so the
+            // validating `Polyomino::new` would always succeed here.
+            tiling.polyominos.insert(Polyomino::new_unchecked(&cells));
         }
 
         tiling
@@ -186,7 +189,7 @@ mod tests {
 
     fn poly(cells: &[(usize, usize)]) -> Polyomino {
         let cells: Vec<Cell> = cells.iter().map(|&(r, c)| Cell::new(r, c)).collect();
-        Polyomino::new(&cells)
+        Polyomino::new(&cells).unwrap()
     }
 
     #[test]

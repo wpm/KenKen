@@ -49,18 +49,16 @@ impl Grid {
     }
 
     /// Creates an [`AllDifferent`] for the `index`th row of the grid.
-    /// # Panics
-    /// Panics if `index >= n`.
-    pub fn row(&self, index: usize) -> AllDifferent {
-        assert!(index <= self.n);
+    /// # Errors
+    /// Returns [`Error::IndexOutOfRange`] if `index` is not less than `n`.
+    pub fn row(&self, index: usize) -> Result<AllDifferent, Error> {
         AllDifferent::row(self.n, index)
     }
 
     /// Creates an [`AllDifferent`] for the `index`th column of the grid.
-    /// # Panics
-    /// Panics if `index >= n`.
-    pub fn column(&self, index: usize) -> AllDifferent {
-        assert!(index <= self.n);
+    /// # Errors
+    /// Returns [`Error::IndexOutOfRange`] if `index` is not less than `n`.
+    pub fn column(&self, index: usize) -> Result<AllDifferent, Error> {
         AllDifferent::column(self.n, index)
     }
 
@@ -290,7 +288,7 @@ mod tests {
     fn row_returns_all_different_for_row() {
         use crate::constraints::cover::Cover;
         let g = Grid::new(3).unwrap();
-        let r = g.row(1);
+        let r = g.row(1).unwrap();
         assert_eq!(
             r.cells(),
             vec![Cell::new(1, 0), Cell::new(1, 1), Cell::new(1, 2)]
@@ -298,14 +296,26 @@ mod tests {
     }
 
     #[test]
+    fn row_out_of_bounds_returns_err() {
+        let g = Grid::new(3).unwrap();
+        assert!(g.row(3).is_err());
+    }
+
+    #[test]
     fn column_returns_all_different_for_column() {
         use crate::constraints::cover::Cover;
         let g = Grid::new(3).unwrap();
-        let c = g.column(2);
+        let c = g.column(2).unwrap();
         assert_eq!(
             c.cells(),
             vec![Cell::new(0, 2), Cell::new(1, 2), Cell::new(2, 2)]
         );
+    }
+
+    #[test]
+    fn column_out_of_bounds_returns_err() {
+        let g = Grid::new(3).unwrap();
+        assert!(g.column(3).is_err());
     }
 
     #[test]
