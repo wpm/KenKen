@@ -25,6 +25,7 @@ pub use constraints::{
         operation::{Operation, Operator},
         operator_tuples,
     },
+    cover::{Cover, Polyomino},
     tiling::SizeDistribution,
 };
 pub use generator::generate::{
