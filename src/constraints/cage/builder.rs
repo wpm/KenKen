@@ -1,7 +1,7 @@
 use std::collections::HashMap;
 
 use crate::{
-    Fill, Operation, Operator,
+    Error, Fill, Operation, Operator,
     constraints::{
         Constraint, RegionConstraint,
         cage::arithmetic::{
@@ -86,21 +86,22 @@ impl Cage {
     ///
     /// If `op` is not in [`Self::valid_operators`] for `cells`, the iterator is
     /// empty.
-    #[must_use]
+    ///
+    /// # Errors
+    /// Returns [`Error::EmptyPolyomino`] or [`Error::DisconnectedPolyomino`] if
+    /// `cells` do not form a valid polyomino.
     pub fn valid_targets(
         cells: &[Cell],
         op: Operator,
         n: N,
-    ) -> Box<dyn Iterator<Item = Operation>> {
+    ) -> Result<Box<dyn Iterator<Item = Operation>>, Error> {
         if !Self::valid_operators(cells).contains(&op) {
-            return Box::new(std::iter::empty());
+            return Ok(Box::new(std::iter::empty()));
         }
-        let Ok(polyomino) = Polyomino::new(cells) else {
-            return Box::new(std::iter::empty());
-        };
+        let polyomino = Polyomino::new(cells)?;
         let k = polyomino.len();
         let n_m = M::from(n);
-        match op {
+        Ok(match op {
             Operator::Given => Box::new((1..=n_m).map(Operation::Given)),
             Operator::Subtract => Box::new((1..=n_m.saturating_sub(1)).map(Operation::Subtract)),
             Operator::Divide => Box::new((2..=n_m).map(Operation::Divide)),
@@ -119,7 +120,7 @@ impl Cage {
                     has_admissible_tuple(n, &polyomino, op).then_some(op)
                 }))
             }
-        }
+        })
     }
 
     /// Returns true if `operation` is legal for a cage of the given cells on an
@@ -128,20 +129,21 @@ impl Cage {
     /// The operator must be in [`Self::valid_operators`] for the cell count,
     /// the target must be in its conventional range, and at least one tuple
     /// must survive collinearity filtering.
-    #[must_use]
-    pub fn is_valid(cells: &[Cell], operation: Operation, n: N) -> bool {
+    ///
+    /// # Errors
+    /// Returns [`Error::EmptyPolyomino`] or [`Error::DisconnectedPolyomino`] if
+    /// `cells` do not form a valid polyomino.
+    pub fn is_valid(cells: &[Cell], operation: Operation, n: N) -> Result<bool, Error> {
         if !Self::valid_operators(cells).contains(&Operator::of(operation)) {
-            return false;
+            return Ok(false);
         }
         match operation {
-            Operation::Given(v) => return (1..=M::from(n)).contains(&v),
-            Operation::Subtract(0) | Operation::Divide(0 | 1) => return false,
+            Operation::Given(v) => return Ok((1..=M::from(n)).contains(&v)),
+            Operation::Subtract(0) | Operation::Divide(0 | 1) => return Ok(false),
             _ => {}
         }
-        let Ok(polyomino) = Polyomino::new(cells) else {
-            return false;
-        };
-        has_admissible_tuple(n, &polyomino, operation)
+        let polyomino = Polyomino::new(cells)?;
+        Ok(has_admissible_tuple(n, &polyomino, operation))
     }
 }
 
@@ -671,33 +673,33 @@ mod tests {
     #[test]
     fn cage_is_valid_singleton_given_in_range() {
         let cells = cells(&[(0, 0)]);
-        assert!(Cage::is_valid(&cells, Operation::Given(1), 5));
-        assert!(Cage::is_valid(&cells, Operation::Given(5), 5));
-        assert!(!Cage::is_valid(&cells, Operation::Given(0), 5));
-        assert!(!Cage::is_valid(&cells, Operation::Given(6), 5));
+        assert!(Cage::is_valid(&cells, Operation::Given(1), 5).unwrap());
+        assert!(Cage::is_valid(&cells, Operation::Given(5), 5).unwrap());
+        assert!(!Cage::is_valid(&cells, Operation::Given(0), 5).unwrap());
+        assert!(!Cage::is_valid(&cells, Operation::Given(6), 5).unwrap());
     }
 
     #[test]
     fn cage_is_valid_two_cell_subtract_zero_rejected() {
         let cs = cells(&[(0, 0), (0, 1)]);
-        assert!(!Cage::is_valid(&cs, Operation::Subtract(0), 5));
-        assert!(Cage::is_valid(&cs, Operation::Subtract(1), 5));
+        assert!(!Cage::is_valid(&cs, Operation::Subtract(0), 5).unwrap());
+        assert!(Cage::is_valid(&cs, Operation::Subtract(1), 5).unwrap());
     }
 
     #[test]
     fn cage_is_valid_two_cell_divide_below_two_rejected() {
         let cs = cells(&[(0, 0), (0, 1)]);
-        assert!(!Cage::is_valid(&cs, Operation::Divide(0), 5));
-        assert!(!Cage::is_valid(&cs, Operation::Divide(1), 5));
-        assert!(Cage::is_valid(&cs, Operation::Divide(2), 5));
+        assert!(!Cage::is_valid(&cs, Operation::Divide(0), 5).unwrap());
+        assert!(!Cage::is_valid(&cs, Operation::Divide(1), 5).unwrap());
+        assert!(Cage::is_valid(&cs, Operation::Divide(2), 5).unwrap());
     }
 
     #[test]
     fn cage_is_valid_same_row_add_rejects_double() {
         // Sum 2 requires [1,1] which is filtered by row collinearity.
         let cs = cells(&[(0, 0), (0, 1)]);
-        assert!(!Cage::is_valid(&cs, Operation::Add(2), 4));
-        assert!(Cage::is_valid(&cs, Operation::Add(3), 4));
+        assert!(!Cage::is_valid(&cs, Operation::Add(2), 4).unwrap());
+        assert!(Cage::is_valid(&cs, Operation::Add(3), 4).unwrap());
     }
 
     #[test]
@@ -706,7 +708,16 @@ mod tests {
         // so [1,2,1] (sum=4) is legal — the repeated 1 is only across a non-collinear
         // pair.
         let cs = cells(&[(0, 0), (0, 1), (1, 0)]);
-        assert!(Cage::is_valid(&cs, Operation::Add(4), 4));
+        assert!(Cage::is_valid(&cs, Operation::Add(4), 4).unwrap());
+    }
+
+    #[test]
+    fn cage_is_valid_disconnected_cells_returns_err() {
+        let cs = cells(&[(0, 0), (1, 1)]);
+        assert!(matches!(
+            Cage::is_valid(&cs, Operation::Add(3), 4),
+            Err(Error::DisconnectedPolyomino)
+        ));
     }
 
     #[test]
@@ -719,14 +730,27 @@ mod tests {
         // Given is only valid for 1-cell cages; called on a 2-cell shape, returns
         // empty.
         let cs = cells(&[(0, 0), (0, 1)]);
-        let got: Vec<Operation> = Cage::valid_targets(&cs, Operator::Given, 4).collect();
+        let got: Vec<Operation> = Cage::valid_targets(&cs, Operator::Given, 4)
+            .unwrap()
+            .collect();
         assert!(got.is_empty());
+    }
+
+    #[test]
+    fn valid_targets_disconnected_cells_returns_err() {
+        let cs = cells(&[(0, 0), (1, 1)]);
+        assert!(matches!(
+            Cage::valid_targets(&cs, Operator::Add, 4),
+            Err(Error::DisconnectedPolyomino)
+        ));
     }
 
     #[test]
     fn valid_targets_given_singleton_enumerates_one_through_n() {
         let cs = cells(&[(0, 0)]);
-        let got: Vec<Operation> = Cage::valid_targets(&cs, Operator::Given, 4).collect();
+        let got: Vec<Operation> = Cage::valid_targets(&cs, Operator::Given, 4)
+            .unwrap()
+            .collect();
         assert_eq!(
             got,
             vec![
@@ -741,7 +765,9 @@ mod tests {
     #[test]
     fn valid_targets_subtract_pair_enumerates_one_through_n_minus_one() {
         let cs = cells(&[(0, 0), (0, 1)]);
-        let got: Vec<Operation> = Cage::valid_targets(&cs, Operator::Subtract, 4).collect();
+        let got: Vec<Operation> = Cage::valid_targets(&cs, Operator::Subtract, 4)
+            .unwrap()
+            .collect();
         assert_eq!(
             got,
             vec![
@@ -755,7 +781,9 @@ mod tests {
     #[test]
     fn valid_targets_divide_pair_enumerates_two_through_n() {
         let cs = cells(&[(0, 0), (0, 1)]);
-        let got: Vec<Operation> = Cage::valid_targets(&cs, Operator::Divide, 4).collect();
+        let got: Vec<Operation> = Cage::valid_targets(&cs, Operator::Divide, 4)
+            .unwrap()
+            .collect();
         assert_eq!(
             got,
             vec![
@@ -770,7 +798,9 @@ mod tests {
     fn valid_targets_add_pair_filters_by_admissibility() {
         // n=4, 2-cell same row: Add(2) requires [1,1] which violates collinearity.
         let cs = cells(&[(0, 0), (0, 1)]);
-        let got: Vec<Operation> = Cage::valid_targets(&cs, Operator::Add, 4).collect();
+        let got: Vec<Operation> = Cage::valid_targets(&cs, Operator::Add, 4)
+            .unwrap()
+            .collect();
         assert!(!got.contains(&Operation::Add(2)));
         assert!(got.contains(&Operation::Add(3)));
         assert!(got.contains(&Operation::Add(7)));
@@ -780,7 +810,9 @@ mod tests {
     fn valid_targets_multiply_pair_filters_by_admissibility() {
         // n=4, 2-cell same row: Multiply(1) requires [1,1] which violates collinearity.
         let cs = cells(&[(0, 0), (0, 1)]);
-        let got: Vec<Operation> = Cage::valid_targets(&cs, Operator::Multiply, 4).collect();
+        let got: Vec<Operation> = Cage::valid_targets(&cs, Operator::Multiply, 4)
+            .unwrap()
+            .collect();
         assert!(!got.contains(&Operation::Multiply(1)));
         assert!(got.contains(&Operation::Multiply(2)));
     }
@@ -831,9 +863,9 @@ mod tests {
     #[test]
     fn cage_is_valid_three_cells_rejects_subtract_and_divide() {
         let cs = cells(&[(0, 0), (0, 1), (0, 2)]);
-        assert!(!Cage::is_valid(&cs, Operation::Subtract(1), 5));
-        assert!(!Cage::is_valid(&cs, Operation::Divide(2), 5));
-        assert!(Cage::is_valid(&cs, Operation::Add(6), 5));
-        assert!(Cage::is_valid(&cs, Operation::Multiply(6), 5));
+        assert!(!Cage::is_valid(&cs, Operation::Subtract(1), 5).unwrap());
+        assert!(!Cage::is_valid(&cs, Operation::Divide(2), 5).unwrap());
+        assert!(Cage::is_valid(&cs, Operation::Add(6), 5).unwrap());
+        assert!(Cage::is_valid(&cs, Operation::Multiply(6), 5).unwrap());
     }
 }
