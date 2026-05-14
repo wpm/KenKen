@@ -134,16 +134,30 @@ pub enum Error {
     /// A tiling operation referenced a cell that no polyomino covers.
     CellNotCovered(Cell),
     /// Removing a cell from a polyomino would leave the remaining cells
-    /// disconnected. Raised by `Polyomino::without`.
+    /// disconnected. Raised by `Polyomino::remove`.
     WouldDisconnect(Cell),
     /// A target cell is not edge-connected to any cell of the polyomino it was
     /// applied to.
     TargetNotAdjacent,
-    /// A cell passed to `Polyomino::extend` is already in the polyomino.
+    /// A cell passed to `Polyomino::insert` is already in the polyomino.
     CellAlreadyInPolyomino(Cell),
-    /// A `Polyomino::without` call would remove the polyomino's only remaining
+    /// A `Polyomino::remove` call would remove the polyomino's only remaining
     /// cell.
     RemovalWouldEmptyPolyomino(Cell),
+    /// A `Polyomino` was constructed from an empty cell slice.
+    EmptyPolyomino,
+    /// A `Polyomino` was constructed from cells that are not edge-connected
+    /// (e.g. a diagonal-only pair).
+    DisconnectedPolyomino,
+    /// A row/column index passed to `AllDifferent::row`/`column` or
+    /// `Grid::row`/`column` is not less than the grid size. Carries
+    /// `(index, n)`.
+    IndexOutOfRange(Index, Index),
+    /// A `Delta` passed to `Puzzle::narrow`/`widen` has a grid size that does
+    /// not match the puzzle's. Carries `(delta_n, puzzle_n)`.
+    DeltaSizeMismatch(Index, Index),
+    /// An operation policy received an empty value slice.
+    EmptyOpPolicyValues,
 }
 
 #[cfg(test)]

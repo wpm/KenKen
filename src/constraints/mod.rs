@@ -28,6 +28,9 @@ impl Constraint {
     /// Returns `Error` if any cell in the constraint is outside the grid
     /// bounds.
     pub fn apply(&self, grid: Grid) -> Result<Grid, Error> {
+        // `g` is an immutable snapshot of the candidate sets at entry; every
+        // intersection below reads from it so each cell is narrowed against its
+        // original fill, not the partially-updated `grid` being folded.
         let g = grid.clone();
         self.0.iter().try_fold(grid, |grid, (cell, values)| {
             Ok(grid.set(cell, *values & g.get(cell)?))

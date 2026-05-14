@@ -95,7 +95,9 @@ impl Cage {
         if !Self::valid_operators(cells).contains(&op) {
             return Box::new(std::iter::empty());
         }
-        let polyomino = Polyomino::new(cells);
+        let Ok(polyomino) = Polyomino::new(cells) else {
+            return Box::new(std::iter::empty());
+        };
         let k = polyomino.len();
         let n_m = M::from(n);
         match op {
@@ -136,7 +138,9 @@ impl Cage {
             Operation::Subtract(0) | Operation::Divide(0 | 1) => return false,
             _ => {}
         }
-        let polyomino = Polyomino::new(cells);
+        let Ok(polyomino) = Polyomino::new(cells) else {
+            return false;
+        };
         has_admissible_tuple(n, &polyomino, operation)
     }
 }
@@ -407,13 +411,13 @@ mod tests {
     #[test]
     fn collinear_pairs_single_cell_is_empty() {
         let positions = &[(0, 0)];
-        assert!(collinear_pairs(&Polyomino::new(&cells(positions))).is_empty());
+        assert!(collinear_pairs(&Polyomino::new(&cells(positions)).unwrap()).is_empty());
     }
 
     #[test]
     fn collinear_pairs_same_row() {
         let positions = &[(0, 0), (0, 1), (0, 2)];
-        let mut pairs = collinear_pairs(&Polyomino::new(&cells(positions)));
+        let mut pairs = collinear_pairs(&Polyomino::new(&cells(positions)).unwrap());
         pairs.sort_unstable();
         assert_eq!(pairs, vec![(0, 1), (0, 2), (1, 2)]);
     }
@@ -421,7 +425,7 @@ mod tests {
     #[test]
     fn collinear_pairs_same_column() {
         let positions = &[(0, 0), (1, 0)];
-        let mut pairs = collinear_pairs(&Polyomino::new(&cells(positions)));
+        let mut pairs = collinear_pairs(&Polyomino::new(&cells(positions)).unwrap());
         pairs.sort_unstable();
         assert_eq!(pairs, vec![(0, 1)]);
     }
@@ -430,7 +434,7 @@ mod tests {
     fn collinear_pairs_l_shape() {
         // (0,0), (1,0), (1,1): col-0 gives (0,1); row-1 gives (1,2).
         let positions = &[(0, 0), (1, 0), (1, 1)];
-        let mut pairs = collinear_pairs(&Polyomino::new(&cells(positions)));
+        let mut pairs = collinear_pairs(&Polyomino::new(&cells(positions)).unwrap());
         pairs.sort_unstable();
         assert_eq!(pairs, vec![(0, 1), (1, 2)]);
     }
@@ -488,7 +492,7 @@ mod tests {
     #[test]
     fn operator_tuples_given_singleton() {
         let positions = &[(0, 0)];
-        let p = Polyomino::new(&cells(positions));
+        let p = Polyomino::new(&cells(positions)).unwrap();
         let map = operator_tuples(4, &p, Operator::Given);
         assert_eq!(map.len(), 4);
         assert_eq!(map[&Operation::Given(1)], vec![vec![1]]);
@@ -498,14 +502,14 @@ mod tests {
     #[test]
     fn operator_tuples_given_non_singleton_is_empty() {
         let positions = &[(0, 0), (0, 1)];
-        let p = Polyomino::new(&cells(positions));
+        let p = Polyomino::new(&cells(positions)).unwrap();
         assert!(operator_tuples(4, &p, Operator::Given).is_empty());
     }
 
     #[test]
     fn operator_tuples_subtract_non_pair_is_empty() {
         let positions = &[(0, 0), (0, 1), (0, 2)];
-        let p = Polyomino::new(&cells(positions));
+        let p = Polyomino::new(&cells(positions)).unwrap();
         assert!(operator_tuples(4, &p, Operator::Subtract).is_empty());
     }
 
@@ -513,7 +517,7 @@ mod tests {
     fn operator_tuples_subtract_pair_same_row() {
         // Same row: (1,2) gives diff=1 → both orderings [1,2] and [2,1].
         let positions = &[(0, 0), (0, 1)];
-        let p = Polyomino::new(&cells(positions));
+        let p = Polyomino::new(&cells(positions)).unwrap();
         let map = operator_tuples(4, &p, Operator::Subtract);
         let mut t = map[&Operation::Subtract(1)].clone();
         t.sort();
@@ -525,7 +529,7 @@ mod tests {
     fn operator_tuples_add_same_row_excludes_doubles() {
         // n=4, same-row 2-cell: Add(2) requires [1,1] which violates collinearity.
         let positions = &[(0, 0), (0, 1)];
-        let p = Polyomino::new(&cells(positions));
+        let p = Polyomino::new(&cells(positions)).unwrap();
         let map = operator_tuples(4, &p, Operator::Add);
         assert!(!map.contains_key(&Operation::Add(2)));
         assert!(map.contains_key(&Operation::Add(3)));
@@ -534,7 +538,7 @@ mod tests {
     #[test]
     fn operator_tuples_multiply_same_row() {
         let positions = &[(0, 0), (0, 1)];
-        let p = Polyomino::new(&cells(positions));
+        let p = Polyomino::new(&cells(positions)).unwrap();
         let map = operator_tuples(4, &p, Operator::Multiply);
         // 1*4, 2*3, etc. allowed; squares (1*1, 2*2, 3*3) filtered by row collinearity.
         assert!(map.contains_key(&Operation::Multiply(6)));
@@ -546,7 +550,7 @@ mod tests {
     #[test]
     fn operator_tuples_divide_non_pair_is_empty() {
         let positions = &[(0, 0), (0, 1), (0, 2)];
-        let p = Polyomino::new(&cells(positions));
+        let p = Polyomino::new(&cells(positions)).unwrap();
         assert!(operator_tuples(4, &p, Operator::Divide).is_empty());
     }
 
@@ -555,7 +559,7 @@ mod tests {
     #[test]
     fn cage_new_given_singleton() {
         let positions = &[(0, 0)];
-        let p = Polyomino::new(&cells(positions));
+        let p = Polyomino::new(&cells(positions)).unwrap();
         let cage = Cage::new(4, p, Operation::Given(3));
         assert_eq!(cage.tuples(), &[vec![3u8]]);
     }
@@ -564,7 +568,7 @@ mod tests {
     fn cage_new_subtract_same_row_pair() {
         // Same-row pair: both orderings still survive since values differ.
         let positions = &[(0, 0), (0, 1)];
-        let p = Polyomino::new(&cells(positions));
+        let p = Polyomino::new(&cells(positions)).unwrap();
         let cage = Cage::new(4, p, Operation::Subtract(1));
         let mut tuples = cage.tuples().to_vec();
         tuples.sort_unstable();
@@ -586,7 +590,7 @@ mod tests {
     fn cage_new_divide_same_row_pair() {
         // Divide(2) on a same-row pair: [1,2] and [2,4] → both orderings each.
         let positions = &[(0, 0), (0, 1)];
-        let p = Polyomino::new(&cells(positions));
+        let p = Polyomino::new(&cells(positions)).unwrap();
         let cage = Cage::new(4, p, Operation::Divide(2));
         let mut tuples = cage.tuples().to_vec();
         tuples.sort_unstable();
@@ -601,7 +605,7 @@ mod tests {
         // Multiply(6) on a same-row pair: multisets [1,6] and [2,3] → both orderings
         // each.
         let positions = &[(0, 0), (0, 1)];
-        let p = Polyomino::new(&cells(positions));
+        let p = Polyomino::new(&cells(positions)).unwrap();
         let cage = Cage::new(6, p, Operation::Multiply(6));
         let mut tuples = cage.tuples().to_vec();
         tuples.sort_unstable();
@@ -616,7 +620,7 @@ mod tests {
         // Add(6) on same-row pair: [2,4],[4,2],[3,3] — [3,3] filtered by row
         // collinearity.
         let positions = &[(0, 0), (0, 1)];
-        let p = Polyomino::new(&cells(positions));
+        let p = Polyomino::new(&cells(positions)).unwrap();
         let cage = Cage::new(4, p, Operation::Add(6));
         let mut tuples = cage.tuples().to_vec();
         tuples.sort_unstable();
@@ -628,7 +632,7 @@ mod tests {
         // (0,0),(1,0),(1,1): col-0 pair (0,1), row-1 pair (1,2).
         // 10 raw permutations from {1,1,4},{1,2,3},{2,2,2} → 7 survive.
         let positions = &[(0, 0), (1, 0), (1, 1)];
-        let p = Polyomino::new(&cells(positions));
+        let p = Polyomino::new(&cells(positions)).unwrap();
         let cage = Cage::new(4, p, Operation::Add(6));
         assert_eq!(cage.tuples().len(), 7);
         assert!(!cage.tuples().contains(&vec![1u8, 1, 4]));
@@ -784,7 +788,7 @@ mod tests {
     #[test]
     fn cage_cells_via_trait_returns_same_as_inherent() {
         let positions = &[(0, 0), (0, 1)];
-        let p = Polyomino::new(&cells(positions));
+        let p = Polyomino::new(&cells(positions)).unwrap();
         let cage = Cage::new(4, p, Operation::Add(3));
         let via_trait: Vec<Cell> = <Cage as Cover>::cells(&cage);
         assert_eq!(via_trait, cage.cells());
@@ -793,14 +797,14 @@ mod tests {
     #[test]
     fn operator_tuples_add_singleton_is_empty() {
         let positions = &[(0, 0)];
-        let p = Polyomino::new(&cells(positions));
+        let p = Polyomino::new(&cells(positions)).unwrap();
         assert!(operator_tuples(4, &p, Operator::Add).is_empty());
     }
 
     #[test]
     fn operator_tuples_multiply_singleton_is_empty() {
         let positions = &[(0, 0)];
-        let p = Polyomino::new(&cells(positions));
+        let p = Polyomino::new(&cells(positions)).unwrap();
         assert!(operator_tuples(4, &p, Operator::Multiply).is_empty());
     }
 
@@ -808,11 +812,11 @@ mod tests {
     fn cage_new_with_target_above_n_max_yields_no_tuples() {
         let singleton = || {
             let positions = &[(0, 0)];
-            Polyomino::new(&cells(positions))
+            Polyomino::new(&cells(positions)).unwrap()
         };
         let pair = || {
             let positions = &[(0, 0), (0, 1)];
-            Polyomino::new(&cells(positions))
+            Polyomino::new(&cells(positions)).unwrap()
         };
         for (p, op) in [
             (singleton(), Operation::Given(300)),
