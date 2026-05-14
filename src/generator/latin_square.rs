@@ -1,7 +1,6 @@
-#![allow(dead_code)]
+use rand::{Rng, RngExt};
 
 use crate::types::N;
-use rand::{Rng, RngExt};
 
 /// Returns a uniformly random index `x` in `0..n` such that `line(x) == 1`.
 /// In a proper state each line has exactly one such entry; in an improper state
@@ -19,7 +18,8 @@ fn pick_one_from_line(rng: &mut impl Rng, n: usize, line: impl Fn(usize) -> i8) 
     ones[rng.random_range(0..count)]
 }
 
-/// Generates a uniformly random n×n Latin square using the Jacobson-Matthews Markov chain.
+/// Generates a uniformly random n×n Latin square using the Jacobson-Matthews
+/// Markov chain.
 ///
 /// The state is an n×n×n incidence cube `m` where, in the *proper* regime,
 /// `m[r][c][v] ∈ {0,1}` and `m[r][c][v] = 1` iff the underlying Latin square
@@ -28,7 +28,8 @@ fn pick_one_from_line(rng: &mut impl Rng, n: usize, line: impl Fn(usize) -> i8) 
 /// 2×2×2 sub-cube, preserving every line sum. From a proper state the move
 /// yields either another proper state or an *improper* state with a single −1
 /// entry; from improper, the chain is biased to walk back to proper. Restricted
-/// to proper states, the stationary distribution is uniform on n×n Latin squares.
+/// to proper states, the stationary distribution is uniform on n×n Latin
+/// squares.
 ///
 /// Burns in for `6*n³` steps (more than the original paper's heuristic of n³
 /// to ensure thorough mixing), then continues until we land in a proper state.
@@ -101,34 +102,37 @@ pub fn generate_latin_square(n: usize, rng: &mut impl Rng) -> Vec<Vec<N>> {
         .collect()
 }
 
-/// Returns true if `ls` is a valid n×n Latin square: each row and each column
-/// contains each value in `1..=n` exactly once.
-#[must_use]
-#[allow(clippy::cast_possible_truncation)]
-pub fn validate_latin_square(ls: &[Vec<N>]) -> bool {
-    let n = ls.len();
-    let expected: std::collections::HashSet<N> = (1..=(n as N)).collect();
-
-    for row in ls {
-        let row_set: std::collections::HashSet<N> = row.iter().copied().collect();
-        if row_set != expected {
-            return false;
-        }
-    }
-    for c in 0..n {
-        let col: std::collections::HashSet<N> = ls.iter().map(|r| r[c]).collect();
-        if col != expected {
-            return false;
-        }
-    }
-    true
-}
-
 #[cfg(test)]
 mod tests {
-    use super::*;
     use rand::SeedableRng;
     use rand_chacha::ChaCha8Rng;
+
+    use super::*;
+
+    /// Returns true if `ls` is a valid n×n Latin square: each row and each
+    /// column contains each value in `1..=n` exactly once.
+    #[allow(clippy::cast_possible_truncation)]
+    fn validate_latin_square(ls: &[Vec<N>]) -> bool {
+        let n = ls.len();
+        let expected: std::collections::HashSet<N> = (1..=(n as N)).collect();
+        for row in ls {
+            if row
+                .iter()
+                .copied()
+                .collect::<std::collections::HashSet<N>>()
+                != expected
+            {
+                return false;
+            }
+        }
+        for c in 0..n {
+            let col: std::collections::HashSet<N> = ls.iter().map(|r| r[c]).collect();
+            if col != expected {
+                return false;
+            }
+        }
+        true
+    }
 
     #[test]
     fn generate_4x4_returns_valid_square() {
@@ -146,9 +150,9 @@ mod tests {
 
     #[test]
     fn generates_all_twelve_reduced_3x3_squares() {
-        // There are exactly 12 distinct 3×3 Latin squares. With 1200 samples,
-        // every one of them should appear at least once; tolerance is loose so
-        // the test does not flake on rare seeds.
+        // There are exactly 12 distinct 3×3 Latin squares. With 1200 samples, every one
+        // of them should appear at least once; tolerance is loose so the test
+        // does not flake on rare seeds.
         let mut rng = ChaCha8Rng::seed_from_u64(42);
         let mut counts: std::collections::HashMap<Vec<Vec<N>>, usize> =
             std::collections::HashMap::new();
@@ -164,7 +168,7 @@ mod tests {
 
     #[test]
     fn validate_rejects_invalid_column() {
-        // Every row is {1,2,3} (a valid permutation) but column 0 is {1,1,1}.
+        // Every row is {1,2,3} (a valid permutation), but column 0 is {1,1,1}.
         let ls = vec![vec![1u8, 2, 3], vec![1, 3, 2], vec![1, 2, 3]];
         assert!(!validate_latin_square(&ls));
     }

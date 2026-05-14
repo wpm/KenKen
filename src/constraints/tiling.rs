@@ -1,9 +1,11 @@
-#![allow(dead_code)]
-
-use crate::geometry::shape::Polyomino;
-use crate::types::Cell;
-use rand::{Rng, RngExt};
 use std::collections::HashSet;
+
+use rand::{Rng, RngExt};
+
+use crate::{
+    constraints::cover::{Cover, Polyomino},
+    types::Cell,
+};
 
 /// Distribution over target cage sizes used by [`crate::generate_with`].
 #[derive(Debug, Clone, Copy)]
@@ -28,14 +30,14 @@ impl SizeDistribution {
     }
 }
 
-/// A set of disjoint, 4-connected [`Polyomino`]s on an `n`×`n` grid.
+/// A set of disjoint, edge-connected [`Polyomino`]s on an `n`×`n` grid.
 ///
 /// Invariants:
 /// - No two polyominos share a cell.
-/// - Every polyomino's cells are 4-connected.
+/// - Every polyomino's cells are edge-connected.
 /// - Every cell of every polyomino lies inside the `n`×`n` grid.
 #[must_use]
-#[derive(Debug, Clone)]
+#[derive(Clone)]
 pub struct Tiling {
     n: usize,
     polyominos: HashSet<Polyomino>,
@@ -71,8 +73,9 @@ impl Tiling {
         self.polyominos.iter()
     }
 
-    /// Consumes the tiling, yielding owned polyominos. Use when the caller is the last owner
-    /// and would otherwise have to clone each polyomino out of the borrowing iterator.
+    /// Consumes the tiling, yielding owned polyominos. Use when the caller is
+    /// the last owner and would otherwise have to clone each polyomino out
+    /// of the borrowing iterator.
     pub fn into_polyominos(self) -> impl Iterator<Item = Polyomino> {
         self.polyominos.into_iter()
     }
@@ -95,13 +98,14 @@ impl Tiling {
         total == self.n * self.n
     }
 
-    /// Returns the polyomino containing `cell`, or `None` if `cell` is uncovered.
+    /// Returns the polyomino containing `cell`, or `None` if `cell` is
+    /// uncovered.
     #[must_use]
     pub fn find_cell(&self, cell: Cell) -> Option<&Polyomino> {
-        self.polyominos.iter().find(|p| p.contains_cell(cell))
+        self.polyominos.iter().find(|p| p.cells().contains(&cell))
     }
 
-    /// Inserts a polyomino without checking invariants.
+    /// Inserts a [`Polyomino`] without checking invariants.
     pub(crate) fn insert(&mut self, poly: Polyomino) {
         self.polyominos.insert(poly);
     }
@@ -113,9 +117,10 @@ impl Tiling {
 
     /// Builds a tiling that fully covers an `n`×`n` grid by greedy growth.
     ///
-    /// Repeatedly seeds a random uncovered cell, grows it by absorbing random 4-adjacent
-    /// uncovered cells until the target size sampled from `dist` is reached or no candidates
-    /// remain, then starts a new polyomino.
+    /// Repeatedly seeds a random uncovered cell, grows it by absorbing random
+    /// edge-connected uncovered cells until the target size sampled from
+    /// `dist` is reached or no candidates remain, then starts a new
+    /// polyomino.
     pub fn greedy<R: Rng>(n: usize, dist: &SizeDistribution, rng: &mut R) -> Self {
         let mut tiling = Self::empty(n);
         let mut covered: HashSet<Cell> = HashSet::with_capacity(n * n);
@@ -130,7 +135,8 @@ impl Tiling {
 
             let mut cells: HashSet<Cell> = HashSet::new();
             cells.insert(seed);
-            // Frontier may contain duplicates; dedup happens on pop via the cells/covered checks.
+            // Frontier may contain duplicates; dedup happens on pop via the cells/covered
+            // checks.
             let mut frontier: Vec<Cell> = grid_neighbors(seed, n)
                 .filter(|c| !covered.contains(c))
                 .collect();
@@ -168,10 +174,11 @@ fn grid_neighbors(cell: Cell, n: usize) -> impl Iterator<Item = Cell> {
 #[cfg(test)]
 #[allow(clippy::unwrap_used)]
 mod tests {
-    use super::*;
-    use crate::geometry::shape::is_connected;
     use rand::SeedableRng;
     use rand_chacha::ChaCha8Rng;
+
+    use super::*;
+    use crate::constraints::cover::is_edge_connected_component;
 
     fn rng() -> ChaCha8Rng {
         ChaCha8Rng::seed_from_u64(42)
@@ -226,10 +233,7 @@ mod tests {
     }
 
     fn cells_of(t: &Tiling) -> Vec<Cell> {
-        let mut cells: Vec<Cell> = t
-            .polyominos()
-            .flat_map(|p| p.as_slice().iter().copied())
-            .collect();
+        let mut cells: Vec<Cell> = t.polyominos().flat_map(Cover::cells).collect();
         cells.sort();
         cells
     }
@@ -252,8 +256,8 @@ mod tests {
             let t = Tiling::greedy(n, &SizeDistribution::Uniform { min: 1, max: 4 }, &mut r);
             let mut seen: HashSet<Cell> = HashSet::new();
             for p in t.polyominos() {
-                for c in p.as_slice() {
-                    assert!(seen.insert(*c), "cell {c:?} appears in two polyominos");
+                for c in p.cells() {
+                    assert!(seen.insert(c), "cell {c:?} appears in two polyominos");
                 }
             }
         }
@@ -264,7 +268,7 @@ mod tests {
         let mut r = rng();
         let t = Tiling::greedy(9, &SizeDistribution::Uniform { min: 1, max: 4 }, &mut r);
         for p in t.polyominos() {
-            assert!(is_connected(p.as_slice()));
+            assert!(is_edge_connected_component(&p.cells()));
         }
     }
 

@@ -1,12 +1,13 @@
-//! Integration tests for the crate's public API. These run as an external user would,
-//! guarding against accidental visibility regressions.
+//! Integration tests for the crate's public API. These run as an external user
+//! would, guarding against accidental visibility regressions.
 
 #![allow(clippy::unwrap_used)]
 
 use kenken::{
-    Cage, Cell, DEFAULT_SIZE_DISTRIBUTION, Delta, Grid, NarrowingScore, Operation, Operator,
-    Polyomino, Puzzle, SizeDistribution, Solver, Uniqueness, Values, default_op_policy, generate,
-    generate_with,
+    Cage, Cell, DEFAULT_SIZE_DISTRIBUTION, Delta, Fill, Grid, NarrowingScore, Operation, Operator,
+    Puzzle, SizeDistribution, Solver, Uniqueness,
+    constraints::cover::{Cover, Polyomino},
+    default_op_policy, generate, generate_with,
 };
 use rand::SeedableRng;
 use rand_chacha::ChaCha8Rng;
@@ -70,8 +71,8 @@ fn deterministic_with_same_seed() {
 
 #[test]
 fn generated_puzzles_are_always_solvable() {
-    // The Latin square used during construction is itself a valid solution, so every
-    // generated puzzle must have ≥ 1 solution.
+    // The Latin square used during construction is itself a valid solution, so
+    // every generated puzzle must have ≥ 1 solution.
     for seed in 0..20u64 {
         for n in 2..=4 {
             let p = generate(n, &mut rng(seed)).unwrap();
@@ -117,8 +118,8 @@ fn custom_op_policy_overrides_default() {
 
 #[test]
 fn fixed_size_one_distribution_yields_unique_puzzles() {
-    // Fixed(1) cages each pin a single cell to its solved value, so the puzzle is fully
-    // determined.
+    // Fixed(1) cages each pin a single cell to its solved value, so the puzzle is
+    // fully determined.
     let p = generate_with(
         4,
         &mut rng(7),
@@ -180,7 +181,7 @@ fn puzzle_insert_and_remove_cage_are_public() {
 fn grid_set_is_public_and_round_trips() {
     let g: Grid = Grid::new(3).unwrap();
     let cell = Cell::new(1, 2);
-    let one = Values::new([1]);
+    let one = Fill::new([1]);
     let g = g.set(&cell, one);
     assert_eq!(g.get(&cell).unwrap(), one);
 }
@@ -201,14 +202,22 @@ fn puzzle_grid_and_candidates_expose_state() {
         .unwrap();
     let grid: &Grid = p.grid();
     assert_eq!(grid.n(), 2);
-    let v: Values = p.candidates(Cell::new(0, 1)).unwrap();
-    assert_eq!(v, Values::full(2));
+    let v: Fill = p.candidates(Cell::new(0, 1)).unwrap();
+    assert_eq!(v, Fill::full(2));
 }
 
 #[test]
 fn puzzle_cells_visits_every_grid_cell() {
     let p = Puzzle::new(2).unwrap();
     assert_eq!(p.cells().count(), 4);
+}
+
+#[test]
+fn puzzle_cover_len_equals_n_squared() {
+    use kenken::constraints::cover::Cover;
+    let p = Puzzle::new(3).unwrap();
+    assert_eq!(Cover::len(&p), 9);
+    assert_eq!(Cover::cells(&p).len(), 9);
 }
 
 #[test]
@@ -230,9 +239,9 @@ fn singleton_grid_yields_its_only_cell() {
 #[test]
 fn polyomino_extend_and_without_are_public() {
     let p = Polyomino::new(&[Cell::new(0, 0), Cell::new(0, 1)]);
-    let extended = p.extend(Cell::new(0, 2)).unwrap();
-    assert_eq!(extended.as_slice().len(), 3);
-    let shrunk = extended.without(Cell::new(0, 2)).unwrap();
+    let extended = p.insert(Cell::new(0, 2));
+    assert_eq!(extended.len(), 3);
+    let shrunk = extended.remove(Cell::new(0, 2));
     assert_eq!(shrunk, p);
 }
 
@@ -258,7 +267,7 @@ fn rank_tuples_for_cage_is_public_and_returns_scored_entries() {
     let cage = Cage::new(4, Polyomino::new(&cells), Operation::Add(3));
     let p = Puzzle::new(4).unwrap().insert_cage(cage.clone()).unwrap();
     let ranked: Vec<(Vec<u8>, Puzzle, NarrowingScore)> = p.rank_tuples_for_cage(&cage).unwrap();
-    let tuples: Vec<Vec<u8>> = ranked.iter().map(|(t, _, _)| t.clone()).collect();
+    let tuples: Vec<Vec<u8>> = ranked.iter().map(|(t, ..)| t.clone()).collect();
     assert_eq!(tuples, vec![vec![1, 2], vec![2, 1]]);
     assert!(ranked.iter().all(|(_, post, _)| post.is_valid()));
     let score: NarrowingScore = ranked[0].2;
@@ -333,21 +342,19 @@ fn delta_narrow_widen_and_propagate_fully_are_public() {
     let unchanged = p.narrow(&identity);
     assert!(unchanged.is_valid());
 
-    // Pinning (0,0)={1} on a 2×2 grid forces a unique completion via narrow + propagate.
+    // Pinning (0,0)={1} on a 2×2 grid forces a unique completion via narrow +
+    // propagate.
     let pinning = Delta::identity(2)
         .unwrap()
-        .set(Cell::new(0, 0), Values::new([1]));
+        .set(Cell::new(0, 0), Fill::new([1]));
     let pinned = Puzzle::new(2).unwrap().narrow(&pinning);
     assert!(pinned.is_valid());
-    assert_eq!(
-        pinned.candidates(Cell::new(1, 1)).unwrap(),
-        Values::new([1]),
-    );
+    assert_eq!(pinned.candidates(Cell::new(1, 1)).unwrap(), Fill::new([1]),);
 
     // Emptying a cell via narrow yields an invalid puzzle.
     let emptying = Delta::identity(2)
         .unwrap()
-        .set(Cell::new(0, 0), Values::new([]));
+        .set(Cell::new(0, 0), Fill::new([]));
     let invalid = Puzzle::new(2).unwrap().narrow(&emptying);
     assert!(!invalid.is_valid());
 
@@ -362,14 +369,15 @@ fn delta_narrow_widen_and_propagate_fully_are_public() {
     assert!(rewidened.is_valid());
     assert_eq!(
         rewidened.candidates(Cell::new(1, 1)).unwrap(),
-        Values::new([1]),
+        Fill::new([1]),
     );
 }
 
 #[test]
 fn solve_simple_2x2_puzzle() {
-    // Two Add(3) row cages on a 2×2 grid. Both rows must be {1,2}; column all-different
-    // gives exactly two solutions: [[1,2],[2,1]] and [[2,1],[1,2]].
+    // Two Add(3) row cages on a 2×2 grid. Both rows must be {1,2}; column
+    // all-different gives exactly two solutions: [[1,2],[2,1]] and
+    // [[2,1],[1,2]].
     let p = Puzzle::new(2)
         .unwrap()
         .insert_cage(Cage::new(

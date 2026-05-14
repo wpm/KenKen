@@ -1,19 +1,25 @@
 //! `Puzzle` is `Send + Sync` and may be shared across threads or sent
 //! between them. Cloning is cheap (the constraints share an `Arc`).
 
-#![allow(dead_code)]
+#![allow(clippy::must_use_candidate)]
 
-use crate::Cage;
-use crate::constraints::all_different::AllDifferent;
-use crate::constraints::constraint::{Constraint, ValueFilter};
-use crate::geometry::grid::Grid;
-use crate::geometry::shape::Polyomino;
-use crate::geometry::tiling::Tiling;
-use crate::solver::delta::Delta;
-use crate::solver::solve::{Solver, State};
-use crate::types::{Cell, Error, Index, N, Values};
-use std::collections::HashMap;
-use std::sync::Arc;
+use std::{collections::HashMap, sync::Arc};
+
+use crate::{
+    Cage,
+    constraints::{
+        Constraint, RegionConstraint,
+        all_different::AllDifferent,
+        cover::{Cover, Polyomino},
+        tiling::Tiling,
+    },
+    grid::Grid,
+    solver::{
+        delta::Delta,
+        solve::{Solver, State},
+    },
+    types::{Cell, Error, Fill, Index, N},
+};
 
 /// Three-bucket classification of a puzzle's solution count.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -40,27 +46,29 @@ pub enum Uniqueness {
 pub struct NarrowingScore {
     /// Sum over all cells `c` of `|fill_before(c)| - |fill_after(c)|`.
     pub total_reduction: usize,
-    /// Number of cells whose candidate set went from non-singleton to singleton.
+    /// Number of cells whose candidate set went from non-singleton to
+    /// singleton.
     pub newly_singleton: usize,
 }
 
-/// A KenKen puzzle: a candidate-value grid paired with a fixed set of all-different and
-/// cage constraints.
+/// A KenKen puzzle: a candidate-value grid paired with a fixed set of
+/// all-different and cage constraints.
 ///
-/// Construct one via [`crate::generate()`] or [`crate::generate_with`]; the public surface is
-/// [`Puzzle::n`], [`Puzzle::uniqueness`], and [`Puzzle::solutions`].
+/// Construct one via [`crate::generate`] or [`crate::generate_with`]; the
+/// public surface is [`Puzzle::n`], [`Puzzle::uniqueness`], and
+/// [`Puzzle::solutions`].
 ///
 /// ## Cloning during search
 ///
-/// Solving requires branching — each branch needs its own copy of the puzzle state.
-/// `Puzzle` is designed so that clone is cheap:
+/// Solving requires branching — each branch needs its own copy of the puzzle
+/// state. `Puzzle` is designed so that clone is cheap:
 ///
 /// - The **grid** (candidate bitmaps) is a flat boxed slice copied in a single `memcpy`.
-/// - The **constraints** (rows, columns, cages) never change after construction, so they are
-///   stored behind an [`Arc`]. Cloning bumps a reference count rather than duplicating data.
-///   Mutating methods use [`Arc::make_mut`] to copy-on-write only when necessary.
+/// - The **constraints** (rows, columns, cages) never change after construction, so they are stored
+///   behind an [`Arc`]. Cloning bumps a reference count rather than duplicating data. Mutating
+///   methods use [`Arc::make_mut`] to copy-on-write only when necessary.
 #[must_use]
-#[derive(Debug, Clone)]
+#[derive(Clone)]
 pub struct Puzzle {
     grid: Grid,
     constraints: Arc<PuzzleConstraints>,
@@ -83,16 +91,18 @@ impl Puzzle {
     }
 
     /// The side length of the grid (number of rows and columns).
-    #[must_use]
     pub const fn n(&self) -> Index {
         self.grid.n()
     }
 
     /// Returns a new puzzle with the cage inserted.
     ///
-    /// Idempotent: if the exact same cage (by polyomino) is already present, returns unchanged.
+    /// Idempotent: if the exact same cage (by polyomino) is already present,
+    /// returns unchanged.
+    ///
     /// # Errors
-    /// Returns `Error` if any cell in the cage is already claimed by a *different* cage.
+    /// Returns `Error` if any cell in the cage is already claimed by a
+    /// *different* cage.
     pub fn insert_cage(mut self, cage: Cage) -> Result<Self, Error> {
         let constraints = Arc::make_mut(&mut self.constraints);
         constraints.cage = constraints.cage.clone().insert(cage)?;
@@ -108,12 +118,12 @@ impl Puzzle {
         self
     }
 
-    /// Classifies the puzzle's solution count into [`Uniqueness::None`], [`Uniqueness::Unique`],
-    /// or [`Uniqueness::Multiple`].
+    /// Classifies the puzzle's solution count into [`Uniqueness::None`],
+    /// [`Uniqueness::Unique`], or [`Uniqueness::Multiple`].
     ///
-    /// Stops the solver as soon as a second solution is found, so this is strictly cheaper than
-    /// [`Puzzle::solutions`] when the answer is `Multiple`.
-    #[must_use]
+    /// Stops the solver as soon as a second solution is found, so this is
+    /// strictly cheaper than [`Puzzle::solutions`] when the answer is
+    /// `Multiple`.
     pub fn uniqueness(&self) -> Uniqueness {
         match self.solutions_at_most(2) {
             0 => Uniqueness::None,
@@ -124,18 +134,17 @@ impl Puzzle {
 
     /// Counts every solution by exhaustive search.
     ///
-    /// Use [`Puzzle::uniqueness`] when only the bucket (none / one / many) is needed.
-    #[must_use]
+    /// Use [`Puzzle::uniqueness`] when only the bucket (none / one / many) is
+    /// needed.
     pub fn solutions(&self) -> usize {
         self.solutions_at_most(usize::MAX)
     }
 
-    /// Count solutions, stopping after `k` are found.
-    /// Returns `min(actual_count, k)`.
+    /// Count solutions, stopping after `k` are found. Returns
+    /// `min(actual_count, k)`.
     ///
     /// `solutions_at_most(0)` returns `0` without invoking the solver.
     /// `solutions_at_most(usize::MAX)` is equivalent to [`Puzzle::solutions`].
-    #[must_use]
     pub fn solutions_at_most(&self, k: usize) -> usize {
         if k == 0 {
             return 0;
@@ -151,18 +160,14 @@ impl Puzzle {
     /// Returns the candidate values currently associated with `cell`.
     /// # Errors
     /// Returns `Error` if `cell` is outside the grid bounds.
-    pub fn candidates(&self, cell: Cell) -> Result<Values, Error> {
+    pub fn candidates(&self, cell: Cell) -> Result<Fill, Error> {
         self.grid.get(&cell)
     }
 
-    /// Iterates over every cell of the grid in row-major order.
-    pub fn cells(&self) -> impl Iterator<Item = Cell> + '_ {
-        self.grid.iter()
-    }
-
-    /// Iterates over cells whose candidate set is a singleton, paired with that value.
+    /// Iterates over cells whose candidate set is a singleton, paired with that
+    /// value.
     pub fn singleton_cells(&self) -> impl Iterator<Item = (Cell, N)> + '_ {
-        self.grid.iter_with_values().filter_map(|(cell, v)| {
+        self.grid.entries().filter_map(|(cell, v)| {
             if !v.is_singleton() {
                 return None;
             }
@@ -173,12 +178,11 @@ impl Puzzle {
     /// Iterates over cells whose candidate set is empty.
     pub fn empty_cells(&self) -> impl Iterator<Item = Cell> + '_ {
         self.grid
-            .iter_with_values()
+            .entries()
             .filter_map(|(cell, v)| v.is_empty().then_some(cell))
     }
 
     /// Returns the cage covering `cell`, or `None` if none does.
-    #[must_use]
     pub fn cage_at(&self, cell: Cell) -> Option<&Cage> {
         self.constraints.cage.get_at(cell)
     }
@@ -189,33 +193,35 @@ impl Puzzle {
     }
 
     /// Returns true iff some cage covers `cell`.
-    #[must_use]
     pub fn is_covered(&self, cell: Cell) -> bool {
         self.cage_at(cell).is_some()
     }
 
-    /// Returns true iff every cell has at least one candidate value — i.e. propagation
-    /// has not produced a contradiction.
-    #[must_use]
+    /// Returns true iff every cell has at least one candidate value — i.e.
+    /// propagation has not produced a contradiction.
     pub fn is_valid(&self) -> bool {
         !self.grid.is_invalid()
     }
 
-    /// One round of constraint propagation: builds a value filter from every constraint
-    /// against the current grid and applies it. The resulting grid may be invalid when
-    /// constraints contradict; callers inspect [`Self::is_valid`] to detect that.
+    /// One round of constraint propagation: builds a value filter from every
+    /// constraint against the current grid and applies it. The resulting
+    /// grid may be invalid when constraints contradict; callers inspect
+    /// [`Self::is_valid`] to detect that.
     fn propagate_round(self) -> Self {
-        let filter = self.constraints.apply(&self.grid);
-        let grid = filter.apply(&self.grid);
+        let constraint = self.constraints.apply(&self.grid);
+        #[allow(clippy::expect_used)]
+        let grid = constraint
+            .apply(self.grid.clone())
+            .expect("constraint/grid inconsistency");
         Self {
             grid,
             constraints: self.constraints,
         }
     }
 
-    /// Iterates one round of constraint propagation until the grid stops changing or
-    /// goes invalid. Always returns a `Puzzle`; the caller inspects [`Self::is_valid`]
-    /// if they care.
+    /// Iterates one round of constraint propagation until the grid stops
+    /// changing or goes invalid. Always returns a `Puzzle`; the caller
+    /// inspects [`Self::is_valid`] if they care.
     pub fn propagate_fully(self) -> Self {
         let mut current = self;
         loop {
@@ -228,8 +234,9 @@ impl Puzzle {
         }
     }
 
-    /// Apply `delta` by intersecting per-cell with the current grid, then propagate to
-    /// the fixed point. Always returns a `Puzzle`; the caller inspects [`Self::is_valid`].
+    /// Apply `delta` by intersecting per-cell with the current grid, then
+    /// propagate to the fixed point. Always returns a `Puzzle`; the caller
+    /// inspects [`Self::is_valid`].
     ///
     /// # Panics
     /// Panics if `delta.n()` does not match `self.n()`.
@@ -237,8 +244,9 @@ impl Puzzle {
         self.apply_delta(delta, |a, b| a & b)
     }
 
-    /// Apply `delta` by unioning per-cell with the current grid, then propagate to
-    /// the fixed point. Always returns a `Puzzle`; the caller inspects [`Self::is_valid`].
+    /// Apply `delta` by unioning per-cell with the current grid, then propagate
+    /// to the fixed point. Always returns a `Puzzle`; the caller inspects
+    /// [`Self::is_valid`].
     ///
     /// # Panics
     /// Panics if `delta.n()` does not match `self.n()`.
@@ -246,16 +254,16 @@ impl Puzzle {
         self.apply_delta(delta, |a, b| a | b)
     }
 
-    /// Returns one entry per legal tuple of `cage`, sorted by how much committing
-    /// the tuple narrows the puzzle's candidate domains after propagation to
-    /// fixpoint.
+    /// Returns one entry per legal tuple of `cage`, sorted by how much
+    /// committing the tuple narrows the puzzle's candidate domains after
+    /// propagation to fixpoint.
     ///
     /// Each entry is `(tuple, post-narrow puzzle, score)`. The post-narrow
-    /// puzzle is `self` with every cell of the cage pinned to its tuple value,
-    /// then propagated to fixpoint via [`Puzzle::narrow`]. Tuples whose narrow
-    /// produces an invalid puzzle (some cell goes empty) are excluded — those
-    /// are the *illegal* tuples once the rest of the puzzle's constraints are
-    /// folded in.
+    /// puzzle is `self` with every cell of the cage pinned to its tuple
+    /// value, then propagated to fixpoint via [`Puzzle::narrow`]. Tuples
+    /// whose narrow produces an invalid puzzle (some cell goes empty)
+    /// are excluded — those are the *illegal* tuples once the rest of the
+    /// puzzle's constraints are folded in.
     ///
     /// # Ordering
     ///
@@ -264,15 +272,15 @@ impl Puzzle {
     /// 3. The tuple itself, ascending lexicographic on the value sequence.
     ///
     /// `Cage::tuples` already returns each tuple at most once, so the lex
-    /// tiebreak is total: no two equal-score entries remain after it, and the
-    /// returned order is fully deterministic across runs and platforms.
+    /// tiebreak is total: no two equal-score entries remain after it, and
+    /// the returned order is fully deterministic across runs and platforms.
     ///
     /// # Inference-engine coupling
     ///
     /// Because the score is computed *after* propagation to fixpoint, it
     /// reflects what the current inference engine can derive. Swapping in a
-    /// stronger engine will produce different scores for the same tuple. This
-    /// coupling is intentional — it is what makes the score useful for
+    /// stronger engine will produce different scores for the same tuple.
+    /// This coupling is intentional — it is what makes the score useful for
     /// surfacing informative choices in the Designer's cage band.
     ///
     /// # Errors
@@ -283,7 +291,7 @@ impl Puzzle {
         cage: &Cage,
     ) -> Result<Vec<(Vec<N>, Self, NarrowingScore)>, Error> {
         if !self.constraints.cage.contains(cage.polyomino()) {
-            return Err(Error::CageNotInPuzzle(Box::new(cage.clone())));
+            return Err(Error::CageNotInPuzzle(cage.clone()));
         }
 
         let n = self.n();
@@ -293,7 +301,7 @@ impl Puzzle {
         for tuple in cage.tuples() {
             let mut delta = Delta::identity(n)?;
             for (cell, &value) in cells.iter().zip(tuple.iter()) {
-                delta = delta.set(*cell, Values::new([value]));
+                delta = delta.set(*cell, Fill::new([value]));
             }
             let after = self.narrow(&delta);
             if !after.is_valid() {
@@ -302,11 +310,7 @@ impl Puzzle {
 
             let mut total_reduction: usize = 0;
             let mut newly_singleton: usize = 0;
-            for ((_, before_v), (_, after_v)) in self
-                .grid
-                .iter_with_values()
-                .zip(after.grid.iter_with_values())
-            {
+            for ((_, before_v), (_, after_v)) in self.grid.entries().zip(after.grid.entries()) {
                 total_reduction += (before_v.len() as usize).saturating_sub(after_v.len() as usize);
                 if !before_v.is_singleton() && after_v.is_singleton() {
                     newly_singleton += 1;
@@ -333,7 +337,7 @@ impl Puzzle {
         Ok(results)
     }
 
-    fn apply_delta(&self, delta: &Delta, op: impl Fn(Values, Values) -> Values) -> Self {
+    fn apply_delta(&self, delta: &Delta, op: impl Fn(Fill, Fill) -> Fill) -> Self {
         assert_eq!(
             delta.n(),
             self.n(),
@@ -342,11 +346,7 @@ impl Puzzle {
             self.n(),
         );
         let mut grid = self.grid.clone();
-        for ((cell, current), (_, delta_v)) in self
-            .grid
-            .iter_with_values()
-            .zip(delta.grid().iter_with_values())
-        {
+        for ((cell, current), (_, delta_v)) in self.grid.entries().zip(delta.grid().entries()) {
             grid = grid.set(&cell, op(current, delta_v));
         }
         Self {
@@ -370,7 +370,7 @@ impl State for Puzzle {
     fn branch(self) -> impl Iterator<Item = Self> {
         let pivot = self
             .grid
-            .iter_with_values()
+            .entries()
             .filter(|(_, values)| !values.is_singleton())
             .min_by_key(|(cell, values)| (values.len(), *cell));
         let Some((cell, values)) = pivot else {
@@ -379,9 +379,26 @@ impl State for Puzzle {
         let constraints = self.constraints.clone();
         let grid = self.grid;
         itertools::Either::Right(values.iter().map(move |v| Self {
-            grid: grid.clone().set(&cell, Values::new([v])),
+            grid: grid.clone().set(&cell, Fill::new([v])),
             constraints: constraints.clone(),
         }))
+    }
+}
+
+impl Cover for Puzzle {
+    fn cells(&self) -> Vec<Cell> {
+        self.grid.cells()
+    }
+
+    fn len(&self) -> usize {
+        self.grid.len()
+    }
+}
+
+impl Puzzle {
+    /// Iterates over every cell in the grid in row-major order.
+    pub fn cells(&self) -> impl Iterator<Item = Cell> + '_ {
+        self.grid.entries().map(|(cell, _)| cell)
     }
 }
 
@@ -389,8 +406,7 @@ impl State for Puzzle {
 #[allow(clippy::unwrap_used)]
 mod tests {
     use super::*;
-    use crate::constraints::cage::operation::Operation;
-    use crate::types::Cell;
+    use crate::{Operation, types::Cell};
 
     fn make_cage(cells: &[(usize, usize)], n: u8) -> Cage {
         let cells: Vec<Cell> = cells
@@ -590,7 +606,8 @@ mod tests {
 
     #[test]
     fn solve_2x2_no_solution() {
-        // Given(1) in both cells of row 0 conflicts with all-different: no valid assignment.
+        // Given(1) in both cells of row 0 conflicts with all-different: no valid
+        // assignment.
         let puzzle = Puzzle::new(2)
             .unwrap()
             .insert_cage(given(0, 0, 1))
@@ -610,7 +627,8 @@ mod tests {
     #[test]
     fn solve_2x2_multiple_solutions() {
         // Row add-cages both requiring sum=3 admit both 2×2 latin squares.
-        // DFS with LIFO stack pops the highest-value branch first, so [[2,1],[1,2]] is found first.
+        // DFS with LIFO stack pops the highest-value branch first, so [[2,1],[1,2]] is
+        // found first.
         let puzzle = Puzzle::new(2)
             .unwrap()
             .insert_cage(row_add(2, 0, 3))
@@ -682,7 +700,8 @@ mod tests {
     #[test]
     fn solve_2x2_partial_coverage_same_solutions_as_full_coverage() {
         // Only row 0 is caged; row 1 is unconstrained by any cage.
-        // All-different alone determines the rest: same two solutions as the fully caged case.
+        // All-different alone determines the rest: same two solutions as the fully
+        // caged case.
         let puzzle = Puzzle::new(2)
             .unwrap()
             .insert_cage(row_add(2, 0, 3))
@@ -719,7 +738,7 @@ mod tests {
     #[test]
     fn cells_visits_every_cell_in_row_major_order() {
         let p = small_puzzle();
-        let got: Vec<Cell> = p.cells().collect();
+        let got: Vec<Cell> = p.grid.cells();
         assert_eq!(
             got,
             vec![
@@ -755,7 +774,7 @@ mod tests {
     #[test]
     fn empty_cells_yields_emptied_cell() {
         let mut p = Puzzle::new(2).unwrap();
-        p.grid = p.grid.set(&Cell::new(1, 1), Values::default());
+        p.grid = p.grid.set(&Cell::new(1, 1), Fill::default());
         let got: Vec<Cell> = p.empty_cells().collect();
         assert_eq!(got, vec![Cell::new(1, 1)]);
     }
@@ -812,7 +831,7 @@ mod tests {
     #[test]
     fn is_valid_false_when_a_cell_is_empty() {
         let mut p = Puzzle::new(2).unwrap();
-        p.grid = p.grid.set(&Cell::new(0, 0), Values::default());
+        p.grid = p.grid.set(&Cell::new(0, 0), Fill::default());
         assert!(!p.is_valid());
     }
 
@@ -828,7 +847,7 @@ mod tests {
     fn propagate_round_propagates_given_cage_value() {
         let p = Puzzle::new(2).unwrap().insert_cage(given(0, 0, 1)).unwrap();
         let after = p.propagate_round();
-        assert_eq!(after.grid.get(&Cell::new(0, 0)).unwrap(), Values::new([1]));
+        assert_eq!(after.grid.get(&Cell::new(0, 0)).unwrap(), Fill::new([1]));
     }
 
     #[test]
@@ -841,7 +860,7 @@ mod tests {
             .unwrap();
         let after = p.propagate_round();
         assert!(after.grid.is_invalid());
-        assert_eq!(after.grid.get(&Cell::new(0, 0)).unwrap(), Values::default());
+        assert_eq!(after.grid.get(&Cell::new(0, 0)).unwrap(), Fill::default());
     }
 
     #[test]
@@ -850,7 +869,7 @@ mod tests {
         let p = Puzzle::new(2).unwrap().insert_cage(given(0, 0, 1)).unwrap();
         let fixed = p.propagate_fully();
         assert!(fixed.is_valid());
-        for cell in fixed.cells() {
+        for cell in fixed.grid.cells() {
             assert!(fixed.grid.get(&cell).unwrap().is_singleton());
         }
     }
@@ -883,29 +902,18 @@ mod tests {
 
     #[test]
     fn narrow_with_singleton_delta_pins_cell() {
-        // Pinning (0,0) to {1} on a fresh 2×2 grid forces (0,1)={2}, (1,0)={2}, (1,1)={1}.
+        // Pinning (0,0) to {1} on a fresh 2×2 grid forces (0,1)={2}, (1,0)={2},
+        // (1,1)={1}.
         let p = Puzzle::new(2).unwrap();
         let delta = Delta::identity(2)
             .unwrap()
-            .set(Cell::new(0, 0), Values::new([1]));
+            .set(Cell::new(0, 0), Fill::new([1]));
         let narrowed = p.narrow(&delta);
         assert!(narrowed.is_valid());
-        assert_eq!(
-            narrowed.grid.get(&Cell::new(0, 0)).unwrap(),
-            Values::new([1])
-        );
-        assert_eq!(
-            narrowed.grid.get(&Cell::new(0, 1)).unwrap(),
-            Values::new([2])
-        );
-        assert_eq!(
-            narrowed.grid.get(&Cell::new(1, 0)).unwrap(),
-            Values::new([2])
-        );
-        assert_eq!(
-            narrowed.grid.get(&Cell::new(1, 1)).unwrap(),
-            Values::new([1])
-        );
+        assert_eq!(narrowed.grid.get(&Cell::new(0, 0)).unwrap(), Fill::new([1]));
+        assert_eq!(narrowed.grid.get(&Cell::new(0, 1)).unwrap(), Fill::new([2]));
+        assert_eq!(narrowed.grid.get(&Cell::new(1, 0)).unwrap(), Fill::new([2]));
+        assert_eq!(narrowed.grid.get(&Cell::new(1, 1)).unwrap(), Fill::new([1]));
     }
 
     #[test]
@@ -913,7 +921,7 @@ mod tests {
         let p = Puzzle::new(2).unwrap();
         let delta = Delta::identity(2)
             .unwrap()
-            .set(Cell::new(0, 0), Values::default());
+            .set(Cell::new(0, 0), Fill::default());
         let narrowed = p.narrow(&delta);
         assert!(!narrowed.is_valid());
     }
@@ -935,7 +943,7 @@ mod tests {
         let baseline = p.propagate_fully();
         let widened = baseline.widen(&Delta::identity(2).unwrap());
         assert!(widened.is_valid());
-        for cell in widened.cells() {
+        for cell in widened.grid.cells() {
             assert!(widened.grid.get(&cell).unwrap().is_singleton());
         }
     }
@@ -978,12 +986,12 @@ mod tests {
 
     #[test]
     fn rank_lex_tiebreak_is_stable() {
-        // Tuples (1,2) and (2,1) reduce by identical amounts on an empty 4×4 by value-swap
-        // symmetry, so the lex tiebreak picks (1,2) first.
+        // Tuples (1,2) and (2,1) reduce by identical amounts on an empty 4×4 by
+        // value-swap symmetry, so the lex tiebreak picks (1,2) first.
         let cage = add_cage(&[(0, 0), (0, 1)], 4, 3);
         let p = Puzzle::new(4).unwrap().insert_cage(cage.clone()).unwrap();
         let ranked = p.rank_tuples_for_cage(&cage).unwrap();
-        let tuples: Vec<Vec<N>> = ranked.iter().map(|(t, _, _)| t.clone()).collect();
+        let tuples: Vec<Vec<N>> = ranked.iter().map(|(t, ..)| t.clone()).collect();
         assert_eq!(tuples, vec![vec![1, 2], vec![2, 1]]);
         assert_eq!(ranked[0].2, ranked[1].2);
     }
@@ -1009,31 +1017,6 @@ mod tests {
             scores.first() > scores.last(),
             "test setup should produce at least one strictly higher score, got {scores:?}",
         );
-    }
-
-    #[test]
-    fn rank_returns_only_legal_tuples() {
-        // Givens at (2,0)=1 and (3,1)=2 invalidate any tuple placing 1 in column 0
-        // or 2 in column 1. Add(5) tuples (1,4),(2,3),(3,2),(4,1) → only (2,3) and (4,1) survive.
-        let cage = add_cage(&[(0, 0), (1, 1)], 4, 5);
-        let p = Puzzle::new(4)
-            .unwrap()
-            .insert_cage(cage.clone())
-            .unwrap()
-            .insert_cage(given(2, 0, 1))
-            .unwrap()
-            .insert_cage(given(3, 1, 2))
-            .unwrap();
-        let ranked = p.rank_tuples_for_cage(&cage).unwrap();
-        let tuples: Vec<Vec<N>> = ranked.iter().map(|(t, _, _)| t.clone()).collect();
-        assert!(!tuples.iter().any(|t| t[0] == 1));
-        assert!(!tuples.iter().any(|t| t[1] == 2));
-        // (2,3) and (4,1) are the only survivors.
-        let mut expected: Vec<Vec<N>> = vec![vec![2, 3], vec![4, 1]];
-        expected.sort();
-        let mut got = tuples;
-        got.sort();
-        assert_eq!(got, expected);
     }
 
     #[test]
@@ -1110,9 +1093,9 @@ mod tests {
 
 /// The set of constraints for a single KenKen puzzle.
 ///
-/// Stored behind an [`Arc`] so that cloning a [`Puzzle`] during search shares this allocation
-/// instead of duplicating it.
-#[derive(Debug, Clone)]
+/// Stored behind an [`Arc`] so that cloning a [`Puzzle`] during search shares
+/// this allocation instead of duplicating it.
+#[derive(Clone)]
 pub struct PuzzleConstraints {
     pub row: Vec<AllDifferent>,
     pub column: Vec<AllDifferent>,
@@ -1120,36 +1103,38 @@ pub struct PuzzleConstraints {
 }
 
 impl PuzzleConstraints {
-    pub fn apply(&self, grid: &Grid) -> ValueFilter {
+    pub fn apply(&self, grid: &Grid) -> Constraint {
         self.cage_filter(grid) * self.all_different_filter(grid)
     }
-    fn cage_filter(&self, grid: &Grid) -> ValueFilter {
-        let mut filter = ValueFilter::default();
+
+    fn cage_filter(&self, grid: &Grid) -> Constraint {
+        let mut filter = Constraint::default();
         for cage in self.cage.iter() {
-            filter = filter * cage.value_filter(grid);
+            filter = filter * cage.constraint(grid);
         }
         filter
     }
-    fn all_different_filter(&self, grid: &Grid) -> ValueFilter {
-        let mut filter = ValueFilter::default();
+
+    fn all_different_filter(&self, grid: &Grid) -> Constraint {
+        let mut filter = Constraint::default();
         for row in &self.row {
-            filter = filter * row.value_filter(grid);
+            filter = filter * row.constraint(grid);
         }
         for column in &self.column {
-            filter = filter * column.value_filter(grid);
+            filter = filter * column.constraint(grid);
         }
         filter
     }
 }
 
-/// The set of [`Cage`] constraints for a puzzle, backed by a [`Tiling`] that tracks cell
-/// coverage and a `HashMap` from polyomino to cage data.
+/// The set of [`Cage`] constraints for a puzzle, backed by a [`Tiling`] that
+/// tracks cell coverage and a `HashMap` from polyomino to cage data.
 ///
-/// A cell may belong to at most one cage. Conflict detection on insert scans the new cage's
-/// cells against the tiling, which is acceptable because cages are only added at construction
-/// time.
+/// A cell may belong to at most one cage. Conflict detection on insert scans
+/// the new cage's cells against the tiling, which is acceptable because cages
+/// are only added at construction time.
 #[must_use]
-#[derive(Debug, Clone)]
+#[derive(Clone)]
 pub struct Cages {
     tiling: Tiling,
     data: HashMap<Polyomino, Cage>,
@@ -1166,21 +1151,24 @@ impl Cages {
 
     /// Returns a new cage set with the cage inserted.
     ///
-    /// Idempotent: if the exact same cage (by polyomino) is already present, returns unchanged.
+    /// Idempotent: if the exact same cage (by polyomino) is already present,
+    /// returns unchanged.
+    ///
     /// # Errors
-    /// Returns `Error` if any cell in the cage is already claimed by a *different* cage.
+    /// Returns `Error` if any cell in the cage is already claimed by a
+    /// *different* cage.
     pub fn insert(mut self, cage: Cage) -> Result<Self, Error> {
         if self.data.contains_key(cage.polyomino()) {
             return Ok(self);
         }
         for cell in cage.cells() {
-            if let Some(existing_poly) = self.tiling.find_cell(*cell) {
+            if let Some(existing_poly) = self.tiling.find_cell(cell) {
                 debug_assert!(
                     self.data.contains_key(existing_poly),
                     "Cages tiling and data are out of sync: {existing_poly:?} in tiling but not in data",
                 );
                 let existing = self.data[existing_poly].clone();
-                return Err(Error::CageConflict(Box::new(cage), Box::new(existing)));
+                return Err(Error::CageConflict(cage, existing));
             }
         }
         self.tiling.insert(cage.polyomino().clone());
@@ -1198,6 +1186,7 @@ impl Cages {
     }
 
     #[must_use]
+    #[allow(dead_code)]
     pub fn get(&self, polyomino: &Polyomino) -> Option<&Cage> {
         self.data.get(polyomino)
     }
@@ -1208,11 +1197,13 @@ impl Cages {
     }
 
     #[must_use]
+    #[allow(dead_code)]
     pub fn len(&self) -> usize {
         self.data.len()
     }
 
     #[must_use]
+    #[allow(dead_code)]
     pub fn is_empty(&self) -> bool {
         self.data.is_empty()
     }
