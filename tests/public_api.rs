@@ -235,7 +235,7 @@ fn singleton_grid_yields_its_only_cell() {
 }
 
 #[test]
-fn polyomino_extend_and_without_are_public() {
+fn polyomino_insert_and_remove_are_public() {
     let p = Polyomino::new(&[Cell::new(0, 0), Cell::new(0, 1)]).unwrap();
     let extended = p.insert(Cell::new(0, 2)).unwrap();
     assert_eq!(extended.len(), 3);
@@ -296,7 +296,9 @@ fn cage_valid_operators_branches_by_cell_count() {
 #[test]
 fn cage_valid_targets_yields_legal_targets_in_ascending_order() {
     let cells = [Cell::new(0, 0), Cell::new(0, 1)];
-    let subtract: Vec<Operation> = Cage::valid_targets(&cells, Operator::Subtract, 4).collect();
+    let subtract: Vec<Operation> = Cage::valid_targets(&cells, Operator::Subtract, 4)
+        .unwrap()
+        .collect();
     assert_eq!(
         subtract,
         vec![
@@ -305,7 +307,9 @@ fn cage_valid_targets_yields_legal_targets_in_ascending_order() {
             Operation::Subtract(3),
         ]
     );
-    let divide: Vec<Operation> = Cage::valid_targets(&cells, Operator::Divide, 4).collect();
+    let divide: Vec<Operation> = Cage::valid_targets(&cells, Operator::Divide, 4)
+        .unwrap()
+        .collect();
     assert_eq!(
         divide,
         vec![
@@ -319,17 +323,17 @@ fn cage_valid_targets_yields_legal_targets_in_ascending_order() {
 #[test]
 fn cage_is_valid_filters_operator_target_pairs() {
     let singleton = [Cell::new(0, 0)];
-    assert!(Cage::is_valid(&singleton, Operation::Given(3), 4));
-    assert!(!Cage::is_valid(&singleton, Operation::Add(3), 4));
+    assert!(Cage::is_valid(&singleton, Operation::Given(3), 4).unwrap());
+    assert!(!Cage::is_valid(&singleton, Operation::Add(3), 4).unwrap());
 
     let pair = [Cell::new(0, 0), Cell::new(0, 1)];
-    assert!(Cage::is_valid(&pair, Operation::Subtract(2), 4));
-    assert!(!Cage::is_valid(&pair, Operation::Subtract(0), 4));
-    assert!(!Cage::is_valid(&pair, Operation::Divide(1), 4));
+    assert!(Cage::is_valid(&pair, Operation::Subtract(2), 4).unwrap());
+    assert!(!Cage::is_valid(&pair, Operation::Subtract(0), 4).unwrap());
+    assert!(!Cage::is_valid(&pair, Operation::Divide(1), 4).unwrap());
 
     let triple = [Cell::new(0, 0), Cell::new(0, 1), Cell::new(0, 2)];
-    assert!(Cage::is_valid(&triple, Operation::Add(6), 4));
-    assert!(!Cage::is_valid(&triple, Operation::Subtract(1), 4));
+    assert!(Cage::is_valid(&triple, Operation::Add(6), 4).unwrap());
+    assert!(!Cage::is_valid(&triple, Operation::Subtract(1), 4).unwrap());
 }
 
 #[test]
