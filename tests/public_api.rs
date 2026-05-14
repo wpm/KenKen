@@ -4,10 +4,9 @@
 #![allow(clippy::unwrap_used)]
 
 use kenken::{
-    Cage, Cell, DEFAULT_SIZE_DISTRIBUTION, Delta, Fill, Grid, NarrowingScore, Operation, Operator,
-    Puzzle, SizeDistribution, Solver, Uniqueness,
-    constraints::cover::{Cover, Polyomino},
-    default_op_policy, generate, generate_with,
+    Cage, Cell, Cover, DEFAULT_SIZE_DISTRIBUTION, Delta, Fill, Grid, NarrowingScore, Operation,
+    Operator, Polyomino, Puzzle, SizeDistribution, Solver, Uniqueness, default_op_policy, generate,
+    generate_with,
 };
 use rand::SeedableRng;
 use rand_chacha::ChaCha8Rng;
@@ -214,7 +213,6 @@ fn puzzle_cells_visits_every_grid_cell() {
 
 #[test]
 fn puzzle_cover_len_equals_n_squared() {
-    use kenken::constraints::cover::Cover;
     let p = Puzzle::new(3).unwrap();
     assert_eq!(Cover::len(&p), 9);
     assert_eq!(Cover::cells(&p).len(), 9);
