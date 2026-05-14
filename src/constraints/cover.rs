@@ -1,4 +1,4 @@
-use crate::Cell;
+use crate::{Cell, Error};
 
 /// A set of [`Cell`]s.
 pub trait Cover {
@@ -18,19 +18,35 @@ pub trait Cover {
 pub struct Polyomino(Vec<Cell>);
 
 impl Polyomino {
-    /// # Panics
-    /// Panics if `cells` is empty or not edge-connected.
-    pub fn new(cells: &[Cell]) -> Self {
-        assert!(!cells.is_empty() && is_edge_connected_component(cells));
+    /// # Errors
+    /// Returns [`Error::EmptyPolyomino`] if `cells` is empty, or
+    /// [`Error::DisconnectedPolyomino`] if `cells` is not edge-connected.
+    pub fn new(cells: &[Cell]) -> Result<Self, Error> {
+        if cells.is_empty() {
+            return Err(Error::EmptyPolyomino);
+        }
+        if !is_edge_connected_component(cells) {
+            return Err(Error::DisconnectedPolyomino);
+        }
+        Ok(Self(polyomino_cell_order_storage(cells)))
+    }
+
+    /// Builds a polyomino without validating non-emptiness or connectivity.
+    ///
+    /// Callers must guarantee `cells` is non-empty and edge-connected.
+    pub(crate) fn new_unchecked(cells: &[Cell]) -> Self {
         Self(polyomino_cell_order_storage(cells))
     }
 
     /// Returns a new polyomino with `cell` added.
     ///
     /// Idempotent: if `cell` is already present, returns an equivalent
-    /// polyomino. # Panics
-    /// Panics if adding `cell` would make the polyomino disconnected.
-    pub fn insert(&self, cell: Cell) -> Self {
+    /// polyomino.
+    ///
+    /// # Errors
+    /// Returns [`Error::DisconnectedPolyomino`] if adding `cell` would make the
+    /// polyomino disconnected.
+    pub fn insert(&self, cell: Cell) -> Result<Self, Error> {
         let mut cells = self.0.clone();
         cells.push(cell);
         Self::new(&cells)
@@ -38,10 +54,13 @@ impl Polyomino {
 
     /// Returns a new polyomino with `cell` removed.
     ///
-    /// Idempotent: if `cell` is not present, returns an equivalent polyomino
-    /// wrapped in `Some`. # Panics
-    /// Panics if adding `cell` would make the polyomino disconnected.
-    pub fn remove(&self, cell: Cell) -> Self {
+    /// Idempotent: if `cell` is not present, returns an equivalent polyomino.
+    ///
+    /// # Errors
+    /// Returns [`Error::EmptyPolyomino`] if removing `cell` would empty the
+    /// polyomino, or [`Error::DisconnectedPolyomino`] if it would leave the
+    /// remaining cells disconnected.
+    pub fn remove(&self, cell: Cell) -> Result<Self, Error> {
         let cells = self
             .0
             .iter()
@@ -94,6 +113,7 @@ pub fn is_edge_connected_component(cells: &[Cell]) -> bool {
 }
 
 #[cfg(test)]
+#[allow(clippy::unwrap_used)]
 mod tests {
     use super::*;
 
@@ -154,7 +174,7 @@ mod tests {
 
     #[test]
     fn polyomino_cells_are_sorted() {
-        let r = Polyomino::new(&[Cell::new(1, 0), Cell::new(0, 0), Cell::new(0, 1)]);
+        let r = Polyomino::new(&[Cell::new(1, 0), Cell::new(0, 0), Cell::new(0, 1)]).unwrap();
         assert_eq!(
             r.cells(),
             vec![Cell::new(0, 0), Cell::new(0, 1), Cell::new(1, 0)]
@@ -163,43 +183,72 @@ mod tests {
 
     #[test]
     fn polyomino_len_matches_cell_count() {
-        let p = Polyomino::new(&[Cell::new(0, 0), Cell::new(0, 1), Cell::new(1, 1)]);
+        let p = Polyomino::new(&[Cell::new(0, 0), Cell::new(0, 1), Cell::new(1, 1)]).unwrap();
         assert_eq!(p.len(), 3);
     }
 
     #[test]
-    #[should_panic(expected = "assertion failed")]
-    fn polyomino_panics_on_empty() {
-        let _ = Polyomino::new(&[]);
+    fn polyomino_new_empty_returns_err() {
+        assert!(matches!(Polyomino::new(&[]), Err(Error::EmptyPolyomino)));
     }
 
     #[test]
-    #[should_panic(expected = "assertion failed")]
-    fn polyomino_panics_on_disconnected() {
-        let _ = Polyomino::new(&[Cell::new(0, 0), Cell::new(0, 2)]);
+    fn polyomino_new_disconnected_returns_err() {
+        assert!(matches!(
+            Polyomino::new(&[Cell::new(0, 0), Cell::new(0, 2)]),
+            Err(Error::DisconnectedPolyomino)
+        ));
+    }
+
+    #[test]
+    fn polyomino_new_distinguishes_empty_from_disconnected() {
+        // #45: empty and disconnected inputs must report distinct errors.
+        let empty = Polyomino::new(&[]);
+        let disconnected = Polyomino::new(&[Cell::new(0, 0), Cell::new(1, 1)]);
+        assert!(matches!(empty, Err(Error::EmptyPolyomino)));
+        assert!(matches!(disconnected, Err(Error::DisconnectedPolyomino)));
+    }
+
+    #[test]
+    fn polyomino_new_rejects_diagonal_only_inputs() {
+        // #46: replaces the deleted diagonal-polyomino tests — a diagonal-only
+        // set of cells is not edge-connected and must be rejected.
+        assert!(matches!(
+            Polyomino::new(&[Cell::new(0, 0), Cell::new(1, 1), Cell::new(2, 2)]),
+            Err(Error::DisconnectedPolyomino)
+        ));
     }
 
     // --- Polyomino::insert ---
 
     #[test]
     fn insert_adds_adjacent_cell() {
-        let p = Polyomino::new(&[Cell::new(0, 0)]);
-        let p2 = p.insert(Cell::new(0, 1));
+        let p = Polyomino::new(&[Cell::new(0, 0)]).unwrap();
+        let p2 = p.insert(Cell::new(0, 1)).unwrap();
         assert!(p2.cells().contains(&Cell::new(0, 1)));
         assert_eq!(p2.len(), 2);
     }
 
     #[test]
     fn insert_is_idempotent() {
-        let p = Polyomino::new(&[Cell::new(0, 0), Cell::new(0, 1)]);
-        let p2 = p.insert(Cell::new(0, 0));
+        let p = Polyomino::new(&[Cell::new(0, 0), Cell::new(0, 1)]).unwrap();
+        let p2 = p.insert(Cell::new(0, 0)).unwrap();
         assert_eq!(p2.len(), 2);
     }
 
     #[test]
+    fn insert_disconnected_returns_err() {
+        let p = Polyomino::new(&[Cell::new(0, 0)]).unwrap();
+        assert!(matches!(
+            p.insert(Cell::new(0, 2)),
+            Err(Error::DisconnectedPolyomino)
+        ));
+    }
+
+    #[test]
     fn insert_result_is_sorted() {
-        let p = Polyomino::new(&[Cell::new(0, 1)]);
-        let p2 = p.insert(Cell::new(0, 0));
+        let p = Polyomino::new(&[Cell::new(0, 1)]).unwrap();
+        let p2 = p.insert(Cell::new(0, 0)).unwrap();
         assert_eq!(p2.cells()[0], Cell::new(0, 0));
     }
 
@@ -207,16 +256,25 @@ mod tests {
 
     #[test]
     fn remove_deletes_cell() {
-        let p = Polyomino::new(&[Cell::new(0, 0), Cell::new(0, 1)]);
-        let p2 = p.remove(Cell::new(0, 1));
+        let p = Polyomino::new(&[Cell::new(0, 0), Cell::new(0, 1)]).unwrap();
+        let p2 = p.remove(Cell::new(0, 1)).unwrap();
         assert!(!p2.cells().contains(&Cell::new(0, 1)));
         assert_eq!(p2.len(), 1);
     }
 
     #[test]
     fn remove_is_idempotent() {
-        let p = Polyomino::new(&[Cell::new(0, 0), Cell::new(0, 1)]);
-        let p2 = p.remove(Cell::new(1, 1));
+        let p = Polyomino::new(&[Cell::new(0, 0), Cell::new(0, 1)]).unwrap();
+        let p2 = p.remove(Cell::new(1, 1)).unwrap();
         assert_eq!(p2, p);
+    }
+
+    #[test]
+    fn remove_last_cell_returns_err() {
+        let p = Polyomino::new(&[Cell::new(0, 0)]).unwrap();
+        assert!(matches!(
+            p.remove(Cell::new(0, 0)),
+            Err(Error::EmptyPolyomino)
+        ));
     }
 }

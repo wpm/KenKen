@@ -26,31 +26,30 @@ pub const DEFAULT_SIZE_DISTRIBUTION: SizeDistribution =
 /// - 2 cells: [`Operation::Divide`] when divisible, otherwise [`Operation::Subtract`].
 /// - 3+ cells: [`Operation::Multiply`] when the product fits in `n²`, otherwise [`Operation::Add`].
 ///
-/// # Panics
-/// Panics if `values` is empty. A cage always covers at least one cell, so
-/// callers that obtain `values` from a cage's cells will never trigger this.
-#[must_use]
-#[allow(clippy::panic)]
-pub fn default_op_policy(values: &[N], n: Index) -> Operation {
+/// # Errors
+/// Returns [`Error::EmptyOpPolicyValues`] if `values` is empty. A cage always
+/// covers at least one cell, so callers that obtain `values` from a cage's
+/// cells will never trigger this.
+pub fn default_op_policy(values: &[N], n: Index) -> Result<Operation, Error> {
     use Operation::{Add, Divide, Given, Multiply, Subtract};
     match values.len() {
-        0 => panic!("default_op_policy called with empty values slice"),
-        1 => Given(M::from(values[0])),
+        0 => Err(Error::EmptyOpPolicyValues),
+        1 => Ok(Given(M::from(values[0]))),
         2 => {
             let (hi, lo) = (values[0].max(values[1]), values[0].min(values[1]));
             if hi.is_multiple_of(lo) {
-                Divide(M::from(hi / lo))
+                Ok(Divide(M::from(hi / lo)))
             } else {
-                Subtract(M::from(hi - lo))
+                Ok(Subtract(M::from(hi - lo)))
             }
         }
         _ => {
             let prod: M = values.iter().map(|&v| M::from(v)).product();
             let area = M::try_from(n * n).unwrap_or(M::MAX);
             if prod <= area {
-                Multiply(prod)
+                Ok(Multiply(prod))
             } else {
-                Add(values.iter().map(|&v| M::from(v)).sum())
+                Ok(Add(values.iter().map(|&v| M::from(v)).sum()))
             }
         }
     }
@@ -87,7 +86,7 @@ pub fn generate_with<R: Rng, F>(
     sizes: SizeDistribution,
 ) -> Result<Puzzle, Error>
 where
-    F: Fn(&[N], Index) -> Operation,
+    F: Fn(&[N], Index) -> Result<Operation, Error>,
 {
     let mut puzzle = Puzzle::new(n)?;
     let latin_square = generate_latin_square(n, rng);
@@ -100,7 +99,7 @@ where
             .iter()
             .map(|cell| latin_square[cell.row][cell.column])
             .collect();
-        let operation = op(&values, n);
+        let operation = op(&values, n)?;
         let cage = Cage::new(n_max, polyomino, operation);
         puzzle = puzzle.insert_cage(cage)?;
     }
@@ -108,39 +107,51 @@ where
 }
 
 #[cfg(test)]
+#[allow(clippy::unwrap_used)]
 mod tests {
     use super::*;
 
     #[test]
     fn default_op_policy_one_cell_is_given() {
-        assert_eq!(default_op_policy(&[3], 4), Operation::Given(3));
+        assert_eq!(default_op_policy(&[3], 4).unwrap(), Operation::Given(3));
     }
 
     #[test]
     fn default_op_policy_two_cells_divisible_is_divide() {
-        assert_eq!(default_op_policy(&[2, 6], 6), Operation::Divide(3));
+        assert_eq!(default_op_policy(&[2, 6], 6).unwrap(), Operation::Divide(3));
     }
 
     #[test]
     fn default_op_policy_two_cells_not_divisible_is_subtract() {
-        assert_eq!(default_op_policy(&[2, 5], 6), Operation::Subtract(3));
+        assert_eq!(
+            default_op_policy(&[2, 5], 6).unwrap(),
+            Operation::Subtract(3)
+        );
     }
 
     #[test]
     fn default_op_policy_three_cells_product_within_n_squared_is_multiply() {
         // n²=16; product 1·2·3 = 6 ≤ 16
-        assert_eq!(default_op_policy(&[1, 2, 3], 4), Operation::Multiply(6));
+        assert_eq!(
+            default_op_policy(&[1, 2, 3], 4).unwrap(),
+            Operation::Multiply(6)
+        );
     }
 
     #[test]
     fn default_op_policy_three_cells_product_above_n_squared_is_add() {
         // n²=16; product 3·4·4 = 48 > 16
-        assert_eq!(default_op_policy(&[3, 4, 4], 4), Operation::Add(11));
+        assert_eq!(
+            default_op_policy(&[3, 4, 4], 4).unwrap(),
+            Operation::Add(11)
+        );
     }
 
     #[test]
-    #[should_panic(expected = "default_op_policy called with empty values slice")]
-    fn default_op_policy_empty_panics() {
-        let _ = default_op_policy(&[], 4);
+    fn default_op_policy_empty_returns_err() {
+        assert!(matches!(
+            default_op_policy(&[], 4),
+            Err(Error::EmptyOpPolicyValues)
+        ));
     }
 }

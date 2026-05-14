@@ -106,7 +106,7 @@ fn uniqueness_and_solutions_buckets_agree() {
 fn custom_op_policy_overrides_default() {
     let policy = |values: &[u8], n: usize| {
         if values.len() == 2 {
-            Operation::Add(values.iter().map(|&v| u16::from(v)).sum())
+            Ok(Operation::Add(values.iter().map(|&v| u16::from(v)).sum()))
         } else {
             default_op_policy(values, n)
         }
@@ -161,7 +161,7 @@ fn given_cage(row: usize, column: usize, value: u8) -> Cage {
     let cell = Cell::new(row, column);
     Cage::new(
         value,
-        Polyomino::new(&[cell]),
+        Polyomino::new(&[cell]).unwrap(),
         Operation::Given(u16::from(value)),
     )
 }
@@ -236,10 +236,10 @@ fn singleton_grid_yields_its_only_cell() {
 
 #[test]
 fn polyomino_extend_and_without_are_public() {
-    let p = Polyomino::new(&[Cell::new(0, 0), Cell::new(0, 1)]);
-    let extended = p.insert(Cell::new(0, 2));
+    let p = Polyomino::new(&[Cell::new(0, 0), Cell::new(0, 1)]).unwrap();
+    let extended = p.insert(Cell::new(0, 2)).unwrap();
     assert_eq!(extended.len(), 3);
-    let shrunk = extended.remove(Cell::new(0, 2));
+    let shrunk = extended.remove(Cell::new(0, 2)).unwrap();
     assert_eq!(shrunk, p);
 }
 
@@ -262,7 +262,7 @@ fn puzzle_cage_accessors_are_reachable() {
 fn rank_tuples_for_cage_is_public_and_returns_scored_entries() {
     // Tuples (1,2) and (2,1) tie on reduction; lex tiebreak orders (1,2) first.
     let cells = [Cell::new(0, 0), Cell::new(0, 1)];
-    let cage = Cage::new(4, Polyomino::new(&cells), Operation::Add(3));
+    let cage = Cage::new(4, Polyomino::new(&cells).unwrap(), Operation::Add(3));
     let p = Puzzle::new(4).unwrap().insert_cage(cage.clone()).unwrap();
     let ranked: Vec<(Vec<u8>, Puzzle, NarrowingScore)> = p.rank_tuples_for_cage(&cage).unwrap();
     let tuples: Vec<Vec<u8>> = ranked.iter().map(|(t, ..)| t.clone()).collect();
@@ -337,7 +337,7 @@ fn delta_narrow_widen_and_propagate_fully_are_public() {
     // Identity delta is a no-op after propagation, regardless of starting state.
     let p = Puzzle::new(2).unwrap();
     let identity = Delta::identity(2).unwrap();
-    let unchanged = p.narrow(&identity);
+    let unchanged = p.narrow(&identity).unwrap();
     assert!(unchanged.is_valid());
 
     // Pinning (0,0)={1} on a 2×2 grid forces a unique completion via narrow +
@@ -345,7 +345,7 @@ fn delta_narrow_widen_and_propagate_fully_are_public() {
     let pinning = Delta::identity(2)
         .unwrap()
         .set(Cell::new(0, 0), Fill::new([1]));
-    let pinned = Puzzle::new(2).unwrap().narrow(&pinning);
+    let pinned = Puzzle::new(2).unwrap().narrow(&pinning).unwrap();
     assert!(pinned.is_valid());
     assert_eq!(pinned.candidates(Cell::new(1, 1)).unwrap(), Fill::new([1]),);
 
@@ -353,7 +353,7 @@ fn delta_narrow_widen_and_propagate_fully_are_public() {
     let emptying = Delta::identity(2)
         .unwrap()
         .set(Cell::new(0, 0), Fill::new([]));
-    let invalid = Puzzle::new(2).unwrap().narrow(&emptying);
+    let invalid = Puzzle::new(2).unwrap().narrow(&emptying).unwrap();
     assert!(!invalid.is_valid());
 
     // Widen with the identity over a fully propagated puzzle re-narrows back to the
@@ -363,7 +363,7 @@ fn delta_narrow_widen_and_propagate_fully_are_public() {
         .insert_cage(given_cage(0, 0, 1))
         .unwrap()
         .propagate_fully();
-    let rewidened = solved.widen(&identity);
+    let rewidened = solved.widen(&identity).unwrap();
     assert!(rewidened.is_valid());
     assert_eq!(
         rewidened.candidates(Cell::new(1, 1)).unwrap(),
@@ -380,13 +380,13 @@ fn solve_simple_2x2_puzzle() {
         .unwrap()
         .insert_cage(Cage::new(
             2,
-            Polyomino::new(&[Cell::new(0, 0), Cell::new(0, 1)]),
+            Polyomino::new(&[Cell::new(0, 0), Cell::new(0, 1)]).unwrap(),
             Operation::Add(3),
         ))
         .unwrap()
         .insert_cage(Cage::new(
             2,
-            Polyomino::new(&[Cell::new(1, 0), Cell::new(1, 1)]),
+            Polyomino::new(&[Cell::new(1, 0), Cell::new(1, 1)]).unwrap(),
             Operation::Add(3),
         ))
         .unwrap();
