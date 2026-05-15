@@ -23,7 +23,7 @@ pub type Tuple = Vec<N>;
 /// assignments that repeat a value within any shared row or column of the
 /// polyomino.
 #[must_use]
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Eq, PartialEq)]
 pub struct Cage {
     polyomino: Polyomino,
     operation: Operation,
