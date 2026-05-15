@@ -81,24 +81,15 @@ mod tests {
         );
     }
 
-    #[test]
-    fn row_zero_n_returns_err() {
-        assert!(matches!(
-            AllDifferent::row(0, 0),
-            Err(Error::IndexOutOfRange(0, 0))
-        ));
+    fn assert_index_out_of_range(f: impl Fn(usize, usize) -> Result<AllDifferent, Error>) {
+        assert!(matches!(f(0, 0), Err(Error::IndexOutOfRange(0, 0))));
+        assert!(matches!(f(3, 3), Err(Error::IndexOutOfRange(3, 3))));
+        assert!(matches!(f(3, 5), Err(Error::IndexOutOfRange(5, 3))));
     }
 
     #[test]
-    fn row_index_ge_n_returns_err() {
-        assert!(matches!(
-            AllDifferent::row(3, 3),
-            Err(Error::IndexOutOfRange(3, 3))
-        ));
-        assert!(matches!(
-            AllDifferent::row(3, 5),
-            Err(Error::IndexOutOfRange(5, 3))
-        ));
+    fn row_index_out_of_range_returns_err() {
+        assert_index_out_of_range(AllDifferent::row);
     }
 
     // --- Region::column ---
@@ -113,23 +104,8 @@ mod tests {
     }
 
     #[test]
-    fn column_zero_n_returns_err() {
-        assert!(matches!(
-            AllDifferent::column(0, 0),
-            Err(Error::IndexOutOfRange(0, 0))
-        ));
-    }
-
-    #[test]
-    fn column_index_ge_n_returns_err() {
-        assert!(matches!(
-            AllDifferent::column(3, 3),
-            Err(Error::IndexOutOfRange(3, 3))
-        ));
-        assert!(matches!(
-            AllDifferent::column(3, 5),
-            Err(Error::IndexOutOfRange(5, 3))
-        ));
+    fn column_index_out_of_range_returns_err() {
+        assert_index_out_of_range(AllDifferent::column);
     }
 
     #[test]
