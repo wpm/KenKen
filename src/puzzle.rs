@@ -341,11 +341,7 @@ impl Puzzle {
         Ok(results)
     }
 
-    fn apply_delta(
-        &self,
-        delta: &Delta,
-        op: impl Fn(Fill, Fill) -> Fill,
-    ) -> Result<Self, Error> {
+    fn apply_delta(&self, delta: &Delta, op: impl Fn(Fill, Fill) -> Fill) -> Result<Self, Error> {
         if delta.n() != self.n() {
             return Err(Error::DeltaSizeMismatch(delta.n(), self.n()));
         }
