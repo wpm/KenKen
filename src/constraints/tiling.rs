@@ -37,7 +37,7 @@ impl SizeDistribution {
 /// - Every polyomino's cells are edge-connected.
 /// - Every cell of every polyomino lies inside the `n`×`n` grid.
 #[must_use]
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Eq, PartialEq)]
 pub struct Tiling {
     n: usize,
     polyominos: HashSet<Polyomino>,
