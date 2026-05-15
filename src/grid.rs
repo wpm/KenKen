@@ -302,6 +302,12 @@ mod tests {
     }
 
     #[test]
+    fn row_last_index_succeeds() {
+        let g = Grid::new(3).unwrap();
+        assert!(g.row(2).is_ok());
+    }
+
+    #[test]
     fn column_returns_all_different_for_column() {
         use crate::constraints::cover::Cover;
         let g = Grid::new(3).unwrap();
@@ -316,6 +322,12 @@ mod tests {
     fn column_out_of_bounds_returns_err() {
         let g = Grid::new(3).unwrap();
         assert!(g.column(3).is_err());
+    }
+
+    #[test]
+    fn column_last_index_succeeds() {
+        let g = Grid::new(3).unwrap();
+        assert!(g.column(2).is_ok());
     }
 
     #[test]

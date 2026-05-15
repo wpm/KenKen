@@ -188,6 +188,13 @@ mod tests {
     }
 
     #[test]
+    fn polyomino_new_unchecked_builds_from_connected_cells() {
+        let p = Polyomino::new_unchecked(&[Cell::new(0, 0), Cell::new(0, 1)]);
+        assert_eq!(p.len(), 2);
+        assert_eq!(p.cells(), vec![Cell::new(0, 0), Cell::new(0, 1)]);
+    }
+
+    #[test]
     fn polyomino_new_empty_returns_err() {
         assert!(matches!(Polyomino::new(&[]), Err(Error::EmptyPolyomino)));
     }

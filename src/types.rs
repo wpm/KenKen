@@ -1,4 +1,7 @@
-use std::ops::{BitAnd, BitOr};
+use std::{
+    fmt,
+    ops::{BitAnd, BitOr},
+};
 
 use crate::Cage;
 
@@ -159,6 +162,61 @@ pub enum Error {
     /// An operation policy received an empty value slice.
     EmptyOpPolicyValues,
 }
+
+impl fmt::Display for Error {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::InvalidGridSize(n) => write!(f, "invalid grid size {n}"),
+            Self::InvalidCell(c) => {
+                write!(f, "cell ({}, {}) is outside the grid", c.row, c.column)
+            }
+            Self::CageConflict(new, existing) => {
+                write!(f, "cage {new:?} conflicts with existing cage {existing:?}")
+            }
+            Self::CageNotInPuzzle(cage) => write!(f, "cage {cage:?} is not in this puzzle"),
+            Self::CellNotCovered(c) => write!(
+                f,
+                "cell ({}, {}) is not covered by any polyomino",
+                c.row, c.column
+            ),
+            Self::WouldDisconnect(c) => write!(
+                f,
+                "removing cell ({}, {}) would disconnect the polyomino",
+                c.row, c.column
+            ),
+            Self::TargetNotAdjacent => {
+                write!(f, "target cell is not edge-adjacent to the polyomino")
+            }
+            Self::CellAlreadyInPolyomino(c) => write!(
+                f,
+                "cell ({}, {}) is already in the polyomino",
+                c.row, c.column
+            ),
+            Self::RemovalWouldEmptyPolyomino(c) => write!(
+                f,
+                "removing cell ({}, {}) would leave an empty polyomino",
+                c.row, c.column
+            ),
+            Self::EmptyPolyomino => write!(
+                f,
+                "polyomino cannot be constructed from an empty cell slice"
+            ),
+            Self::DisconnectedPolyomino => write!(f, "polyomino cells are not edge-connected"),
+            Self::IndexOutOfRange(index, n) => {
+                write!(f, "index {index} is out of range for grid of size {n}")
+            }
+            Self::DeltaSizeMismatch(delta_n, puzzle_n) => write!(
+                f,
+                "delta size {delta_n} does not match puzzle size {puzzle_n}"
+            ),
+            Self::EmptyOpPolicyValues => {
+                write!(f, "operation policy received an empty value slice")
+            }
+        }
+    }
+}
+
+impl std::error::Error for Error {}
 
 #[cfg(test)]
 mod tests {
