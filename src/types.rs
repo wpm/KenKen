@@ -348,4 +348,55 @@ mod tests {
         assert!(n.contains(&Cell::new(1, 0)));
         assert!(n.contains(&Cell::new(0, 1)));
     }
+
+    #[test]
+    fn error_display_covers_all_variants() {
+        use crate::Error;
+        let c = Cell::new(1, 2);
+        assert_eq!(Error::InvalidGridSize(0).to_string(), "invalid grid size 0");
+        assert_eq!(
+            Error::InvalidCell(c).to_string(),
+            "cell (1, 2) is outside the grid"
+        );
+        assert_eq!(
+            Error::CellNotCovered(c).to_string(),
+            "cell (1, 2) is not covered by any polyomino"
+        );
+        assert_eq!(
+            Error::WouldDisconnect(c).to_string(),
+            "removing cell (1, 2) would disconnect the polyomino"
+        );
+        assert_eq!(
+            Error::TargetNotAdjacent.to_string(),
+            "target cell is not edge-adjacent to the polyomino"
+        );
+        assert_eq!(
+            Error::CellAlreadyInPolyomino(c).to_string(),
+            "cell (1, 2) is already in the polyomino"
+        );
+        assert_eq!(
+            Error::RemovalWouldEmptyPolyomino(c).to_string(),
+            "removing cell (1, 2) would leave an empty polyomino"
+        );
+        assert_eq!(
+            Error::EmptyPolyomino.to_string(),
+            "polyomino cannot be constructed from an empty cell slice"
+        );
+        assert_eq!(
+            Error::DisconnectedPolyomino.to_string(),
+            "polyomino cells are not edge-connected"
+        );
+        assert_eq!(
+            Error::IndexOutOfRange(3, 2).to_string(),
+            "index 3 is out of range for grid of size 2"
+        );
+        assert_eq!(
+            Error::DeltaSizeMismatch(4, 3).to_string(),
+            "delta size 4 does not match puzzle size 3"
+        );
+        assert_eq!(
+            Error::EmptyOpPolicyValues.to_string(),
+            "operation policy received an empty value slice"
+        );
+    }
 }
