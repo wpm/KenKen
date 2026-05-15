@@ -7,7 +7,7 @@ use crate::{
 /// A constraint that ensures each cell in a row or column has a different
 /// value.
 #[must_use]
-#[derive(Clone)]
+#[derive(Debug, Clone)]
 pub struct AllDifferent(Vec<Cell>);
 
 impl AllDifferent {
