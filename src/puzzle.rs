@@ -489,6 +489,7 @@ mod tests {
             .unwrap();
         let result = puzzle.insert_cage(make_cage(&[(0, 1), (0, 2)], 4));
         assert!(matches!(result, Err(Error::CageConflict(_, _))));
+        assert!(result.err().unwrap().to_string().contains("conflicts with"));
     }
 
     #[test]
@@ -995,10 +996,16 @@ mod tests {
     fn rank_returns_err_for_unknown_cage() {
         let p = Puzzle::new(4).unwrap();
         let cage = make_cage(&[(0, 0), (0, 1)], 4);
-        assert!(matches!(
-            p.rank_tuples_for_cage(&cage),
-            Err(Error::CageNotInPuzzle(_)),
-        ));
+        let result = p.rank_tuples_for_cage(&cage);
+        assert!(
+            result
+                .as_ref()
+                .err()
+                .unwrap()
+                .to_string()
+                .contains("not in this puzzle")
+        );
+        assert!(matches!(result, Err(Error::CageNotInPuzzle(_))));
     }
 
     #[test]
