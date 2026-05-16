@@ -65,7 +65,7 @@ impl Constraint for Cage {
             }
         }
         let fill_constraints: HashMap<Cell, Fill> = self.cells().zip(slots).collect();
-        grid.clone().apply(fill_constraints)
+        grid.apply(fill_constraints)
     }
 }
 
