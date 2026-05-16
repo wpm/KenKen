@@ -17,3 +17,6 @@ strum = { version = "0.28", features = ["derive"] }
 
 [dev-dependencies]
 rand_chacha = "0.10.0"
+
+[lints.clippy]
+must_use_candidate = "warn"
