@@ -91,13 +91,6 @@ impl Grid {
         self.fills.iter().any(|values| values.is_empty())
     }
 
-    // TODO Get rid of Grid.entries().
-    /// Returns an iterator over every `(cell, fill)` pair in row-major order.
-    pub fn entries(&self) -> impl Iterator<Item = (Cell, Fill)> + '_ {
-        self.cells()
-            .map(|cell| (cell, self.fills[cell.row * self.n + cell.column]))
-    }
-
     const fn fill_index(&self, cell: &Cell) -> Option<usize> {
         if cell.row < self.n && cell.column < self.n {
             Some(cell.row * self.n + cell.column)
@@ -250,43 +243,4 @@ mod tests {
         assert_eq!(after, before);
     }
 
-    #[test]
-    fn entries_count_equals_n_squared() {
-        let g = Grid::new(3).unwrap();
-        assert_eq!(g.entries().count(), 9);
-    }
-
-    #[test]
-    fn entries_are_in_row_major_order() {
-        let g = Grid::new(2).unwrap();
-        let cells: Vec<Cell> = g.entries().map(|(c, _)| c).collect();
-        assert_eq!(
-            cells,
-            vec![
-                Cell::new(0, 0),
-                Cell::new(0, 1),
-                Cell::new(1, 0),
-                Cell::new(1, 1),
-            ]
-        );
-    }
-
-    #[test]
-    fn entries_reflect_set_values() {
-        let cell = Cell::new(1, 2);
-        let g = Grid::new(3).unwrap().set(&cell, Fill::new([2]));
-        let fill = g.entries().find(|(c, _)| c == &cell).map(|(_, f)| f);
-        assert_eq!(fill, Some(Fill::new([2])));
-    }
-
-    #[test]
-    fn entries_covers_all_cells() {
-        let n = 4;
-        let g = Grid::new(n).unwrap();
-        let mut seen: std::collections::HashSet<Cell> = std::collections::HashSet::new();
-        for (cell, _) in g.entries() {
-            assert!(seen.insert(cell), "duplicate cell {cell:?}");
-        }
-        assert_eq!(seen.len(), n * n);
-    }
 }
