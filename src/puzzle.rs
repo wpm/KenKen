@@ -57,10 +57,11 @@ impl Puzzle {
         {
             return Err(CageConflict(cage));
         }
-        let mut cages = self.cages.clone();
-        if !cages.insert(cage) {
+        if self.cages.contains(&cage) {
             return Ok(Some(self.clone()));
         }
+        let mut cages = self.cages.clone();
+        cages.insert(cage);
         Self {
             grid: self.grid.clone(),
             all_different: self.all_different.clone(),

@@ -36,12 +36,12 @@ impl AllDifferent {
 
 impl Constraint for AllDifferent {
     fn apply_to(&self, grid: &Grid) -> Result<Grid, Error> {
-        let fills = self
-            .cells()
-            .map(|cell| grid.get(&cell))
+        let cells: Vec<Cell> = self.cells().collect();
+        let fills = cells
+            .iter()
+            .map(|cell| grid.get(cell))
             .collect::<Result<Vec<_>, _>>()?;
-        let all_different_values = regin(&fills);
-        let fill_constraints = self.cells().zip(all_different_values).collect();
+        let fill_constraints = cells.into_iter().zip(regin(&fills)).collect();
         grid.apply(fill_constraints)
     }
 }

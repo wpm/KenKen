@@ -400,7 +400,6 @@ fn next_permutation(perm: &mut [N]) -> bool {
 /// Two `cell`s are edge-connected if they share a common edge.
 #[must_use]
 pub fn is_edge_connected_component(cells: &BTreeSet<Cell>) -> bool {
-    let cells = cells.clone();
     let Some(&start) = cells.first() else {
         return true;
     };
