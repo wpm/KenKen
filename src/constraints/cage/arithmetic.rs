@@ -1,6 +1,6 @@
 use crate::{
     constraints::cage::Tuple,
-    types::{M, N},
+    types::{Error, M, N},
 };
 
 /// Returns an iterator over all non-decreasing `k`-tuples with values in
@@ -60,14 +60,15 @@ fn simplex_multisets(
                     t
                 })
                 .filter(move |t| {
-                    let v = sequence_operation(f, t);
-                    if t.len() == tuple_size {
-                        v == s
-                    } else {
-                        // Prune partials whose accumulated value already exceeds s; extending
-                        // them can only increase it.
-                        v <= s
-                    }
+                    sequence_operation(f, t).is_ok_and(|v| {
+                        if t.len() == tuple_size {
+                            v == s
+                        } else {
+                            // Prune partials whose accumulated value already exceeds s; extending
+                            // them can only increase it.
+                            v <= s
+                        }
+                    })
                 })
                 .collect::<Vec<_>>()
         }))
@@ -76,13 +77,12 @@ fn simplex_multisets(
 }
 
 /// Reduces `t` by left-folding `f` over its elements, starting from the first
-/// element widened to `M`. Panics if `t` is empty.
-#[allow(clippy::panic)]
-fn sequence_operation(f: impl Fn(M, N) -> M, t: &[N]) -> M {
+/// element widened to `M`. Returns [`Error::EmptyTuple`] if `t` is empty.
+fn sequence_operation(f: impl Fn(M, N) -> M, t: &[N]) -> Result<M, Error> {
     let Some((&t_0, rest)) = t.split_first() else {
-        panic!("tuple must have at least one element");
+        return Err(Error::EmptyTuple);
     };
-    rest.iter().fold(M::from(t_0), |acc, &i| f(acc, i))
+    Ok(rest.iter().fold(M::from(t_0), |acc, &i| f(acc, i)))
 }
 
 #[cfg(test)]
@@ -215,12 +215,14 @@ mod tests {
 
     #[test]
     fn sequence_operation_with_named_function_folds_correctly() {
-        assert_eq!(sequence_operation(add_acc, &[3, 4, 5]), 12);
+        assert_eq!(sequence_operation(add_acc, &[3, 4, 5]).unwrap(), 12);
     }
 
     #[test]
-    #[should_panic(expected = "tuple must have at least one element")]
-    fn sequence_operation_panics_on_empty_tuple() {
-        let _ = sequence_operation(add_acc, &Tuple::new());
+    fn sequence_operation_errors_on_empty_tuple() {
+        assert!(matches!(
+            sequence_operation(add_acc, &Tuple::new()),
+            Err(Error::EmptyTuple)
+        ));
     }
 }

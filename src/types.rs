@@ -162,6 +162,8 @@ pub enum Error {
     DeltaSizeMismatch(Index, Index),
     /// An operation policy received an empty value slice.
     EmptyOpPolicyValues,
+    /// A tuple operation was applied to an empty slice.
+    EmptyTuple,
 }
 
 impl fmt::Display for Error {
@@ -215,6 +217,9 @@ impl fmt::Display for Error {
             ),
             Self::EmptyOpPolicyValues => {
                 write!(f, "operation policy received an empty value slice")
+            }
+            Self::EmptyTuple => {
+                write!(f, "tuple operation cannot be applied to an empty tuple")
             }
         }
     }
@@ -402,6 +407,10 @@ mod tests {
         assert_eq!(
             Error::EmptyOpPolicyValues.to_string(),
             "operation policy received an empty value slice"
+        );
+        assert_eq!(
+            Error::EmptyTuple.to_string(),
+            "tuple operation cannot be applied to an empty tuple"
         );
     }
 
