@@ -842,6 +842,28 @@ mod tests {
     }
 
     #[test]
+    fn operator_tuples_divide_same_row_pair() {
+        // Same-row pair on n=4: values must differ, so [2,2] is pruned.
+        // Divide(2): [1,2],[2,1],[2,4],[4,2]; Divide(3): [1,3],[3,1]; Divide(4): [1,4],[4,1]
+        let tuples = pair().operator_tuples(4, Operator::Divide);
+        let mut got: Vec<Vec<u8>> = tuples.values().flat_map(|ts| ts.iter().cloned()).collect();
+        got.sort_unstable();
+        assert_eq!(
+            got,
+            vec![
+                vec![1u8, 2],
+                vec![1, 3],
+                vec![1, 4],
+                vec![2, 1],
+                vec![2, 4],
+                vec![3, 1],
+                vec![4, 1],
+                vec![4, 2],
+            ]
+        );
+    }
+
+    #[test]
     fn operator_tuples_add_singleton_is_empty() {
         assert!(singleton().operator_tuples(4, Operator::Add).is_empty());
     }

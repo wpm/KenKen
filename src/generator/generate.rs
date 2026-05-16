@@ -198,6 +198,8 @@ fn grid_neighbors(cell: Cell, n: usize) -> impl Iterator<Item = Cell> {
 #[cfg(test)]
 #[allow(clippy::unwrap_used)]
 mod tests {
+    use rand::SeedableRng;
+
     use super::*;
 
     #[test]
@@ -242,5 +244,55 @@ mod tests {
             default_op_policy(&[], 4),
             Err(Error::EmptyOpPolicyValues)
         ));
+    }
+
+    #[test]
+    fn size_distribution_fixed_always_returns_fixed_size() {
+        let mut rng = rand_chacha::ChaCha8Rng::seed_from_u64(0);
+        let dist = SizeDistribution::Fixed(3);
+        for _ in 0..10 {
+            assert_eq!(dist.sample(&mut rng), 3);
+        }
+    }
+
+    #[test]
+    fn size_distribution_uniform_samples_within_range() {
+        let mut rng = rand_chacha::ChaCha8Rng::seed_from_u64(42);
+        let dist = SizeDistribution::Uniform { min: 2, max: 4 };
+        for _ in 0..50 {
+            let s = dist.sample(&mut rng);
+            assert!((2..=4).contains(&s));
+        }
+    }
+
+    #[test]
+    fn greedy_covers_all_cells() {
+        // Run many seeds across different distributions to maximize branch coverage.
+        for seed in 0u64..200 {
+            let dist = if seed % 2 == 0 {
+                SizeDistribution::Fixed(3)
+            } else {
+                SizeDistribution::Uniform { min: 1, max: 4 }
+            };
+            let mut rng = rand_chacha::ChaCha8Rng::seed_from_u64(seed);
+            let n = if seed % 3 == 0 { 4 } else { 3 };
+            let tiling = greedy(n, &dist, &mut rng).unwrap();
+            let covered: std::collections::HashSet<crate::Cell> =
+                tiling.iter().flat_map(Cover::cells).collect();
+            assert_eq!(covered.len(), n * n);
+        }
+    }
+
+    #[test]
+    fn generate_returns_a_puzzle() {
+        let mut rng = rand_chacha::ChaCha8Rng::seed_from_u64(7);
+        assert!(generate(4, &mut rng).unwrap().is_some());
+    }
+
+    #[test]
+    fn generate_invalid_n_returns_err() {
+        let mut rng = rand_chacha::ChaCha8Rng::seed_from_u64(0);
+        assert!(generate(0, &mut rng).is_err());
+        assert!(generate(10, &mut rng).is_err());
     }
 }

@@ -114,4 +114,10 @@ mod tests {
         assert_eq!(row_4().len(), 4);
         assert_eq!(column_3().len(), 3);
     }
+
+    #[test]
+    fn is_empty_is_false_for_nonempty_constraint() {
+        assert!(!row_4().is_empty());
+        assert!(!column_3().is_empty());
+    }
 }
