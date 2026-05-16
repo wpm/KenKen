@@ -87,7 +87,8 @@ impl Puzzle {
         }
     }
 
-    /// Returns the puzzle's cages in the order defined by the storage.
+    /// Returns the puzzle's cages in ascending [`Cage`] order — by polyomino
+    /// cells (row-major), then operation, then tuples.
     pub fn cages(&self) -> impl Iterator<Item = &Cage> {
         self.cages.iter()
     }
@@ -264,8 +265,7 @@ mod tests {
             .insert(a.clone())
             .unwrap()
             .unwrap();
-        let collected: Vec<&Cage> = puzzle.cages().collect();
-        assert_eq!(collected, vec![&a, &b]);
+        itertools::assert_equal(puzzle.cages(), &[a, b]);
     }
 
     // --- Puzzle::branch ---
