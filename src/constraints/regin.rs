@@ -29,8 +29,7 @@ use std::collections::HashMap;
 
 use crate::types::{Fill, N};
 
-#[must_use]
-#[allow(clippy::similar_names)]
+#[allow(clippy::similar_names, unused_results)]
 pub fn regin(domains: &[Fill]) -> Vec<Fill> {
     let n = domains.len();
     if n == 0 {
@@ -170,6 +169,7 @@ fn kosaraju_scc(adj: &[Vec<usize>], n: usize) -> Vec<usize> {
     comp
 }
 
+#[allow(unused_results)]
 fn dfs_finish(start: usize, adj: &[Vec<usize>], visited: &mut [bool], order: &mut Vec<usize>) {
     // Iterative to avoid stack overflow on large graphs.
     let mut stack: Vec<(usize, usize)> = vec![(start, 0)];

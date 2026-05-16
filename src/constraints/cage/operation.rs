@@ -33,7 +33,6 @@ pub enum Operator {
 
 impl Operator {
     /// Returns the operator of `operation`.
-    #[must_use]
     pub const fn of(operation: Operation) -> Self {
         match operation {
             Operation::Add(_) => Self::Add,

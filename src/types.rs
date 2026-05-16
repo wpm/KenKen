@@ -23,7 +23,6 @@ pub struct Cell {
 
 impl Cell {
     /// Creates a cell at the given `row` and `column`.
-    #[must_use]
     pub const fn new(row: Index, column: Index) -> Self {
         Self { row, column }
     }
@@ -59,7 +58,6 @@ impl Fill {
     }
 
     /// Returns the full set `{1, ..., n}`.
-    #[must_use]
     #[allow(clippy::cast_possible_truncation)]
     pub fn full(n: Index) -> Self {
         Self::new(1..=(n as N))
@@ -71,7 +69,6 @@ impl Fill {
     }
 
     /// Returns true if the set contains no values.
-    #[must_use]
     pub const fn is_empty(self) -> bool {
         self.0 == 0
     }
@@ -81,19 +78,16 @@ impl Fill {
     /// Values are stored in bits 1–9 of a `u16`, so exactly one value set means
     /// exactly one bit is set, which is equivalent to the inner integer
     /// being a power of two.
-    #[must_use]
     pub const fn is_singleton(self) -> bool {
         self.0.is_power_of_two()
     }
 
     /// Returns the number of candidate values in the fill.
-    #[must_use]
     pub const fn len(self) -> usize {
         self.0.count_ones() as usize
     }
 
     /// Returns a new `Fill` with the value `n` removed.
-    #[must_use]
     pub const fn remove(self, n: N) -> Self {
         Self(self.0 & !(1 << n))
     }

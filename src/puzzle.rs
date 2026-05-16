@@ -49,6 +49,7 @@ impl Puzzle {
     /// # Errors
     /// Returns [`CageConflict`] if `cage` overlaps any cage already in
     /// the puzzle not identical to `cage`.
+    #[allow(unused_results)]
     pub fn insert(&self, cage: Cage) -> Result<Option<Self>, Error> {
         if self.cages.contains(&cage) {
             return Ok(Some(self.clone()));
@@ -74,7 +75,6 @@ impl Puzzle {
     ///
     /// This is idempotent. Attempting to remove a `cage` that is not present returns the puzzle
     /// unchanged.
-    #[must_use]
     pub fn remove(&self, cage: &Cage) -> Self {
         let mut cages = self.cages.clone();
         if !cages.remove(cage) {

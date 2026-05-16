@@ -139,6 +139,7 @@ where
 /// edge-connected uncovered cells until the target size sampled from
 /// `dist` is reached or no candidates remain, then starts a new
 /// polyomino.
+#[allow(unused_results)]
 pub fn greedy<R: Rng>(
     n: usize,
     dist: &SizeDistribution,

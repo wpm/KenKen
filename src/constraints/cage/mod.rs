@@ -26,7 +26,6 @@ impl Cage {
     /// Creates a cage over the given polyomino. Stores valid ordered tuples for
     /// `operation`, with tuples that repeat a value within any shared row
     /// or column dropped.
-    #[must_use]
     pub fn new(n: N, polyomino: Polyomino, operation: Operation) -> Self {
         let tuples = polyomino.valid_tuples(n, operation);
         Self {
@@ -42,13 +41,11 @@ impl Cage {
     }
 
     /// Returns this cage's operation.
-    #[must_use]
     pub const fn operation(&self) -> Operation {
         self.operation
     }
 
     /// Returns a slice over the cage's precomputed valid ordered tuples.
-    #[must_use]
     pub fn tuples(&self) -> &[Tuple] {
         &self.tuples
     }
