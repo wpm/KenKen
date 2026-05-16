@@ -16,6 +16,9 @@ pub trait Constraint {
 /// A set of [`Cell`]s.
 pub trait Cover {
     /// The covering [`Cell`]s in row-major order.
+    ///
+    /// Implementations must be cheap to call repeatedly; the default `len` and
+    /// `is_empty` methods each invoke `cells()` independently.
     fn cells(&self) -> impl Iterator<Item = Cell>;
 
     fn len(&self) -> usize {
