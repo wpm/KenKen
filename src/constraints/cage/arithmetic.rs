@@ -86,6 +86,7 @@ fn sequence_operation(f: impl Fn(M, N) -> M, t: &[N]) -> Result<M, Error> {
 }
 
 #[cfg(test)]
+#[allow(clippy::unwrap_used)]
 mod tests {
     use super::*;
 
