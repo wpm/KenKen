@@ -1,19 +1,41 @@
 //! Core puzzle generation: assigns operations and targets to cages over a
 //! solved Latin square.
 
-use rand::Rng;
+use std::collections::HashSet;
+
+use rand::{Rng, RngExt};
 
 use crate::{
-    Cage,
+    Cell, Polyomino,
     constraints::{
-        cage::operation::Operation,
-        cover::Cover,
-        tiling::{SizeDistribution, Tiling},
+        Cover,
+        cage::{Cage, operation::Operation},
     },
     generator::latin_square::generate_latin_square,
     puzzle::Puzzle,
     types::{Error, Index, M, N},
 };
+#[derive(Debug, Clone, Copy)]
+pub enum SizeDistribution {
+    /// Every polyomino has the same target size.
+    Fixed(usize),
+    /// Target size sampled uniformly from `min..=max`.
+    Uniform {
+        /// Smallest allowed cage size.
+        min: usize,
+        /// Largest allowed cage size.
+        max: usize,
+    },
+}
+
+impl SizeDistribution {
+    fn sample<R: Rng>(self, rng: &mut R) -> usize {
+        match self {
+            Self::Fixed(s) => s,
+            Self::Uniform { min, max } => rng.random_range(min..=max),
+        }
+    }
+}
 
 /// Default size distribution used by [`generate`]: cage sizes drawn uniformly
 /// from `1..=4`.
@@ -60,7 +82,7 @@ pub fn default_op_policy(values: &[N], n: Index) -> Result<Operation, Error> {
 ///
 /// # Errors
 /// Returns `Error` if `n` is not in `1..=9`.
-pub fn generate<R: Rng>(n: Index, rng: &mut R) -> Result<Puzzle, Error> {
+pub fn generate<R: Rng>(n: Index, rng: &mut R) -> Result<Option<Puzzle>, Error> {
     generate_with(n, rng, default_op_policy, DEFAULT_SIZE_DISTRIBUTION)
 }
 
@@ -78,32 +100,99 @@ pub fn generate<R: Rng>(n: Index, rng: &mut R) -> Result<Puzzle, Error> {
 /// structurally unreachable because the tiling's polyominos are disjoint, but
 /// is kept rather than panicking to avoid load-bearing assertions inside the
 /// generator.
+///
+/// # Panics
+/// Panics if propagation after inserting a cage returns `None` (no solution
+/// exists), which is structurally unreachable when the tiling is valid.
 #[allow(clippy::cast_possible_truncation)]
 pub fn generate_with<R: Rng, F>(
     n: Index,
     rng: &mut R,
     op: F,
     sizes: SizeDistribution,
-) -> Result<Puzzle, Error>
+) -> Result<Option<Puzzle>, Error>
 where
     F: Fn(&[N], Index) -> Result<Operation, Error>,
 {
     let mut puzzle = Puzzle::new(n)?;
     let latin_square = generate_latin_square(n, rng);
-    let tiling = Tiling::greedy(n, &sizes, rng);
+    let tiling = greedy(n, &sizes, rng)?;
     let n_max = n as N;
 
-    for polyomino in tiling.into_polyominos() {
+    for polyomino in tiling {
         let values: Vec<N> = polyomino
             .cells()
-            .iter()
             .map(|cell| latin_square[cell.row][cell.column])
             .collect();
         let operation = op(&values, n)?;
         let cage = Cage::new(n_max, polyomino, operation);
-        puzzle = puzzle.insert_cage(cage)?;
+        puzzle = puzzle
+            .insert(cage)?
+            .unwrap_or_else(|| unreachable!("disjoint tiling cannot produce a contradiction"));
     }
-    Ok(puzzle)
+    Ok(Option::from(puzzle))
+}
+
+/// Builds a tiling that fully covers an `n`×`n` grid by greedy growth.
+///
+/// Repeatedly seeds a random uncovered cell, grows it by absorbing random
+/// edge-connected uncovered cells until the target size sampled from
+/// `dist` is reached or no candidates remain, then starts a new
+/// polyomino.
+pub fn greedy<R: Rng>(
+    n: usize,
+    dist: &SizeDistribution,
+    rng: &mut R,
+) -> Result<Vec<Polyomino>, Error> {
+    let mut tiling = Vec::new();
+    let mut covered: HashSet<Cell> = HashSet::with_capacity(n * n);
+
+    while covered.len() < n * n {
+        let uncovered: Vec<Cell> = (0..n)
+            .flat_map(|r| (0..n).map(move |c| Cell::new(r, c)))
+            .filter(|c| !covered.contains(c))
+            .collect();
+        let seed = uncovered[rng.random_range(0..uncovered.len())];
+        let target_size = dist.sample(rng);
+
+        let mut cells: HashSet<Cell> = HashSet::new();
+        cells.insert(seed);
+        // Frontier may contain duplicates; dedup happens on pop via the cells/covered
+        // checks.
+        let mut frontier: Vec<Cell> = grid_neighbors(seed, n)
+            .filter(|c| !covered.contains(c))
+            .collect();
+
+        while cells.len() < target_size && !frontier.is_empty() {
+            let pick_idx = rng.random_range(0..frontier.len());
+            let pick = frontier.swap_remove(pick_idx);
+            if !cells.insert(pick) {
+                continue;
+            }
+            for neighbor in grid_neighbors(pick, n) {
+                if !covered.contains(&neighbor) && !cells.contains(&neighbor) {
+                    frontier.push(neighbor);
+                }
+            }
+        }
+
+        for c in &cells {
+            covered.insert(*c);
+        }
+        let cells: Vec<Cell> = cells.into_iter().collect();
+        // `cells` is non-empty (the seed is always inserted) and
+        // edge-connected (grown only via `grid_neighbors`), so the
+        // validating `Polyomino::new` would always succeed here.
+        tiling.push(Polyomino::from_cells(&cells)?);
+    }
+
+    Ok(tiling)
+}
+
+/// In-bounds 4-neighbors of `cell` in an `n`×`n` grid.
+fn grid_neighbors(cell: Cell, n: usize) -> impl Iterator<Item = Cell> {
+    cell.neighbors_4()
+        .filter(move |c| c.row < n && c.column < n)
 }
 
 #[cfg(test)]

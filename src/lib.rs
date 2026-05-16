@@ -1,8 +1,7 @@
 //! KenKen puzzle generator and solver.
 //!
-//! The primary interface is [`Puzzle`]: construct one with [`Puzzle::new`], add
-//! [`Cage`]s via [`Puzzle::insert_cage`], and inspect solutions with
-//! [`Puzzle::uniqueness`] and [`Puzzle::solutions`].
+//! The primary interface is [`Puzzle`]: construct one with [`Puzzle::new`] and
+//! add [`Cage`]s via [`Puzzle::insert`].
 //!
 //! For direct enumeration of solutions, [`Solver`] is a depth-first
 //! backtracking iterator over any type that implements [`State`]; [`Puzzle`]
@@ -20,21 +19,17 @@ mod types;
 mod grid;
 
 pub use constraints::{
+    Cover,
     cage::{
-        builder::{Cage, Tuple},
+        Cage, Tuple,
         operation::{Operation, Operator},
-        operator_tuples,
     },
-    cover::{Cover, Polyomino},
-    tiling::SizeDistribution,
+    polyomino::Polyomino,
 };
 pub use generator::generate::{
     DEFAULT_SIZE_DISTRIBUTION, default_op_policy, generate, generate_with,
 };
 pub use grid::Grid;
-pub use puzzle::{NarrowingScore, Puzzle, Uniqueness};
-pub use solver::{
-    delta::Delta,
-    solve::{Solver, State},
-};
+pub use puzzle::Puzzle;
+pub use solver::solve::{Solver, State};
 pub use types::{Cell, Error, Fill};

@@ -3,7 +3,7 @@ use std::{
     ops::{BitAnd, BitOr},
 };
 
-use crate::Cage;
+use crate::constraints::cage::Cage;
 
 /// Possible cell value: a number in the range `1..=9`.
 pub type N = u8;
@@ -13,7 +13,6 @@ pub type M = u16;
 
 /// A cell in a KenKen grid, identified by 0-based row and column `Index` values
 /// in row-major order.
-#[must_use]
 #[derive(Ord, Eq, PartialEq, PartialOrd, Debug, Copy, Clone, Hash)]
 pub struct Cell {
     /// 0-based row index.
@@ -24,6 +23,7 @@ pub struct Cell {
 
 impl Cell {
     /// Creates a cell at the given `row` and `column`.
+    #[must_use]
     pub const fn new(row: Index, column: Index) -> Self {
         Self { row, column }
     }
@@ -46,7 +46,6 @@ impl Cell {
 pub type Index = usize;
 
 /// A set of candidate values in `1..=9` for a cell stored as a bitmap.
-#[must_use]
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub struct Fill(u16);
 
@@ -60,6 +59,7 @@ impl Fill {
     }
 
     /// Returns the full set `{1, ..., n}`.
+    #[must_use]
     #[allow(clippy::cast_possible_truncation)]
     pub fn full(n: Index) -> Self {
         Self::new(1..=(n as N))
@@ -86,13 +86,14 @@ impl Fill {
         self.0.is_power_of_two()
     }
 
-    /// Returns the number of candidate values in the set.
+    /// Returns the number of candidate values in the fill.
     #[must_use]
-    pub const fn len(self) -> u32 {
-        self.0.count_ones()
+    pub const fn len(self) -> usize {
+        self.0.count_ones() as usize
     }
 
     /// Returns a new `Fill` with the value `n` removed.
+    #[must_use]
     pub const fn remove(self, n: N) -> Self {
         Self(self.0 & !(1 << n))
     }
@@ -125,36 +126,36 @@ impl BitOr for Fill {
 /// Errors that can occur during puzzle construction or solving.
 #[derive(Debug)]
 pub enum Error {
-    /// A grid with no cells.
+    /// A [`crate::Grid`] was constructed with a size less than 1 or greater than 9.
     InvalidGridSize(Index),
-    /// A referenced cell is not present in the grid.
+    /// A referenced [`Cell`] is not present in the grid.
     InvalidCell(Cell),
-    /// A new cage conflicts with an existing cage: `(new_cage, existing_cage)`.
-    CageConflict(Cage, Cage),
-    /// A cage passed to a `Puzzle` method is not present in that puzzle (looked
-    /// up by polyomino).
+    /// A new [`Cage`] conflicts with an existing cage.
+    CageConflict(Cage),
+    /// A [`Cage`] passed to a `Puzzle` method is not present in that puzzle.
     CageNotInPuzzle(Cage),
-    /// A tiling operation referenced a cell that no polyomino covers.
+    /// A tiling operation referenced a [`Cell`] that no polyomino covers.
     CellNotCovered(Cell),
-    /// Removing a cell from a polyomino would leave the remaining cells
-    /// disconnected. Raised by `Polyomino::remove`.
+    /// Removing a [`Cell`] from a [`crate::Polyomino`] would leave the remaining cells
+    /// disconnected.
     WouldDisconnect(Cell),
-    /// A target cell is not edge-connected to any cell of the polyomino it was
-    /// applied to.
+    /// A target [`Cell`] is not edge-connected to any cell of the
+    /// [`crate::Polyomino`] it was applied to.
     TargetNotAdjacent,
-    /// A cell passed to `Polyomino::insert` is already in the polyomino.
+    /// A [`Cell`] passed to <code>[crate::Polyomino]::insert</code> is already in the polyomino.
     CellAlreadyInPolyomino(Cell),
-    /// A `Polyomino::remove` call would remove the polyomino's only remaining
-    /// cell.
+    /// A <code>[crate::Polyomino]::remove</code> call would remove
+    /// the polyomino's only remaining cell.
     RemovalWouldEmptyPolyomino(Cell),
-    /// A `Polyomino` was constructed from an empty cell slice.
+    /// A [`crate::Polyomino`] was constructed from an empty cell slice.
     EmptyPolyomino,
-    /// A `Polyomino` was constructed from cells that are not edge-connected
-    /// (e.g. a diagonal-only pair).
+    /// A [`crate::Polyomino`] was constructed from
+    /// cells that are not edge-connected (e.g. a diagonal-only pair).
     DisconnectedPolyomino,
-    /// A row/column index passed to `AllDifferent::row`/`column` or
-    /// `Grid::row`/`column` is not less than the grid size. Carries
-    /// `(index, n)`.
+    /// A row/column index passed to
+    /// [`crate::constraints::all_different::AllDifferent::row`] or
+    /// [`crate::constraints::all_different::AllDifferent::column`] is not less
+    /// than the grid size `n`. Carries `(index, n)`.
     IndexOutOfRange(Index, Index),
     /// A `Delta` passed to `Puzzle::narrow`/`widen` has a grid size that does
     /// not match the puzzle's. Carries `(delta_n, puzzle_n)`.
@@ -170,8 +171,11 @@ impl fmt::Display for Error {
             Self::InvalidCell(c) => {
                 write!(f, "cell ({}, {}) is outside the grid", c.row, c.column)
             }
-            Self::CageConflict(new, existing) => {
-                write!(f, "cage {new:?} conflicts with existing cage {existing:?}")
+            Self::CageConflict(new) => {
+                write!(
+                    f,
+                    "cage {new:?} conflicts with an existing cage in the puzzle"
+                )
             }
             Self::CageNotInPuzzle(cage) => write!(f, "cage {cage:?} is not in this puzzle"),
             Self::CellNotCovered(c) => write!(

@@ -1,77 +1,85 @@
 use crate::{
-    Cell, Error, Fill,
-    constraints::{Constraint, RegionConstraint, cover::Cover, regin::regin},
-    grid::Grid,
+    Cell, Error, Grid,
+    constraints::{Constraint, Cover, regin::regin},
 };
 
-/// A constraint that ensures each cell in a row or column has a different
+/// A constraint that ensures every cell in a row or column contains a different
 /// value.
-#[must_use]
 #[derive(Debug, Clone, Eq, PartialEq)]
-pub struct AllDifferent(Vec<Cell>);
+pub struct AllDifferent {
+    cells: Vec<Cell>,
+}
 
 impl AllDifferent {
-    /// A row of [`Cell`]s that must all have a different value.
+    /// A row of [`Cell`]s on an `n`×`n` grid that must all have a different value.
     /// # Errors
-    /// Returns [`Error::IndexOutOfRange`] if `index` is not less than `n`.
+    /// Returns [`Error::IndexOutOfRange`] if `index` is not less than the grid size `n`.
     pub fn row(n: usize, index: usize) -> Result<Self, Error> {
         if index >= n {
             return Err(Error::IndexOutOfRange(index, n));
         }
-        Ok(Self(
-            (0..n).map(|column| Cell::new(index, column)).collect(),
-        ))
+        let cells = (0..n).map(|column| Cell::new(index, column)).collect();
+        Ok(Self { cells })
     }
 
-    /// A column of [`Cell`]s that must all have a different value.
+    /// A column of [`Cell`]s on an `n`×`n` grid that must all have a different value.
     /// # Errors
-    /// Returns [`Error::IndexOutOfRange`] if `index` is not less than `n`.
+    /// Returns [`Error::IndexOutOfRange`] if `index` is not less than the grid size `n`.
     pub fn column(n: usize, index: usize) -> Result<Self, Error> {
         if index >= n {
             return Err(Error::IndexOutOfRange(index, n));
         }
-        Ok(Self((0..n).map(|row| Cell::new(row, index)).collect()))
+        let cells = (0..n).map(|row| Cell::new(row, index)).collect();
+        Ok(Self { cells })
+    }
+}
+
+impl Constraint for AllDifferent {
+    fn apply_to(&self, grid: &Grid) -> Result<Grid, Error> {
+        let fills = self
+            .cells()
+            .map(|cell| grid.get(&cell))
+            .collect::<Result<Vec<_>, _>>()?;
+        let all_different_values = regin(&fills);
+        let fill_constraints = self.cells().zip(all_different_values).collect();
+        grid.apply(fill_constraints)
     }
 }
 
 impl Cover for AllDifferent {
-    fn cells(&self) -> Vec<Cell> {
-        self.0.clone()
-    }
-
-    fn len(&self) -> usize {
-        self.0.len()
-    }
-}
-
-impl RegionConstraint for AllDifferent {
-    fn constraint(&self, grid: &Grid) -> Constraint {
-        let cells = self.cells();
-        #[allow(clippy::expect_used)]
-        let grid_values: Vec<Fill> = cells
-            .iter()
-            .map(|c| grid.get(c).expect("AllDifferent cell outside grid"))
-            .collect();
-        let all_different_values = regin(&grid_values);
-        cells.iter().copied().zip(all_different_values).collect()
+    fn cells(&self) -> impl Iterator<Item = Cell> {
+        self.cells.iter().copied()
     }
 }
 
 #[cfg(test)]
 #[allow(clippy::unwrap_used)]
 mod tests {
-    // --- Region::row ---
-
     use crate::{
         Cell, Error,
-        constraints::{all_different::AllDifferent, cover::Cover},
+        constraints::{Cover, all_different::AllDifferent},
     };
+
+    fn row_4() -> AllDifferent {
+        AllDifferent::row(4, 2).unwrap()
+    }
+
+    fn column_3() -> AllDifferent {
+        AllDifferent::column(3, 1).unwrap()
+    }
+
+    fn assert_index_out_of_range(f: impl Fn(usize, usize) -> Result<AllDifferent, Error>) {
+        assert!(f(0, 0).is_err());
+        assert!(matches!(f(3, 3), Err(Error::IndexOutOfRange(3, 3))));
+        assert!(matches!(f(3, 5), Err(Error::IndexOutOfRange(5, 3))));
+    }
+
+    // --- AllDifferent::row ---
 
     #[test]
     fn row_contains_correct_cells() {
-        let r = AllDifferent::row(4, 2).unwrap();
         assert_eq!(
-            r.cells(),
+            row_4().cells().collect::<Vec<_>>(),
             vec![
                 Cell::new(2, 0),
                 Cell::new(2, 1),
@@ -81,24 +89,17 @@ mod tests {
         );
     }
 
-    fn assert_index_out_of_range(f: impl Fn(usize, usize) -> Result<AllDifferent, Error>) {
-        assert!(matches!(f(0, 0), Err(Error::IndexOutOfRange(0, 0))));
-        assert!(matches!(f(3, 3), Err(Error::IndexOutOfRange(3, 3))));
-        assert!(matches!(f(3, 5), Err(Error::IndexOutOfRange(5, 3))));
-    }
-
     #[test]
     fn row_index_out_of_range_returns_err() {
         assert_index_out_of_range(AllDifferent::row);
     }
 
-    // --- Region::column ---
+    // --- AllDifferent::column ---
 
     #[test]
     fn column_contains_correct_cells() {
-        let r = AllDifferent::column(3, 1).unwrap();
         assert_eq!(
-            r.cells(),
+            column_3().cells().collect::<Vec<_>>(),
             vec![Cell::new(0, 1), Cell::new(1, 1), Cell::new(2, 1)]
         );
     }
@@ -110,7 +111,7 @@ mod tests {
 
     #[test]
     fn len_equals_n() {
-        assert_eq!(AllDifferent::row(4, 0).unwrap().len(), 4);
-        assert_eq!(AllDifferent::column(3, 1).unwrap().len(), 3);
+        assert_eq!(row_4().len(), 4);
+        assert_eq!(column_3().len(), 3);
     }
 }

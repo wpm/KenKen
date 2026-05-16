@@ -1,8 +1,8 @@
-#![allow(clippy::must_use_candidate)]
+use std::collections::HashMap;
 
 use crate::{
     Error::InvalidCell,
-    constraints::{all_different::AllDifferent, cover::Cover},
+    constraints::Cover,
     types::{Cell, Error, Fill},
 };
 
@@ -31,40 +31,15 @@ impl Grid {
         })
     }
 
-    /// The number of rows and columns in the grid.
+    /// The number of rows or columns in the grid.
     #[must_use]
     pub const fn n(&self) -> usize {
         self.n
     }
 
-    /// Returns `true` if every cell has been narrowed to a single value.
-    #[must_use]
-    pub fn is_solved(&self) -> bool {
-        self.fills.iter().all(|values| values.is_singleton())
-    }
-
-    /// Returns `true` if any cell has no remaining candidate values.
-    pub fn is_invalid(&self) -> bool {
-        self.fills.iter().any(|values| values.is_empty())
-    }
-
-    /// Creates an [`AllDifferent`] for the `index`th row of the grid.
-    /// # Errors
-    /// Returns [`Error::IndexOutOfRange`] if `index` is not less than `n`.
-    pub fn row(&self, index: usize) -> Result<AllDifferent, Error> {
-        AllDifferent::row(self.n, index)
-    }
-
-    /// Creates an [`AllDifferent`] for the `index`th column of the grid.
-    /// # Errors
-    /// Returns [`Error::IndexOutOfRange`] if `index` is not less than `n`.
-    pub fn column(&self, index: usize) -> Result<AllDifferent, Error> {
-        AllDifferent::column(self.n, index)
-    }
-
     /// Returns the candidate values for `cell`.
     /// # Errors
-    /// Returns [`Error::InvalidCell`] if `cell` is outside the grid bounds.
+    /// Returns [`InvalidCell`] if `cell` is outside the grid bounds.
     pub fn get(&self, cell: &Cell) -> Result<Fill, Error> {
         self.fill_index(cell)
             .map(|i| self.fills[i])
@@ -79,10 +54,47 @@ impl Grid {
         self
     }
 
+    /// Returns a new grid with each cell's candidates intersected with the
+    /// corresponding [`Fill`] in `fill_constraints`. Cells not present in the
+    /// map are left unchanged.
+    ///
+    /// # Errors
+    /// Returns [`InvalidCell`] if any key in `fill_constraints` is
+    /// outside this grid's bounds.
+    pub fn apply(&self, fill_constraints: HashMap<Cell, Fill>) -> Result<Self, Error> {
+        let original = self.clone();
+        fill_constraints
+            .into_iter()
+            .try_fold(self.clone(), |grid, (cell, fill)| {
+                Ok(grid.set(&cell, original.get(&cell)? & fill))
+            })
+    }
+
+    /// Returns the cell with the fewest candidate values, breaking ties by
+    /// cell order. Returns `None` if the grid is empty.
+    #[must_use]
+    pub fn most_constrained(&self) -> Option<(Cell, Fill)> {
+        self.cells()
+            .map(|cell| (cell, self.fills[cell.row * self.n + cell.column]))
+            .min_by(|(a, fa), (b, fb)| fa.len().cmp(&fb.len()).then_with(|| a.cmp(b)))
+    }
+
+    /// Has every cell fill been narrowed to a single value?
+    #[must_use]
+    pub fn is_solved(&self) -> bool {
+        self.fills.iter().all(|values| values.is_singleton())
+    }
+
+    /// Is any cell fill empty?
+    #[must_use]
+    pub fn is_invalid(&self) -> bool {
+        self.fills.iter().any(|values| values.is_empty())
+    }
+
+    // TODO Get rid of Grid.entries().
     /// Returns an iterator over every `(cell, fill)` pair in row-major order.
     pub fn entries(&self) -> impl Iterator<Item = (Cell, Fill)> + '_ {
         self.cells()
-            .into_iter()
             .map(|cell| (cell, self.fills[cell.row * self.n + cell.column]))
     }
 
@@ -96,14 +108,8 @@ impl Grid {
 }
 
 impl Cover for Grid {
-    fn cells(&self) -> Vec<Cell> {
-        (0..self.n)
-            .flat_map(|row| (0..self.n).map(move |column| Cell::new(row, column)))
-            .collect()
-    }
-
-    fn len(&self) -> usize {
-        self.cells().len()
+    fn cells(&self) -> impl Iterator<Item = Cell> {
+        (0..self.n).flat_map(|row| (0..self.n).map(move |column| Cell::new(row, column)))
     }
 }
 
@@ -282,58 +288,5 @@ mod tests {
             assert!(seen.insert(cell), "duplicate cell {cell:?}");
         }
         assert_eq!(seen.len(), n * n);
-    }
-
-    #[test]
-    fn row_returns_all_different_for_row() {
-        use crate::constraints::cover::Cover;
-        let g = Grid::new(3).unwrap();
-        let r = g.row(1).unwrap();
-        assert_eq!(
-            r.cells(),
-            vec![Cell::new(1, 0), Cell::new(1, 1), Cell::new(1, 2)]
-        );
-    }
-
-    #[test]
-    fn row_out_of_bounds_returns_err() {
-        let g = Grid::new(3).unwrap();
-        assert!(g.row(3).is_err());
-    }
-
-    #[test]
-    fn row_last_index_succeeds() {
-        let g = Grid::new(3).unwrap();
-        assert!(g.row(2).is_ok());
-    }
-
-    #[test]
-    fn column_returns_all_different_for_column() {
-        use crate::constraints::cover::Cover;
-        let g = Grid::new(3).unwrap();
-        let c = g.column(2).unwrap();
-        assert_eq!(
-            c.cells(),
-            vec![Cell::new(0, 2), Cell::new(1, 2), Cell::new(2, 2)]
-        );
-    }
-
-    #[test]
-    fn column_out_of_bounds_returns_err() {
-        let g = Grid::new(3).unwrap();
-        assert!(g.column(3).is_err());
-    }
-
-    #[test]
-    fn column_last_index_succeeds() {
-        let g = Grid::new(3).unwrap();
-        assert!(g.column(2).is_ok());
-    }
-
-    #[test]
-    fn len_equals_n_squared() {
-        use crate::constraints::cover::Cover;
-        let g = Grid::new(4).unwrap();
-        assert_eq!(g.len(), 16);
     }
 }
