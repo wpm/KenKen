@@ -93,6 +93,10 @@ impl Puzzle {
     }
 
     /// Applies every constraint once, folding them left over the current grid.
+    ///
+    /// Order is arbitrary: all constraints are monotone filters (they only
+    /// remove candidates, never add them), so application order does not affect
+    /// the fixed-point result.
     fn apply_constraints(&self) -> Result<Grid, Error> {
         self.all_different
             .iter()

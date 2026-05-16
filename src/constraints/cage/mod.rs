@@ -57,13 +57,15 @@ impl Cage {
 impl Constraint for Cage {
     fn apply_to(&self, grid: &Grid) -> Result<Grid, Error> {
         let n = self.len();
-        // TODO Rewrite this with fold().
-        let mut slots = vec![Fill::default(); n];
-        for tuple in self.tuples() {
-            for (slot, &val) in slots.iter_mut().zip(tuple.iter()) {
-                *slot = *slot | Fill::new([val]);
-            }
-        }
+        let slots = self
+            .tuples()
+            .iter()
+            .fold(vec![Fill::default(); n], |mut slots, tuple| {
+                for (slot, &val) in slots.iter_mut().zip(tuple.iter()) {
+                    *slot = *slot | Fill::new([val]);
+                }
+                slots
+            });
         let fill_constraints: HashMap<Cell, Fill> = self.cells().zip(slots).collect();
         grid.apply(fill_constraints)
     }
