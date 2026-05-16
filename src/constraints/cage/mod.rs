@@ -170,6 +170,12 @@ mod tests {
     }
 
     #[test]
+    fn operation_returns_the_cages_operation() {
+        let cage = Cage::new(4, singleton(), Operation::Given(3));
+        assert_eq!(cage.operation(), Operation::Given(3));
+    }
+
+    #[test]
     fn cage_new_with_target_above_n_max_yields_no_tuples() {
         for (p, op) in [
             (singleton(), Operation::Given(300)),

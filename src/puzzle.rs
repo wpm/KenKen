@@ -50,15 +50,15 @@ impl Puzzle {
     /// Returns [`CageConflict`] if `cage` overlaps any cage already in
     /// the puzzle not identical to `cage`.
     pub fn insert(&self, cage: Cage) -> Result<Option<Self>, Error> {
+        if self.cages.contains(&cage) {
+            return Ok(Some(self.clone()));
+        }
         if self
             .cages
             .iter()
             .any(|puzzle_cage| puzzle_cage.polyomino().intersects(cage.polyomino()))
         {
             return Err(CageConflict(cage));
-        }
-        if self.cages.contains(&cage) {
-            return Ok(Some(self.clone()));
         }
         let mut cages = self.cages.clone();
         cages.insert(cage);
@@ -154,7 +154,7 @@ impl Cover for Puzzle {
 mod tests {
     use super::Puzzle;
     use crate::{
-        Cage, Cell, Error, Fill, Operation, Polyomino, State,
+        Cage, Cell, Cover, Error, Fill, Operation, Polyomino, State,
         constraints::test_utils::{cells, singleton},
     };
 
@@ -201,6 +201,13 @@ mod tests {
         let _ = base.insert(singleton_cage()).unwrap();
         // base is unchanged — inserting into it again still succeeds
         assert!(base.insert(singleton_cage()).is_ok());
+    }
+
+    #[test]
+    fn insert_duplicate_cage_is_idempotent() {
+        let p = puzzle_4().insert(singleton_cage()).unwrap().unwrap();
+        let p2 = p.insert(singleton_cage()).unwrap().unwrap();
+        assert_eq!(p.grid(), p2.grid());
     }
 
     // --- Puzzle::remove ---
@@ -278,6 +285,36 @@ mod tests {
         let puzzle = puzzle_4().insert(cage).unwrap().unwrap();
         let result = puzzle.propagate().unwrap().unwrap();
         assert_eq!(result.grid().get(&Cell::new(0, 0)).unwrap(), Fill::new([2]));
+    }
+
+    #[test]
+    fn propagate_contradiction_returns_none() {
+        // Two Given(1) cages in the same row forces two cells to {1},
+        // which AllDifferent will eliminate to empty — a contradiction.
+        // propagate() is called inside insert(), so insert() itself returns None.
+        let c1 = Cage::new(
+            2,
+            Polyomino::from_cells(&cells(&[(0, 0)])).unwrap(),
+            Operation::Given(1),
+        );
+        let c2 = Cage::new(
+            2,
+            Polyomino::from_cells(&cells(&[(0, 1)])).unwrap(),
+            Operation::Given(1),
+        );
+        let result = Puzzle::new(2)
+            .unwrap()
+            .insert(c1)
+            .unwrap()
+            .unwrap()
+            .insert(c2)
+            .unwrap();
+        assert!(result.is_none());
+    }
+
+    #[test]
+    fn cover_cells_count_equals_n_squared() {
+        assert_eq!(puzzle_4().cells().count(), 16);
     }
 
     #[test]

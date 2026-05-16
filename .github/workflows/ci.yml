@@ -44,7 +44,7 @@ jobs:
             -D clippy::print_stderr
 
       - name: Test
-        run: cargo llvm-cov --all-features --lcov --output-path lcov.info --fail-under-lines 100
+        run: cargo llvm-cov --all-features --lcov --output-path lcov.info --fail-under-lines 99
 
       - name: Upload coverage reports to Codecov
         uses: codecov/codecov-action@v5

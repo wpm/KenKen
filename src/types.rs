@@ -223,6 +223,7 @@ impl fmt::Display for Error {
 impl std::error::Error for Error {}
 
 #[cfg(test)]
+#[allow(clippy::unwrap_used)]
 mod tests {
     use super::*;
 
@@ -401,6 +402,26 @@ mod tests {
         assert_eq!(
             Error::EmptyOpPolicyValues.to_string(),
             "operation policy received an empty value slice"
+        );
+    }
+
+    #[test]
+    fn error_display_cage_variants() {
+        use crate::{Cage, Error, Operation, constraints::polyomino::Polyomino};
+        let cage = Cage::new(
+            4,
+            Polyomino::from_cells(&[Cell::new(0, 0)]).unwrap(),
+            Operation::Given(1),
+        );
+        assert!(
+            Error::CageConflict(cage.clone())
+                .to_string()
+                .contains("conflicts")
+        );
+        assert!(
+            Error::CageNotInPuzzle(cage)
+                .to_string()
+                .contains("not in this puzzle")
         );
     }
 }
