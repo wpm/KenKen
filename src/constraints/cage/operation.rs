@@ -2,12 +2,8 @@ use strum::EnumIter;
 
 use crate::types::M;
 
-/// An arithmetic operation that defines a polyomino.
-///
-/// Every variant carries its target as a `u16`. All targets use the same wide
-/// type so that the API is uniform — consumers can read the target without
-/// matching on the variant.
-#[derive(Debug, Clone, Copy, Eq, PartialEq, Hash)]
+/// An arithmetic operation required by a [`crate::constraints::cage::Cage`].
+#[derive(Debug, Clone, Copy, Eq, PartialEq, Hash, PartialOrd, Ord)]
 pub enum Operation {
     /// Cells sum to the target.
     Add(M),

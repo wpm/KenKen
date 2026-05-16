@@ -2,410 +2,115 @@
 //! would, guarding against accidental visibility regressions.
 
 #![allow(clippy::unwrap_used)]
+mod test {
 
-use kenken::{
-    Cage, Cell, Cover, DEFAULT_SIZE_DISTRIBUTION, Delta, Fill, Grid, NarrowingScore, Operation,
-    Operator, Polyomino, Puzzle, SizeDistribution, Solver, Uniqueness, default_op_policy, generate,
-    generate_with,
-};
-use rand::SeedableRng;
-use rand_chacha::ChaCha8Rng;
-
-fn rng(seed: u64) -> ChaCha8Rng {
-    ChaCha8Rng::seed_from_u64(seed)
-}
-
-#[test]
-fn uniqueness_classifies_every_generated_puzzle() {
-    let n = 3;
-    let trials = 30;
-    let mut r = rng(0);
-    let mut hist = [0usize; 3];
-    for _ in 0..trials {
-        let p: Puzzle = generate(n, &mut r).unwrap();
-        match p.uniqueness() {
-            Uniqueness::None => hist[0] += 1,
-            Uniqueness::Unique => hist[1] += 1,
-            Uniqueness::Multiple => hist[2] += 1,
-        }
-    }
-    assert_eq!(hist.iter().sum::<usize>(), trials);
-}
-
-#[test]
-fn solutions_returns_a_count() {
-    let mut r = rng(1);
-    let total: usize = (0..10)
-        .map(|_| generate(3, &mut r).unwrap().solutions())
-        .sum();
-    assert!(total >= 10);
-}
-
-#[test]
-fn generate_validates_n_too_small() {
-    let mut r = rng(0);
-    assert!(generate(0, &mut r).is_err());
-}
-
-#[test]
-fn generate_validates_n_too_large() {
-    let mut r = rng(0);
-    assert!(generate(10, &mut r).is_err());
-}
-
-#[test]
-fn puzzle_n_returns_grid_size() {
-    let mut r = rng(0);
-    let p = generate(4, &mut r).unwrap();
-    assert_eq!(p.n(), 4);
-}
-
-#[test]
-fn deterministic_with_same_seed() {
-    let a = generate(3, &mut rng(42)).unwrap();
-    let b = generate(3, &mut rng(42)).unwrap();
-    assert_eq!(a.uniqueness(), b.uniqueness());
-    assert_eq!(a.solutions(), b.solutions());
-}
-
-#[test]
-fn generated_puzzles_are_always_solvable() {
-    // The Latin square used during construction is itself a valid solution, so
-    // every generated puzzle must have ≥ 1 solution.
-    for seed in 0..20u64 {
-        for n in 2..=4 {
-            let p = generate(n, &mut rng(seed)).unwrap();
-            assert_ne!(
-                p.uniqueness(),
-                Uniqueness::None,
-                "seed {seed} n={n} produced unsolvable puzzle"
-            );
-        }
-    }
-}
-
-#[test]
-fn uniqueness_and_solutions_buckets_agree() {
-    for seed in 0..30u64 {
-        let p = generate(3, &mut rng(seed)).unwrap();
-        let (bucket, count) = (p.uniqueness(), p.solutions());
-        let consistent = matches!(
-            (bucket, count),
-            (Uniqueness::None, 0)
-                | (Uniqueness::Unique, 1)
-                | (Uniqueness::Multiple, 2..=usize::MAX)
-        );
-        assert!(
-            consistent,
-            "seed {seed}: bucket {bucket:?} but count {count}"
-        );
-    }
-}
-
-#[test]
-fn custom_op_policy_overrides_default() {
-    let policy = |values: &[u8], n: usize| {
-        if values.len() == 2 {
-            Ok(Operation::Add(values.iter().map(|&v| u16::from(v)).sum()))
-        } else {
-            default_op_policy(values, n)
-        }
+    use kenken::{
+        Cell, Fill, Grid, Operation, Operator, Polyomino, Puzzle, constraints::Cover, generate,
     };
-    let p = generate_with(4, &mut rng(99), policy, DEFAULT_SIZE_DISTRIBUTION).unwrap();
-    assert_ne!(p.uniqueness(), Uniqueness::None);
-}
+    use rand::SeedableRng;
+    use rand_chacha::ChaCha8Rng;
 
-#[test]
-fn fixed_size_one_distribution_yields_unique_puzzles() {
-    // Fixed(1) cages each pin a single cell to its solved value, so the puzzle is
-    // fully determined.
-    let p = generate_with(
-        4,
-        &mut rng(7),
-        default_op_policy,
-        SizeDistribution::Fixed(1),
-    )
-    .unwrap();
-    assert_eq!(p.uniqueness(), Uniqueness::Unique);
-    assert_eq!(p.solutions(), 1);
-}
-
-#[test]
-fn puzzle_is_send_and_sync() {
-    fn assert_send_sync<T: Send + Sync>() {}
-    assert_send_sync::<Puzzle>();
-}
-
-#[test]
-fn solutions_at_most_caps_count() {
-    let mut r = rng(1);
-    let p = generate(3, &mut r).unwrap();
-    let total = p.solutions();
-    assert_eq!(p.solutions_at_most(0), 0);
-    assert_eq!(p.solutions_at_most(usize::MAX), total);
-    let cap = total.saturating_add(1);
-    assert_eq!(p.solutions_at_most(cap), total);
-    if total > 0 {
-        assert_eq!(p.solutions_at_most(1), 1);
+    fn rng(seed: u64) -> ChaCha8Rng {
+        ChaCha8Rng::seed_from_u64(seed)
     }
-}
 
-#[test]
-fn size_distribution_uniform_is_constructible() {
-    let dist = SizeDistribution::Uniform { min: 2, max: 3 };
-    let p = generate_with(4, &mut rng(5), default_op_policy, dist).unwrap();
-    assert_ne!(p.uniqueness(), Uniqueness::None);
-}
+    #[test]
+    fn generate_validates_n_too_small() {
+        let mut r = rng(0);
+        assert!(generate(0, &mut r).is_err());
+    }
 
-fn given_cage(row: usize, column: usize, value: u8) -> Cage {
-    let cell = Cell::new(row, column);
-    Cage::new(
-        value,
-        Polyomino::new(&[cell]).unwrap(),
-        Operation::Given(u16::from(value)),
-    )
-}
+    #[test]
+    fn generate_validates_n_too_large() {
+        let mut r = rng(0);
+        assert!(generate(10, &mut r).is_err());
+    }
 
-#[test]
-fn puzzle_insert_and_remove_cage_are_public() {
-    let cage = given_cage(0, 0, 1);
-    let poly = cage.polyomino().clone();
-    let p = Puzzle::new(2).unwrap().insert_cage(cage).unwrap();
-    assert!(p.is_covered(Cell::new(0, 0)));
-    let p = p.remove_cage(&poly);
-    assert!(!p.is_covered(Cell::new(0, 0)));
-}
+    #[test]
+    fn puzzle_is_send_and_sync() {
+        fn assert_send_sync<T: Send + Sync>() {}
+        assert_send_sync::<Puzzle>();
+    }
 
-#[test]
-fn grid_set_is_public_and_round_trips() {
-    let g: Grid = Grid::new(3).unwrap();
-    let cell = Cell::new(1, 2);
-    let one = Fill::new([1]);
-    let g = g.set(&cell, one);
-    assert_eq!(g.get(&cell).unwrap(), one);
-}
+    #[test]
+    fn grid_set_is_public_and_round_trips() {
+        let g: Grid = Grid::new(3).unwrap();
+        let cell = Cell::new(1, 2);
+        let one = Fill::new([1]);
+        let g = g.set(&cell, one);
+        assert_eq!(g.get(&cell).unwrap(), one);
+    }
 
-#[test]
-fn cage_inherent_accessors_are_reachable() {
-    let cage = given_cage(0, 0, 1);
-    assert_eq!(cage.operation(), Operation::Given(1));
-    assert_eq!(cage.cells(), &[Cell::new(0, 0)]);
-    assert_eq!(cage.tuples(), &[vec![1u8]]);
-}
+    #[test]
+    fn polyomino_insert_and_remove_are_public() {
+        let p = Polyomino::from_cells(&[Cell::new(0, 0), Cell::new(0, 1)]).unwrap();
+        let extended = p.insert(Cell::new(0, 2)).unwrap();
+        assert_eq!(extended.len(), 3);
+        let shrunk = extended.remove(Cell::new(0, 2)).unwrap();
+        assert_eq!(shrunk, p);
+    }
 
-#[test]
-fn puzzle_grid_and_candidates_expose_state() {
-    let p = Puzzle::new(2)
-        .unwrap()
-        .insert_cage(given_cage(0, 0, 1))
-        .unwrap();
-    let grid: &Grid = p.grid();
-    assert_eq!(grid.n(), 2);
-    let v: Fill = p.candidates(Cell::new(0, 1)).unwrap();
-    assert_eq!(v, Fill::full(2));
-}
+    #[test]
+    fn cage_valid_operators_branches_by_cell_count() {
+        assert_eq!(
+            Polyomino::valid_operators(&[Cell::new(0, 0)]),
+            vec![Operator::Given]
+        );
+        assert_eq!(
+            Polyomino::valid_operators(&[Cell::new(0, 0), Cell::new(0, 1)]),
+            vec![
+                Operator::Add,
+                Operator::Subtract,
+                Operator::Multiply,
+                Operator::Divide,
+            ]
+        );
+        assert_eq!(
+            Polyomino::valid_operators(&[Cell::new(0, 0), Cell::new(0, 1), Cell::new(0, 2)]),
+            vec![Operator::Add, Operator::Multiply]
+        );
+    }
 
-#[test]
-fn puzzle_cells_visits_every_grid_cell() {
-    let p = Puzzle::new(2).unwrap();
-    assert_eq!(p.cells().count(), 4);
-}
+    #[test]
+    fn cage_valid_targets_yields_legal_targets_in_ascending_order() {
+        let cells = [Cell::new(0, 0), Cell::new(0, 1)];
+        let subtract: Vec<Operation> = Polyomino::valid_operations(&cells, Operator::Subtract, 4)
+            .unwrap()
+            .collect();
+        assert_eq!(
+            subtract,
+            vec![
+                Operation::Subtract(1),
+                Operation::Subtract(2),
+                Operation::Subtract(3),
+            ]
+        );
+        let divide: Vec<Operation> = Polyomino::valid_operations(&cells, Operator::Divide, 4)
+            .unwrap()
+            .collect();
+        assert_eq!(
+            divide,
+            vec![
+                Operation::Divide(2),
+                Operation::Divide(3),
+                Operation::Divide(4),
+            ]
+        );
+    }
 
-#[test]
-fn puzzle_cover_len_equals_n_squared() {
-    let p = Puzzle::new(3).unwrap();
-    assert_eq!(Cover::len(&p), 9);
-    assert_eq!(Cover::cells(&p).len(), 9);
-}
+    #[test]
+    fn cage_is_valid_filters_operator_target_pairs() {
+        let singleton = [Cell::new(0, 0)];
+        assert!(Polyomino::is_valid_operation(&singleton, Operation::Given(3), 4).unwrap());
+        assert!(!Polyomino::is_valid_operation(&singleton, Operation::Add(3), 4).unwrap());
 
-#[test]
-fn fresh_puzzle_has_no_singletons_or_empty_cells() {
-    // Fresh 2×2 has every cell containing {1, 2}: no singletons and no empties.
-    let p = Puzzle::new(2).unwrap();
-    assert_eq!(p.singleton_cells().count(), 0);
-    assert_eq!(p.empty_cells().count(), 0);
-}
+        let pair = [Cell::new(0, 0), Cell::new(0, 1)];
+        assert!(Polyomino::is_valid_operation(&pair, Operation::Subtract(2), 4).unwrap());
+        assert!(!Polyomino::is_valid_operation(&pair, Operation::Subtract(0), 4).unwrap());
+        assert!(!Polyomino::is_valid_operation(&pair, Operation::Divide(1), 4).unwrap());
 
-#[test]
-fn singleton_grid_yields_its_only_cell() {
-    // 1×1: the lone cell holds {1}, which is a singleton by construction.
-    let p = Puzzle::new(1).unwrap();
-    let singletons: Vec<(Cell, u8)> = p.singleton_cells().collect();
-    assert_eq!(singletons, vec![(Cell::new(0, 0), 1)]);
-}
-
-#[test]
-fn polyomino_insert_and_remove_are_public() {
-    let p = Polyomino::new(&[Cell::new(0, 0), Cell::new(0, 1)]).unwrap();
-    let extended = p.insert(Cell::new(0, 2)).unwrap();
-    assert_eq!(extended.len(), 3);
-    let shrunk = extended.remove(Cell::new(0, 2)).unwrap();
-    assert_eq!(shrunk, p);
-}
-
-#[test]
-fn puzzle_cage_accessors_are_reachable() {
-    let p = Puzzle::new(2)
-        .unwrap()
-        .insert_cage(given_cage(0, 0, 1))
-        .unwrap()
-        .insert_cage(given_cage(1, 1, 2))
-        .unwrap();
-    assert_eq!(p.cages().count(), 2);
-    let cage_at = p.cage_at(Cell::new(0, 0)).unwrap();
-    assert_eq!(cage_at.operation(), Operation::Given(1));
-    assert!(p.is_covered(Cell::new(1, 1)));
-    assert!(!p.is_covered(Cell::new(0, 1)));
-}
-
-#[test]
-fn rank_tuples_for_cage_is_public_and_returns_scored_entries() {
-    // Tuples (1,2) and (2,1) tie on reduction; lex tiebreak orders (1,2) first.
-    let cells = [Cell::new(0, 0), Cell::new(0, 1)];
-    let cage = Cage::new(4, Polyomino::new(&cells).unwrap(), Operation::Add(3));
-    let p = Puzzle::new(4).unwrap().insert_cage(cage.clone()).unwrap();
-    let ranked: Vec<(Vec<u8>, Puzzle, NarrowingScore)> = p.rank_tuples_for_cage(&cage).unwrap();
-    let tuples: Vec<Vec<u8>> = ranked.iter().map(|(t, ..)| t.clone()).collect();
-    assert_eq!(tuples, vec![vec![1, 2], vec![2, 1]]);
-    assert!(ranked.iter().all(|(_, post, _)| post.is_valid()));
-    let score: NarrowingScore = ranked[0].2;
-    assert!(score.total_reduction > 0);
-}
-
-#[test]
-fn cage_valid_operators_branches_by_cell_count() {
-    assert_eq!(
-        Cage::valid_operators(&[Cell::new(0, 0)]),
-        vec![Operator::Given]
-    );
-    assert_eq!(
-        Cage::valid_operators(&[Cell::new(0, 0), Cell::new(0, 1)]),
-        vec![
-            Operator::Add,
-            Operator::Subtract,
-            Operator::Multiply,
-            Operator::Divide,
-        ]
-    );
-    assert_eq!(
-        Cage::valid_operators(&[Cell::new(0, 0), Cell::new(0, 1), Cell::new(0, 2)]),
-        vec![Operator::Add, Operator::Multiply]
-    );
-}
-
-#[test]
-fn cage_valid_targets_yields_legal_targets_in_ascending_order() {
-    let cells = [Cell::new(0, 0), Cell::new(0, 1)];
-    let subtract: Vec<Operation> = Cage::valid_targets(&cells, Operator::Subtract, 4)
-        .unwrap()
-        .collect();
-    assert_eq!(
-        subtract,
-        vec![
-            Operation::Subtract(1),
-            Operation::Subtract(2),
-            Operation::Subtract(3),
-        ]
-    );
-    let divide: Vec<Operation> = Cage::valid_targets(&cells, Operator::Divide, 4)
-        .unwrap()
-        .collect();
-    assert_eq!(
-        divide,
-        vec![
-            Operation::Divide(2),
-            Operation::Divide(3),
-            Operation::Divide(4),
-        ]
-    );
-}
-
-#[test]
-fn cage_is_valid_filters_operator_target_pairs() {
-    let singleton = [Cell::new(0, 0)];
-    assert!(Cage::is_valid(&singleton, Operation::Given(3), 4).unwrap());
-    assert!(!Cage::is_valid(&singleton, Operation::Add(3), 4).unwrap());
-
-    let pair = [Cell::new(0, 0), Cell::new(0, 1)];
-    assert!(Cage::is_valid(&pair, Operation::Subtract(2), 4).unwrap());
-    assert!(!Cage::is_valid(&pair, Operation::Subtract(0), 4).unwrap());
-    assert!(!Cage::is_valid(&pair, Operation::Divide(1), 4).unwrap());
-
-    let triple = [Cell::new(0, 0), Cell::new(0, 1), Cell::new(0, 2)];
-    assert!(Cage::is_valid(&triple, Operation::Add(6), 4).unwrap());
-    assert!(!Cage::is_valid(&triple, Operation::Subtract(1), 4).unwrap());
-}
-
-#[test]
-fn delta_narrow_widen_and_propagate_fully_are_public() {
-    // Identity delta is a no-op after propagation, regardless of starting state.
-    let p = Puzzle::new(2).unwrap();
-    let identity = Delta::identity(2).unwrap();
-    let unchanged = p.narrow(&identity).unwrap();
-    assert!(unchanged.is_valid());
-
-    // Pinning (0,0)={1} on a 2×2 grid forces a unique completion via narrow +
-    // propagate.
-    let pinning = Delta::identity(2)
-        .unwrap()
-        .set(Cell::new(0, 0), Fill::new([1]));
-    let pinned = Puzzle::new(2).unwrap().narrow(&pinning).unwrap();
-    assert!(pinned.is_valid());
-    assert_eq!(pinned.candidates(Cell::new(1, 1)).unwrap(), Fill::new([1]),);
-
-    // Emptying a cell via narrow yields an invalid puzzle.
-    let emptying = Delta::identity(2)
-        .unwrap()
-        .set(Cell::new(0, 0), Fill::new([]));
-    let invalid = Puzzle::new(2).unwrap().narrow(&emptying).unwrap();
-    assert!(!invalid.is_valid());
-
-    // Widen with the identity over a fully propagated puzzle re-narrows back to the
-    // same fixed point.
-    let solved = Puzzle::new(2)
-        .unwrap()
-        .insert_cage(given_cage(0, 0, 1))
-        .unwrap()
-        .propagate_fully();
-    let rewidened = solved.widen(&identity).unwrap();
-    assert!(rewidened.is_valid());
-    assert_eq!(
-        rewidened.candidates(Cell::new(1, 1)).unwrap(),
-        Fill::new([1]),
-    );
-}
-
-#[test]
-fn solve_simple_2x2_puzzle() {
-    // Two Add(3) row cages on a 2×2 grid. Both rows must be {1,2}; column
-    // all-different gives exactly two solutions: [[1,2],[2,1]] and
-    // [[2,1],[1,2]].
-    let p = Puzzle::new(2)
-        .unwrap()
-        .insert_cage(Cage::new(
-            2,
-            Polyomino::new(&[Cell::new(0, 0), Cell::new(0, 1)]).unwrap(),
-            Operation::Add(3),
-        ))
-        .unwrap()
-        .insert_cage(Cage::new(
-            2,
-            Polyomino::new(&[Cell::new(1, 0), Cell::new(1, 1)]).unwrap(),
-            Operation::Add(3),
-        ))
-        .unwrap();
-
-    let solutions: Vec<Puzzle> = Solver::new(p).collect();
-    assert_eq!(solutions.len(), 2);
-
-    let mut grids: Vec<Vec<u8>> = solutions
-        .iter()
-        .map(|s| {
-            s.cells()
-                .map(|c| s.candidates(c).unwrap().iter().next().unwrap())
-                .collect()
-        })
-        .collect();
-    grids.sort();
-    assert_eq!(grids, vec![vec![1, 2, 2, 1], vec![2, 1, 1, 2]]);
+        let triple = [Cell::new(0, 0), Cell::new(0, 1), Cell::new(0, 2)];
+        assert!(Polyomino::is_valid_operation(&triple, Operation::Add(6), 4).unwrap());
+        assert!(!Polyomino::is_valid_operation(&triple, Operation::Subtract(1), 4).unwrap());
+    }
 }

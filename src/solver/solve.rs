@@ -1,17 +1,22 @@
+use crate::Error;
+
 /// A search state that can be propagated to a fixed point and branched into
 /// substates.
 pub trait State: Sized {
     /// Propagates constraints to a fixed point; returns `None` to prune this
     /// branch.
-    fn propagate(self) -> Option<Self>;
+    ///
+    /// # Errors
+    /// Returns [`Error`] if a constraint is applied to a cell outside the grid.
+    fn propagate(&self) -> Result<Option<Self>, Error>;
     /// Returns substates to explore. An empty iterator signals a solution.
-    fn branch(self) -> impl Iterator<Item = Self>;
+    fn branch(&self) -> impl Iterator<Item = Self>;
 }
 
 /// A depth-first backtracking solver over any [`State`].
 ///
 /// Each call to [`Iterator::next`] returns one solution — a state for which
-/// [`State::branch`] yields no children. [`Puzzle`](crate::Puzzle) implements
+/// [`State::branch`] yields no children. [`crate::Puzzle`] implements
 /// [`State`], so `Solver<Puzzle>` enumerates all solutions to a puzzle.
 #[must_use]
 pub struct Solver<S> {
@@ -30,8 +35,9 @@ impl<S: State + Clone> Iterator for Solver<S> {
 
     fn next(&mut self) -> Option<S> {
         while let Some(state) = self.stack.pop() {
-            if let Some(state) = state.propagate() {
-                let mut branches = state.clone().branch();
+            if let Ok(Some(state)) = state.propagate() {
+                let leaf_state = state.clone();
+                let mut branches = leaf_state.branch();
                 if let Some(first) = branches.next() {
                     self.stack.push(first);
                     self.stack.extend(branches);
@@ -69,30 +75,39 @@ mod tests {
     }
 
     impl State for Factoring {
-        fn propagate(mut self) -> Option<Self> {
+        fn propagate(&self) -> Result<Option<Self>, Error> {
             if self.remaining == 0 {
-                return None;
+                return Ok(None);
             }
-            while self.remaining.is_multiple_of(self.candidate) {
-                self.factors.push(self.candidate);
-                self.remaining /= self.candidate;
+            let mut remaining = self.remaining;
+            let mut factors = self.factors.clone();
+            while remaining.is_multiple_of(self.candidate) {
+                factors.push(self.candidate);
+                remaining /= self.candidate;
             }
             // Any factor of remaining must be > candidate, so remaining itself is prime.
-            if (self.candidate + 1) * (self.candidate + 1) > self.remaining && self.remaining > 1 {
-                self.factors.push(self.remaining);
-                self.remaining = 1;
+            if (self.candidate + 1) * (self.candidate + 1) > remaining && remaining > 1 {
+                factors.push(remaining);
+                remaining = 1;
             }
-            Some(self)
+            Ok(Some(Self {
+                remaining,
+                factors,
+                ..*self
+            }))
         }
 
-        fn branch(self) -> impl Iterator<Item = Self> {
+        fn branch(&self) -> impl Iterator<Item = Self> {
             if self.remaining == 1 {
-                return itertools::Either::Left(std::iter::empty());
+                None
+            } else {
+                Some(Self {
+                    remaining: self.remaining,
+                    candidate: self.candidate + 1,
+                    factors: self.factors.clone(),
+                })
             }
-            itertools::Either::Right(std::iter::once(Self {
-                candidate: self.candidate + 1,
-                ..self
-            }))
+            .into_iter()
         }
     }
 
