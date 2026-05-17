@@ -15,32 +15,67 @@ use crate::{
     puzzle::Puzzle,
     types::{Error, Index, M, N},
 };
+/// Poisson distribution over cage sizes, truncated to `[1, n*n]` by
+/// rejection sampling.
 #[derive(Debug, Clone, Copy)]
-pub enum SizeDistribution {
-    /// Every polyomino has the same target size.
-    Fixed(usize),
-    /// Target size sampled uniformly from `min..=max`.
-    Uniform {
-        /// Smallest allowed cage size.
-        min: usize,
-        /// Largest allowed cage size.
-        max: usize,
-    },
+pub struct SizeDistribution {
+    mean: f64,
 }
 
 impl SizeDistribution {
-    fn sample<R: Rng>(self, rng: &mut R) -> usize {
-        match self {
-            Self::Fixed(s) => s,
-            Self::Uniform { min, max } => rng.random_range(min..=max),
+    /// Creates a Poisson size distribution with the given mean.
+    ///
+    /// Returns `None` if `mean` is not strictly positive. The mean must be
+    /// `> 0` so that rejection sampling on `Poisson(mean)` truncated to
+    /// `[1, n*n]` is guaranteed to terminate.
+    pub fn new(mean: f64) -> Option<Self> {
+        (mean > 0.0).then_some(Self { mean })
+    }
+
+    /// Returns the mean of the underlying (untruncated) Poisson distribution.
+    pub const fn mean(self) -> f64 {
+        self.mean
+    }
+
+    /// Default distribution for an `n`×`n` grid: `Poisson(n / 3)`.
+    ///
+    /// For `n = 0`, the same distribution is returned as for `n = 1`. The
+    /// puzzle constructor rejects `n = 0` independently, so the degenerate
+    /// case never propagates to sampling.
+    #[allow(clippy::cast_precision_loss)]
+    pub fn default_for(n: Index) -> Self {
+        Self {
+            mean: n.max(1) as f64 / 3.0,
+        }
+    }
+
+    /// Samples a cage size in `[1, n*n]` by rejection sampling on
+    /// `Poisson(mean)`.
+    fn sample<R: Rng>(self, n: Index, rng: &mut R) -> usize {
+        let max = n * n;
+        loop {
+            let k = poisson(self.mean, rng);
+            if (1..=max).contains(&k) {
+                return k;
+            }
         }
     }
 }
 
-/// Default size distribution used by [`generate`]: cage sizes drawn uniformly
-/// from `1..=4`.
-pub const DEFAULT_SIZE_DISTRIBUTION: SizeDistribution =
-    SizeDistribution::Uniform { min: 1, max: 4 };
+/// Draws a sample from `Poisson(mean)` using Knuth's algorithm. Adequate for
+/// the small means used here (mean ≤ 3 for n ≤ 9).
+fn poisson<R: Rng>(mean: f64, rng: &mut R) -> usize {
+    let l = (-mean).exp();
+    let mut k = 0usize;
+    let mut p = 1.0f64;
+    loop {
+        k += 1;
+        p *= rng.random::<f64>();
+        if p <= l {
+            return k - 1;
+        }
+    }
+}
 
 /// Default policy mapping a cage's solved-grid values to an [`Operation`].
 ///
@@ -78,12 +113,12 @@ pub fn default_op_policy(values: &[N], n: Index) -> Result<Operation, Error> {
 }
 
 /// Generates a random `n`×`n` puzzle using [`default_op_policy`] and
-/// [`DEFAULT_SIZE_DISTRIBUTION`].
+/// [`SizeDistribution::default_for`].
 ///
 /// # Errors
 /// Returns `Error` if `n` is not in `1..=9`.
 pub fn generate<R: Rng>(n: Index, rng: &mut R) -> Result<Option<Puzzle>, Error> {
-    generate_with(n, rng, default_op_policy, DEFAULT_SIZE_DISTRIBUTION)
+    generate_with(n, rng, default_op_policy, SizeDistribution::default_for(n))
 }
 
 /// Generates a random `n`×`n` puzzle with caller-supplied op policy and
@@ -116,7 +151,7 @@ where
 {
     let mut puzzle = Puzzle::new_empty(n)?;
     let latin_square = generate_latin_square(n, rng);
-    let tiling = greedy(n, &sizes, rng)?;
+    let tiling = greedy(n, sizes, rng)?;
     let n_max = n as N;
 
     for polyomino in tiling {
@@ -142,7 +177,7 @@ where
 #[allow(unused_results)]
 pub fn greedy<R: Rng>(
     n: usize,
-    dist: &SizeDistribution,
+    dist: SizeDistribution,
     rng: &mut R,
 ) -> Result<Vec<Polyomino>, Error> {
     let mut tiling = Vec::new();
@@ -154,7 +189,7 @@ pub fn greedy<R: Rng>(
             .filter(|c| !covered.contains(c))
             .collect();
         let seed = uncovered[rng.random_range(0..uncovered.len())];
-        let target_size = dist.sample(rng);
+        let target_size = dist.sample(n, rng);
 
         let mut cells: HashSet<Cell> = HashSet::new();
         cells.insert(seed);
@@ -248,36 +283,71 @@ mod tests {
     }
 
     #[test]
-    fn size_distribution_fixed_always_returns_fixed_size() {
+    fn size_distribution_poisson_samples_within_bounds() {
         let mut rng = rand_chacha::ChaCha8Rng::seed_from_u64(0);
-        let dist = SizeDistribution::Fixed(3);
-        for _ in 0..10 {
-            assert_eq!(dist.sample(&mut rng), 3);
+        for (mean, n) in [(0.5_f64, 3_usize), (1.0, 4), (3.0, 9), (5.0, 4)] {
+            let dist = SizeDistribution::new(mean).unwrap();
+            for _ in 0..200 {
+                let s = dist.sample(n, &mut rng);
+                assert!((1..=n * n).contains(&s));
+            }
         }
     }
 
     #[test]
-    fn size_distribution_uniform_samples_within_range() {
-        let mut rng = rand_chacha::ChaCha8Rng::seed_from_u64(42);
-        let dist = SizeDistribution::Uniform { min: 2, max: 4 };
-        for _ in 0..50 {
-            let s = dist.sample(&mut rng);
-            assert!((2..=4).contains(&s));
+    fn size_distribution_new_rejects_non_positive_mean() {
+        assert!(SizeDistribution::new(0.0).is_none());
+        assert!(SizeDistribution::new(-1.0).is_none());
+        assert!(SizeDistribution::new(f64::NAN).is_none());
+        assert!(SizeDistribution::new(0.5).is_some());
+    }
+
+    #[test]
+    fn size_distribution_high_rejection_terminates_and_stays_in_bounds() {
+        // Mean (8) is well above the upper bound (n*n = 4), so most raw
+        // Poisson draws are rejected. Sampling must still terminate and
+        // never escape the truncation window.
+        let mut rng = rand_chacha::ChaCha8Rng::seed_from_u64(7);
+        let dist = SizeDistribution::new(8.0).unwrap();
+        for _ in 0..100 {
+            let s = dist.sample(2, &mut rng);
+            assert!((1..=4).contains(&s));
+        }
+    }
+
+    #[test]
+    fn size_distribution_default_for_uses_n_over_three() {
+        assert!((SizeDistribution::default_for(9).mean() - 3.0).abs() < 1e-12);
+        assert!((SizeDistribution::default_for(3).mean() - 1.0).abs() < 1e-12);
+        assert!((SizeDistribution::default_for(4).mean() - 4.0 / 3.0).abs() < 1e-12);
+        // n = 0 clamps to n = 1.
+        assert!((SizeDistribution::default_for(0).mean() - 1.0 / 3.0).abs() < 1e-12);
+    }
+
+    #[test]
+    #[allow(clippy::cast_precision_loss)]
+    fn poisson_empirical_mean_close_to_target() {
+        let mut rng = rand_chacha::ChaCha8Rng::seed_from_u64(123);
+        for target in [0.5_f64, 1.0, 2.5, 4.0] {
+            let n_samples: usize = 20_000;
+            let sum: usize = (0..n_samples).map(|_| poisson(target, &mut rng)).sum();
+            let empirical = sum as f64 / n_samples as f64;
+            assert!(
+                (empirical - target).abs() < 0.1,
+                "empirical mean {empirical} too far from target {target}"
+            );
         }
     }
 
     #[test]
     fn greedy_covers_all_cells() {
-        // Run many seeds across different distributions to maximize branch coverage.
+        // Run many seeds across different means to maximize branch coverage.
         for seed in 0u64..200 {
-            let dist = if seed % 2 == 0 {
-                SizeDistribution::Fixed(3)
-            } else {
-                SizeDistribution::Uniform { min: 1, max: 4 }
-            };
+            let mean = if seed % 2 == 0 { 1.0 } else { 2.5 };
+            let dist = SizeDistribution::new(mean).unwrap();
             let mut rng = rand_chacha::ChaCha8Rng::seed_from_u64(seed);
             let n = if seed % 3 == 0 { 4 } else { 3 };
-            let tiling = greedy(n, &dist, &mut rng).unwrap();
+            let tiling = greedy(n, dist, &mut rng).unwrap();
             let covered: std::collections::HashSet<crate::Cell> =
                 tiling.iter().flat_map(Cover::cells).collect();
             assert_eq!(covered.len(), n * n);
