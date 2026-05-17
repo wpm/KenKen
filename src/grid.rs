@@ -304,17 +304,12 @@ mod tests {
     #[test]
     fn most_constrained_on_fresh_grid_returns_first_cell() {
         let g = Grid::new(3).unwrap();
-        assert_eq!(
-            g.most_constrained(),
-            Some((Cell::new(0, 0), Fill::full(3)))
-        );
+        assert_eq!(g.most_constrained(), Some((Cell::new(0, 0), Fill::full(3))));
     }
 
     #[test]
     fn most_constrained_returns_cell_with_smallest_fill() {
-        let g = Grid::new(3)
-            .unwrap()
-            .set(&Cell::new(1, 2), Fill::new([4]));
+        let g = Grid::new(3).unwrap().set(&Cell::new(1, 2), Fill::new([4]));
         assert_eq!(
             g.most_constrained(),
             Some((Cell::new(1, 2), Fill::new([4])))
