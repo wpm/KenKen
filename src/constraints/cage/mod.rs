@@ -52,11 +52,25 @@ impl Cage {
 }
 
 impl Constraint for Cage {
+    /// Applies generalized arc consistency: a tuple supports its cell-value
+    /// assignment only when every value still lies in its cell's current
+    /// domain. Each cell's new domain is the union of the values appearing at
+    /// that position across the *supported* tuples.
     fn apply_to(&self, grid: &Grid) -> Result<Grid, Error> {
         let n = self.len();
+        let current: Vec<Fill> = self
+            .cells()
+            .map(|c| grid.get(&c))
+            .collect::<Result<Vec<_>, _>>()?;
         let slots = self
             .tuples()
             .iter()
+            .filter(|tuple| {
+                tuple
+                    .iter()
+                    .zip(&current)
+                    .all(|(&val, fill)| !(*fill & Fill::new([val])).is_empty())
+            })
             .fold(vec![Fill::default(); n], |mut slots, tuple| {
                 for (slot, &val) in slots.iter_mut().zip(tuple.iter()) {
                     *slot = *slot | Fill::new([val]);
