@@ -131,6 +131,9 @@ impl Puzzle {
             cages,
         }
         .propagate()?
+        // Safe: Grid::new(n) succeeds because n came from a valid Puzzle (n in 1..=9),
+        // and filling every cell to full before propagating can only widen domains, never empty
+        // them.
         .unwrap_or_else(|| unreachable!("widening fills cannot produce a contradiction")))
     }
 
