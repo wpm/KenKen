@@ -159,7 +159,6 @@ impl Puzzle {
             .try_fold(self.grid.clone(), |grid, c| c.apply_to(&grid))
             .map(|grid| (!grid.is_invalid()).then_some(grid))
     }
-
 }
 
 impl State for Puzzle {
@@ -313,10 +312,7 @@ mod tests {
     fn insert_overlapping_cage_returns_err() {
         let p = puzzle_4().insert(singleton_cage()).unwrap().unwrap();
         let overlap = Cage::new(4, singleton(), Operation::Given(1));
-        assert!(matches!(
-            p.insert(overlap),
-            Err(Error::CageConflict(_))
-        ));
+        assert!(matches!(p.insert(overlap), Err(Error::CageConflict(_))));
     }
 
     #[test]
