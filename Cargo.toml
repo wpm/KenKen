@@ -19,5 +19,5 @@ strum = { version = "0.28", features = ["derive"] }
 itertools = "0.14"
 rand_chacha = "0.10.0"
 
-[lints.clippy]
-must_use_candidate = "warn"
+[lints.rust]
+unused_results = "warn"

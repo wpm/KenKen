@@ -8,7 +8,6 @@ use crate::{
 
 /// A square n×n arrangement of cells, each of which has a [`Fill`] of candidate
 /// values.
-#[must_use]
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Grid {
     n: usize,
@@ -32,7 +31,6 @@ impl Grid {
     }
 
     /// The number of rows or columns in the grid.
-    #[must_use]
     pub const fn n(&self) -> usize {
         self.n
     }
@@ -72,7 +70,6 @@ impl Grid {
 
     /// Returns the cell with the fewest candidate values, breaking ties by
     /// cell order. Returns `None` if the grid is empty.
-    #[must_use]
     pub fn most_constrained(&self) -> Option<(Cell, Fill)> {
         self.cells()
             .map(|cell| (cell, self.fills[cell.row * self.n + cell.column]))
@@ -80,13 +77,11 @@ impl Grid {
     }
 
     /// Has every cell fill been narrowed to a single value?
-    #[must_use]
     pub fn is_solved(&self) -> bool {
         self.fills.iter().all(|values| values.is_singleton())
     }
 
     /// Is any cell fill empty?
-    #[must_use]
     pub fn is_invalid(&self) -> bool {
         self.fills.iter().any(|values| values.is_empty())
     }

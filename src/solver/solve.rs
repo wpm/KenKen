@@ -18,7 +18,6 @@ pub trait State: Sized {
 /// Each call to [`Iterator::next`] returns one solution — a state for which
 /// [`State::branch`] yields no children. [`crate::Puzzle`] implements
 /// [`State`], so `Solver<Puzzle>` enumerates all solutions to a puzzle.
-#[must_use]
 pub struct Solver<S> {
     stack: Vec<S>,
 }

@@ -16,7 +16,6 @@ use crate::{
 };
 
 /// A contiguous region of edge-connected [`Cell`]s.
-#[must_use]
 #[derive(Debug, Clone, Hash, Eq, PartialEq, Ord, PartialOrd)]
 pub struct Polyomino(BTreeSet<Cell>);
 
@@ -46,7 +45,6 @@ impl Polyomino {
     }
 
     /// Returns `true` if this polyomino and `other` share at least one cell.
-    #[must_use]
     pub fn intersects(&self, other: &Self) -> bool {
         self.0.intersection(&other.0).next().is_some()
     }
@@ -59,6 +57,7 @@ impl Polyomino {
     /// # Errors
     /// Returns [`Error::DisconnectedPolyomino`] if adding `cell` would make the
     /// polyomino disconnected.
+    #[allow(unused_results)]
     pub fn insert(&self, cell: Cell) -> Result<Self, Error> {
         let mut cells = self.0.clone();
         cells.insert(cell);
@@ -88,7 +87,6 @@ impl Polyomino {
     /// Singleton cages permit only [`Operator::Given`]; 2-cell cages permit all
     /// operators; larger cages permit only [`Operator::Add`] and
     /// [`Operator::Multiply`].
-    #[must_use]
     pub fn valid_operators(cells: &[Cell]) -> Vec<Operator> {
         match cells.len() {
             0 => vec![],
@@ -176,7 +174,6 @@ impl Polyomino {
 
     /// Returns the valid ordered tuples for a single known `operation` on this
     /// polyomino on an `n`×`n` grid.
-    #[must_use]
     pub(crate) fn valid_tuples(&self, n: N, operation: Operation) -> Vec<Tuple> {
         let k = self.len();
         let pairs = self.collinear_pairs();
@@ -217,7 +214,6 @@ impl Polyomino {
     ///
     /// Each pair `(i, j)` with `i < j` means `cells[i]` and `cells[j]` must
     /// hold distinct values.
-    #[must_use]
     pub fn collinear_pairs(&self) -> Vec<(usize, usize)> {
         let mut by_row: HashMap<Index, Vec<usize>> = HashMap::new();
         let mut by_col: HashMap<Index, Vec<usize>> = HashMap::new();
@@ -246,7 +242,6 @@ impl Polyomino {
     ///
     /// Subtract and Divide are only valid for 2-cell polyominoes; any other
     /// size yields an empty map.
-    #[must_use]
     pub fn operator_tuples(&self, n: N, operator: Operator) -> HashMap<Operation, Vec<Tuple>> {
         let k = self.len();
         let pairs = self.collinear_pairs();
@@ -398,7 +393,6 @@ fn next_permutation(perm: &mut [N]) -> bool {
 
 /// Do `cells` form a contiguous edge-connected component?
 /// Two `cell`s are edge-connected if they share a common edge.
-#[must_use]
 pub fn is_edge_connected_component(cells: &BTreeSet<Cell>) -> bool {
     let Some(&start) = cells.first() else {
         return true;
