@@ -101,16 +101,11 @@ mod tests {
         }
 
         fn branch(&self) -> impl Iterator<Item = Self> {
-            if self.remaining == 1 {
-                None
-            } else {
-                Some(Self {
-                    remaining: self.remaining,
-                    candidate: self.candidate + 1,
-                    factors: self.factors.clone(),
-                })
-            }
-            .into_iter()
+            std::iter::once(Self {
+                remaining: self.remaining,
+                candidate: self.candidate + 1,
+                factors: self.factors.clone(),
+            })
         }
 
         fn is_solved(&self) -> bool {

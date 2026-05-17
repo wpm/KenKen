@@ -300,4 +300,36 @@ mod tests {
         let after = g.set(&Cell::new(9, 9), Fill::new([1]));
         assert_eq!(after, before);
     }
+
+    #[test]
+    fn most_constrained_on_fresh_grid_returns_first_cell() {
+        let g = Grid::new(3).unwrap();
+        assert_eq!(
+            g.most_constrained(),
+            Some((Cell::new(0, 0), Fill::full(3)))
+        );
+    }
+
+    #[test]
+    fn most_constrained_returns_cell_with_smallest_fill() {
+        let g = Grid::new(3)
+            .unwrap()
+            .set(&Cell::new(1, 2), Fill::new([4]));
+        assert_eq!(
+            g.most_constrained(),
+            Some((Cell::new(1, 2), Fill::new([4])))
+        );
+    }
+
+    #[test]
+    fn most_constrained_breaks_size_ties_by_cell_order() {
+        let g = Grid::new(3)
+            .unwrap()
+            .set(&Cell::new(2, 1), Fill::new([1, 2]))
+            .set(&Cell::new(0, 2), Fill::new([3, 4]));
+        assert_eq!(
+            g.most_constrained(),
+            Some((Cell::new(0, 2), Fill::new([3, 4])))
+        );
+    }
 }
