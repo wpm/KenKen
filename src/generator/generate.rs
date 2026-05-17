@@ -132,8 +132,8 @@ pub fn generate<R: Rng>(n: Index, rng: &mut R) -> Result<Option<Puzzle>, Error> 
 ///
 /// # Errors
 /// Returns `Error` if `n` is not in `1..=9`. The `?` on `insert` is
-/// structurally unreachable because the tiling's polyominos are disjoint, but
-/// is kept rather than panicking to avoid load-bearing assertions inside the
+/// structurally unreachable because the tiling's polyominos are disjoint but
+/// are kept rather than panicking to avoid load-bearing assertions inside the
 /// generator.
 ///
 /// # Panics
@@ -348,8 +348,7 @@ mod tests {
             let mut rng = rand_chacha::ChaCha8Rng::seed_from_u64(seed);
             let n = if seed % 3 == 0 { 4 } else { 3 };
             let tiling = greedy(n, dist, &mut rng).unwrap();
-            let covered: std::collections::HashSet<crate::Cell> =
-                tiling.iter().flat_map(Cover::cells).collect();
+            let covered: HashSet<Cell> = tiling.iter().flat_map(Cover::cells).collect();
             assert_eq!(covered.len(), n * n);
         }
     }
