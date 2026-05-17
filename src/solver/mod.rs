@@ -1,1 +1,1 @@
-pub(crate) mod solve;
+pub mod solve;

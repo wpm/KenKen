@@ -14,7 +14,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   public `Solver` / `State` types).
 - `Puzzle::generate` and `Puzzle::generate_with` — random puzzle generation
   exposed as methods on `Puzzle` (the free `generate` / `generate_with`
-  functions are no longer public).
+  functions are no longer public). Both return `Result<Puzzle, Error>`; the
+  previous `Result<Option<Puzzle>, Error>` had a vestigial `None` arm.
 - `Puzzle::default_op_policy` — the default cage-operation policy, exposed for
   composition with `Puzzle::generate_with`.
 - `Puzzle::with_cages(n, &[Cage])` — bulk constructor that no longer requires
@@ -54,6 +55,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `Polyomino::new_unchecked()` — removed without replacement.
 - `M`, `Index`, and `N` type aliases removed from the public API; signatures now use
   `u16`, `usize`, and `u8` directly.
+- `Error::DeltaSizeMismatch` — the `Delta` API was removed earlier in 0.3.0
+  development, leaving this variant unreachable.
+- `itertools` dependency removed (now a dev-dependency only).
 
 ### Internal
 - `Error::FlipWouldDisconnect` renamed to `Error::WouldDisconnect`.

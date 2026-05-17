@@ -1,4 +1,4 @@
-//! A [`Puzzle`] pairs a candidate [`Grid`] with a set of [`Cage`] constraints
+//! A [`Puzzle`] pairs a candidate grid with a set of [`Cage`] constraints
 //! and all-different constraints for every row and column.
 
 use std::collections::BTreeSet;
@@ -10,9 +10,7 @@ use crate::{
     Error::{CageConflict, CageNotInPuzzle},
     Fill, Grid,
     constraints::{Constraint, all_different::AllDifferent, cage::operation::Operation},
-    generator::generate::{
-        SizeDistribution, default_op_policy, generate, generate_with,
-    },
+    generator::generate::{SizeDistribution, default_op_policy, generate, generate_with},
     solver::solve::{Solver, State},
 };
 
@@ -27,9 +25,9 @@ use crate::{
 /// and mutation methods ([`with_cages`](Puzzle::with_cages),
 /// [`new_empty`](Puzzle::new_empty), [`insert`](Puzzle::insert)) propagate
 /// constraints to fixpoint before returning. If propagation would empty any
-/// cell's candidate
-/// set (a contradiction), the method returns `None` instead of a `Puzzle`,
-/// so a `Puzzle` value always represents a consistent, fully propagated state.
+/// cell's candidate set (a contradiction), the method returns `None` instead
+/// of a `Puzzle`, so a `Puzzle` value always represents a consistent, fully
+/// propagated state.
 #[derive(Debug, Clone)]
 pub struct Puzzle {
     grid: Grid,
@@ -163,7 +161,7 @@ impl Puzzle {
     ///
     /// # Errors
     /// Returns [`Error::InvalidGridSize`] if `n` is not in `1..=9`.
-    pub fn generate<R: Rng>(n: usize, rng: &mut R) -> Result<Option<Self>, Error> {
+    pub fn generate<R: Rng>(n: usize, rng: &mut R) -> Result<Self, Error> {
         generate(n, rng)
     }
 
@@ -182,7 +180,7 @@ impl Puzzle {
         rng: &mut R,
         op: F,
         sizes: SizeDistribution,
-    ) -> Result<Option<Self>, Error>
+    ) -> Result<Self, Error>
     where
         F: Fn(&[u8], usize) -> Result<Operation, Error>,
     {
@@ -193,7 +191,8 @@ impl Puzzle {
     ///
     /// - 1 cell: [`Operation::Given`].
     /// - 2 cells: [`Operation::Divide`] when divisible, otherwise [`Operation::Subtract`].
-    /// - 3+ cells: [`Operation::Multiply`] when the product fits in `n²`, otherwise [`Operation::Add`].
+    /// - 3+ cells: [`Operation::Multiply`] when the product fits in `n²`, otherwise
+    ///   [`Operation::Add`].
     ///
     /// # Errors
     /// Returns [`Error::EmptyOpPolicyValues`] if `values` is empty.

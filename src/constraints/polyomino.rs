@@ -348,7 +348,7 @@ impl Cover for Polyomino {
 /// Returns an iterator over all ordered permutations of `multiset` that satisfy
 /// the collinearity constraint: for every `(i, j)` in `pairs`, positions `i`
 /// and `j` must differ.
-pub(crate) fn ordered_tuples<'a>(
+pub fn ordered_tuples<'a>(
     multiset: &'a [N],
     pairs: &'a [(usize, usize)],
 ) -> impl Iterator<Item = Tuple> + 'a {
@@ -357,7 +357,7 @@ pub(crate) fn ordered_tuples<'a>(
 
 /// Returns an iterator over all distinct permutations of `values` in
 /// lexicographic order.
-pub(crate) fn permutations(values: &[N]) -> impl Iterator<Item = Tuple> {
+pub fn permutations(values: &[N]) -> impl Iterator<Item = Tuple> {
     let mut perm = values.to_vec();
     perm.sort_unstable();
     let mut all = vec![perm.clone()];

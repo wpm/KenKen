@@ -117,7 +117,7 @@ pub fn default_op_policy(values: &[N], n: Index) -> Result<Operation, Error> {
 ///
 /// # Errors
 /// Returns `Error` if `n` is not in `1..=9`.
-pub fn generate<R: Rng>(n: Index, rng: &mut R) -> Result<Option<Puzzle>, Error> {
+pub fn generate<R: Rng>(n: Index, rng: &mut R) -> Result<Puzzle, Error> {
     generate_with(n, rng, default_op_policy, SizeDistribution::default_for(n))
 }
 
@@ -131,10 +131,7 @@ pub fn generate<R: Rng>(n: Index, rng: &mut R) -> Result<Option<Puzzle>, Error> 
 ///    and pass them to `op` to choose the cage's operation.
 ///
 /// # Errors
-/// Returns `Error` if `n` is not in `1..=9`. The `?` on `insert` is
-/// structurally unreachable because the tiling's polyominos are disjoint but
-/// are kept rather than panicking to avoid load-bearing assertions inside the
-/// generator.
+/// Returns `Error` if `n` is not in `1..=9`, or any error returned by `op`.
 ///
 /// # Panics
 /// Panics if propagation after inserting a cage returns `None` (no solution
@@ -145,7 +142,7 @@ pub fn generate_with<R: Rng, F>(
     rng: &mut R,
     op: F,
     sizes: SizeDistribution,
-) -> Result<Option<Puzzle>, Error>
+) -> Result<Puzzle, Error>
 where
     F: Fn(&[N], Index) -> Result<Operation, Error>,
 {
@@ -165,7 +162,7 @@ where
             .insert(cage)?
             .unwrap_or_else(|| unreachable!("disjoint tiling cannot produce a contradiction"));
     }
-    Ok(Option::from(puzzle))
+    Ok(puzzle)
 }
 
 /// Builds a tiling that fully covers an `n`×`n` grid by greedy growth.
@@ -356,7 +353,7 @@ mod tests {
     #[test]
     fn generate_returns_a_puzzle() {
         let mut rng = rand_chacha::ChaCha8Rng::seed_from_u64(7);
-        assert!(generate(4, &mut rng).unwrap().is_some());
+        assert!(generate(4, &mut rng).is_ok());
     }
 
     #[test]
