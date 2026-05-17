@@ -282,11 +282,7 @@ mod tests {
             let dist = SizeDistribution::new(mean);
             for _ in 0..200 {
                 let s = dist.sample(n, &mut rng);
-                assert!(
-                    (1..=n * n).contains(&s),
-                    "sample {s} outside [1, {}]",
-                    n * n
-                );
+                assert!((1..=n * n).contains(&s));
             }
         }
     }
