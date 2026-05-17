@@ -86,11 +86,6 @@ impl Fill {
     pub const fn len(self) -> usize {
         self.0.count_ones() as usize
     }
-
-    /// Returns a new `Fill` with the value `n` removed.
-    pub const fn remove(self, n: N) -> Self {
-        Self(self.0 & !(1 << n))
-    }
 }
 
 impl BitAnd for Fill {
@@ -120,7 +115,7 @@ impl BitOr for Fill {
 /// Errors that can occur during puzzle construction or solving.
 #[derive(Debug)]
 pub enum Error {
-    /// A [`crate::Grid`] was constructed with a size less than 1 or greater than 9.
+    /// A [`Puzzle`](crate::Puzzle) was constructed with a size less than 1 or greater than 9.
     InvalidGridSize(Index),
     /// A referenced [`Cell`] is not present in the grid.
     InvalidCell(Cell),
@@ -146,10 +141,8 @@ pub enum Error {
     /// A [`crate::Polyomino`] was constructed from
     /// cells that are not edge-connected (e.g. a diagonal-only pair).
     DisconnectedPolyomino,
-    /// A row/column index passed to
-    /// [`crate::constraints::all_different::AllDifferent::row`] or
-    /// [`crate::constraints::all_different::AllDifferent::column`] is not less
-    /// than the grid size `n`. Carries `(index, n)`.
+    /// A row/column index used to build an internal all-different constraint
+    /// is not less than the grid size `n`. Carries `(index, n)`.
     IndexOutOfRange(Index, Index),
     /// A `Delta` passed to `Puzzle::narrow`/`widen` has a grid size that does
     /// not match the puzzle's. Carries `(delta_n, puzzle_n)`.
@@ -304,16 +297,6 @@ mod tests {
         assert_eq!(Fill::new([3]).len(), 1);
         assert_eq!(Fill::new([1, 5, 9]).len(), 3);
         assert_eq!(Fill::full(9).len(), 9);
-    }
-
-    #[test]
-    fn remove_drops_a_present_value() {
-        assert_eq!(Fill::new([1, 2, 3]).remove(2), Fill::new([1, 3]));
-    }
-
-    #[test]
-    fn remove_absent_value_is_noop() {
-        assert_eq!(Fill::new([1, 3]).remove(2), Fill::new([1, 3]));
     }
 
     #[test]

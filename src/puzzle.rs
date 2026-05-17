@@ -3,14 +3,20 @@
 
 use std::collections::BTreeSet;
 
+use rand::Rng;
+
 use crate::{
     Cage, Cell, Cover, Error,
     Error::{CageConflict, CageNotInPuzzle},
-    Fill, Grid, State,
-    constraints::{Constraint, all_different::AllDifferent},
+    Fill, Grid,
+    constraints::{Constraint, all_different::AllDifferent, cage::operation::Operation},
+    generator::generate::{
+        SizeDistribution, default_op_policy, generate, generate_with,
+    },
+    solver::solve::{Solver, State},
 };
 
-/// A KenKen puzzle: a [`Grid`] of candidate values together with cage and
+/// A KenKen puzzle: a grid of candidate values together with cage and
 /// all-different constraints.
 ///
 /// ## Fixpoint invariant
@@ -18,9 +24,10 @@ use crate::{
 /// A *fixpoint* is a state in which applying all constraints produces no
 /// further change — every cell's candidate set is already as narrow as the
 /// constraints require. Every `Puzzle` upholds this invariant: construction
-/// and mutation methods ([`new`](Puzzle::new), [`new_empty`](Puzzle::new_empty),
-/// [`insert`](Puzzle::insert), `set_grid`) propagate constraints to
-/// fixpoint before returning. If propagation would empty any cell's candidate
+/// and mutation methods ([`with_cages`](Puzzle::with_cages),
+/// [`new_empty`](Puzzle::new_empty), [`insert`](Puzzle::insert)) propagate
+/// constraints to fixpoint before returning. If propagation would empty any
+/// cell's candidate
 /// set (a contradiction), the method returns `None` instead of a `Puzzle`,
 /// so a `Puzzle` value always represents a consistent, fully propagated state.
 #[derive(Debug, Clone)]
@@ -44,14 +51,14 @@ impl Puzzle {
         })
     }
 
-    /// Creates a puzzle from an existing grid and a set of cages, then propagates
+    /// Creates an `n`×`n` puzzle from a set of cages, then propagates
     /// all constraints. Returns `None` if propagation finds a contradiction.
     ///
     /// # Errors
+    /// Returns [`Error::InvalidGridSize`] if `n` is not in `1..=9`.
     /// Returns [`CageNotInPuzzle`] if any cage contains a cell outside the grid.
-    /// Returns [`Error`] if propagation encounters a cell outside the grid bounds.
-    pub fn new(grid: &Grid, cages: &[Cage]) -> Result<Option<Self>, Error> {
-        let n = grid.n();
+    pub fn with_cages(n: usize, cages: &[Cage]) -> Result<Option<Self>, Error> {
+        let grid = Grid::new(n)?;
         for cage in cages {
             if cage.cells().any(|c| c.row >= n || c.column >= n) {
                 return Err(CageNotInPuzzle(cage.clone()));
@@ -78,8 +85,7 @@ impl Puzzle {
     }
 
     /// Returns a new [`Puzzle`] with `cage` added. The puzzle's grid will reflect the constraints
-    /// imposed by the new cage. If this results in an invalid [`Grid`] state, this function
-    /// will return `none`.
+    /// imposed by the new cage. If this results in a contradiction, this function returns `None`.
     ///
     /// This is idempotent. Adding a cage identical to one already present returns the puzzle
     /// unchanged.
@@ -141,6 +147,58 @@ impl Puzzle {
     /// cells (row-major), then operation, then tuples.
     pub fn cages(&self) -> impl Iterator<Item = &Cage> {
         self.cages.iter()
+    }
+
+    /// Enumerates the puzzle's solutions via depth-first backtracking search.
+    ///
+    /// Each item is a fully-solved [`Puzzle`] (every cell pinned to one value).
+    /// The iterator is lazy: stop after the first item for uniqueness checks,
+    /// or drain it to count all solutions.
+    pub fn solve(&self) -> impl Iterator<Item = Self> {
+        Solver::new(self.clone())
+    }
+
+    /// Generates a random `n`×`n` puzzle using the default operation policy
+    /// ([`Puzzle::default_op_policy`]) and the default cage-size distribution.
+    ///
+    /// # Errors
+    /// Returns [`Error::InvalidGridSize`] if `n` is not in `1..=9`.
+    pub fn generate<R: Rng>(n: usize, rng: &mut R) -> Result<Option<Self>, Error> {
+        generate(n, rng)
+    }
+
+    /// Generates a random `n`×`n` puzzle with a caller-supplied operation
+    /// policy and cage-size distribution.
+    ///
+    /// The pipeline samples a Latin square as the puzzle's solution, tiles
+    /// the grid with random polyominos sized by `sizes`, then asks `op` to
+    /// pick an [`Operation`] for each cage from its solved values.
+    ///
+    /// # Errors
+    /// Returns [`Error::InvalidGridSize`] if `n` is not in `1..=9`, or any
+    /// error returned by `op`.
+    pub fn generate_with<R: Rng, F>(
+        n: usize,
+        rng: &mut R,
+        op: F,
+        sizes: SizeDistribution,
+    ) -> Result<Option<Self>, Error>
+    where
+        F: Fn(&[u8], usize) -> Result<Operation, Error>,
+    {
+        generate_with(n, rng, op, sizes)
+    }
+
+    /// Default policy mapping a cage's solved values to an [`Operation`].
+    ///
+    /// - 1 cell: [`Operation::Given`].
+    /// - 2 cells: [`Operation::Divide`] when divisible, otherwise [`Operation::Subtract`].
+    /// - 3+ cells: [`Operation::Multiply`] when the product fits in `n²`, otherwise [`Operation::Add`].
+    ///
+    /// # Errors
+    /// Returns [`Error::EmptyOpPolicyValues`] if `values` is empty.
+    pub fn default_op_policy(values: &[u8], n: usize) -> Result<Operation, Error> {
+        default_op_policy(values, n)
     }
 
     #[cfg(test)]
@@ -231,8 +289,9 @@ impl Cover for Puzzle {
 mod tests {
     use super::Puzzle;
     use crate::{
-        Cage, Cell, Cover, Error, Fill, Grid, Operation, Polyomino, State,
+        Cage, Cell, Cover, Error, Fill, Operation, Polyomino,
         constraints::test_utils::{cells, singleton},
+        solver::solve::State,
     };
 
     fn puzzle_4() -> Puzzle {
@@ -243,19 +302,18 @@ mod tests {
         Cage::new(4, singleton(), Operation::Given(3))
     }
 
-    // --- Puzzle::new ---
+    // --- Puzzle::with_cages ---
 
     #[test]
-    fn new_cage_outside_grid_returns_err() {
+    fn with_cages_cage_outside_grid_returns_err() {
         // A 2-cell cage whose second cell lies outside the 1×1 grid.
-        let grid = Grid::new(1).unwrap();
         let out_of_bounds = Cage::new(
             4,
             Polyomino::from_cells(&cells(&[(0, 0), (0, 1)])).unwrap(),
             Operation::Add(3),
         );
         assert!(matches!(
-            Puzzle::new(&grid, &[out_of_bounds]),
+            Puzzle::with_cages(1, &[out_of_bounds]),
             Err(Error::CageNotInPuzzle(_))
         ));
     }
@@ -283,23 +341,20 @@ mod tests {
     }
 
     #[test]
-    fn new_with_no_cages_returns_some() {
-        let grid = Grid::new(4).unwrap();
-        assert!(Puzzle::new(&grid, &[]).unwrap().is_some());
+    fn with_cages_no_cages_returns_some() {
+        assert!(Puzzle::with_cages(4, &[]).unwrap().is_some());
     }
 
     #[test]
-    fn new_with_valid_cage_returns_some_and_propagates() {
-        let grid = Grid::new(4).unwrap();
+    fn with_cages_valid_cage_returns_some_and_propagates() {
         let cage = Cage::new(4, singleton(), Operation::Given(2));
-        let puzzle = Puzzle::new(&grid, &[cage]).unwrap().unwrap();
+        let puzzle = Puzzle::with_cages(4, &[cage]).unwrap().unwrap();
         assert_eq!(puzzle.grid().get(&Cell::new(0, 0)).unwrap(), Fill::new([2]));
     }
 
     #[test]
-    fn new_with_contradicting_cages_returns_none() {
+    fn with_cages_contradicting_cages_returns_none() {
         // Two Given(1) cages in the same row of a 2×2 grid: AllDifferent makes it unsolvable.
-        let grid = Grid::new(2).unwrap();
         let c1 = Cage::new(
             2,
             Polyomino::from_cells(&cells(&[(0, 0)])).unwrap(),
@@ -310,7 +365,7 @@ mod tests {
             Polyomino::from_cells(&cells(&[(0, 1)])).unwrap(),
             Operation::Given(1),
         );
-        assert!(Puzzle::new(&grid, &[c1, c2]).unwrap().is_none());
+        assert!(Puzzle::with_cages(2, &[c1, c2]).unwrap().is_none());
     }
 
     // --- Puzzle::insert ---

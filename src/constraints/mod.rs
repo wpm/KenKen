@@ -5,7 +5,7 @@ pub mod cage;
 pub mod polyomino;
 pub mod regin;
 
-pub trait Constraint {
+pub(crate) trait Constraint {
     /// Applies this constraint to `grid` and returns the narrowed grid.
     ///
     /// # Errors
@@ -14,7 +14,7 @@ pub trait Constraint {
 }
 
 /// A set of [`Cell`]s.
-pub trait Cover {
+pub(crate) trait Cover {
     /// The covering [`Cell`]s in row-major order.
     ///
     /// Implementations must be cheap to call repeatedly; the default `len` and
@@ -25,6 +25,7 @@ pub trait Cover {
         self.cells().count()
     }
 
+    #[cfg(test)]
     fn is_empty(&self) -> bool {
         self.cells().next().is_none()
     }
