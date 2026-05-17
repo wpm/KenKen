@@ -29,7 +29,7 @@ pub use constraints::{
     polyomino::Polyomino,
 };
 pub use generator::generate::{
-    DEFAULT_SIZE_DISTRIBUTION, default_op_policy, generate, generate_with,
+    SizeDistribution, default_op_policy, generate, generate_with,
 };
 pub use grid::Grid;
 pub use puzzle::Puzzle;
