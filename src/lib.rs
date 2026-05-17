@@ -28,9 +28,7 @@ pub use constraints::{
     },
     polyomino::Polyomino,
 };
-pub use generator::generate::{
-    SizeDistribution, default_op_policy, generate, generate_with,
-};
+pub use generator::generate::{SizeDistribution, default_op_policy, generate, generate_with};
 pub use grid::Grid;
 pub use puzzle::Puzzle;
 pub use solver::solve::{Solver, State};

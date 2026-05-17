@@ -144,7 +144,7 @@ where
 {
     let mut puzzle = Puzzle::new_empty(n)?;
     let latin_square = generate_latin_square(n, rng);
-    let tiling = greedy(n, &sizes, rng)?;
+    let tiling = greedy(n, sizes, rng)?;
     let n_max = n as N;
 
     for polyomino in tiling {
@@ -170,7 +170,7 @@ where
 #[allow(unused_results)]
 pub fn greedy<R: Rng>(
     n: usize,
-    dist: &SizeDistribution,
+    dist: SizeDistribution,
     rng: &mut R,
 ) -> Result<Vec<Polyomino>, Error> {
     let mut tiling = Vec::new();
@@ -282,7 +282,11 @@ mod tests {
             let dist = SizeDistribution::new(mean);
             for _ in 0..200 {
                 let s = dist.sample(n, &mut rng);
-                assert!((1..=n * n).contains(&s), "sample {s} outside [1, {}]", n * n);
+                assert!(
+                    (1..=n * n).contains(&s),
+                    "sample {s} outside [1, {}]",
+                    n * n
+                );
             }
         }
     }
@@ -295,12 +299,12 @@ mod tests {
     }
 
     #[test]
+    #[allow(clippy::cast_precision_loss)]
     fn poisson_empirical_mean_close_to_target() {
         let mut rng = rand_chacha::ChaCha8Rng::seed_from_u64(123);
         for target in [0.5_f64, 1.0, 2.5, 4.0] {
-            let n_samples = 20_000;
+            let n_samples: usize = 20_000;
             let sum: usize = (0..n_samples).map(|_| poisson(target, &mut rng)).sum();
-            #[allow(clippy::cast_precision_loss)]
             let empirical = sum as f64 / n_samples as f64;
             assert!(
                 (empirical - target).abs() < 0.1,
@@ -317,7 +321,7 @@ mod tests {
             let dist = SizeDistribution::new(mean);
             let mut rng = rand_chacha::ChaCha8Rng::seed_from_u64(seed);
             let n = if seed % 3 == 0 { 4 } else { 3 };
-            let tiling = greedy(n, &dist, &mut rng).unwrap();
+            let tiling = greedy(n, dist, &mut rng).unwrap();
             let covered: std::collections::HashSet<crate::Cell> =
                 tiling.iter().flat_map(Cover::cells).collect();
             assert_eq!(covered.len(), n * n);
