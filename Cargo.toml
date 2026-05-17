@@ -16,6 +16,7 @@ strum = { version = "0.28", features = ["derive"] }
 
 
 [dev-dependencies]
+itertools = "0.14"
 rand_chacha = "0.10.0"
 
 [lints.rust]

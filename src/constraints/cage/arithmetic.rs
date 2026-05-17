@@ -92,122 +92,89 @@ mod tests {
 
     #[test]
     fn subtraction_multisets_target_1_min_1() {
-        assert_eq!(
-            subtraction_multisets(4, 1).collect::<Vec<_>>(),
-            vec![vec![1, 2], vec![2, 3], vec![3, 4]]
+        itertools::assert_equal(
+            subtraction_multisets(4, 1),
+            [vec![1, 2], vec![2, 3], vec![3, 4]],
         );
     }
 
     #[test]
     fn subtraction_multisets_target_2_min_1() {
-        assert_eq!(
-            subtraction_multisets(4, 2).collect::<Vec<_>>(),
-            vec![vec![1, 3], vec![2, 4]]
-        );
+        itertools::assert_equal(subtraction_multisets(4, 2), [vec![1, 3], vec![2, 4]]);
     }
 
     #[test]
     fn subtraction_multisets_no_results() {
-        assert_eq!(
-            subtraction_multisets(3, 5).collect::<Vec<_>>(),
-            Vec::<Tuple>::new()
-        );
+        itertools::assert_equal(subtraction_multisets(3, 5), Vec::<Tuple>::new());
     }
 
     #[test]
     fn division_multisets_target_2_min_1() {
-        assert_eq!(
-            division_multisets(4, 2).collect::<Vec<_>>(),
-            vec![vec![1, 2], vec![2, 4]]
-        );
+        itertools::assert_equal(division_multisets(4, 2), [vec![1, 2], vec![2, 4]]);
     }
 
     #[test]
     fn division_multisets_target_3_min_1() {
-        assert_eq!(
-            division_multisets(6, 3).collect::<Vec<_>>(),
-            vec![vec![1, 3], vec![2, 6]]
-        );
+        itertools::assert_equal(division_multisets(6, 3), [vec![1, 3], vec![2, 6]]);
     }
 
     #[test]
     fn division_multisets_no_results() {
-        assert_eq!(
-            division_multisets(5, 7).collect::<Vec<_>>(),
-            Vec::<Tuple>::new()
-        );
+        itertools::assert_equal(division_multisets(5, 7), Vec::<Tuple>::new());
     }
 
     #[test]
     fn simplex_multisets_filters_by_sum() {
         // k=2, n=4, sum=5: pairs are [1,4], [2,3]
-        assert_eq!(
-            addition_multisets(4, 2, 5).collect::<Vec<_>>(),
-            vec![vec![1, 4], vec![2, 3]]
-        );
+        itertools::assert_equal(addition_multisets(4, 2, 5), [vec![1, 4], vec![2, 3]]);
     }
 
     #[test]
     fn simplex_multisets_filters_by_product() {
         // k=2, n=6, product=6: pairs are [1,6], [2,3]
-        assert_eq!(
-            multiplication_multisets(6, 2, 6).collect::<Vec<_>>(),
-            vec![vec![1, 6], vec![2, 3]]
-        );
+        itertools::assert_equal(multiplication_multisets(6, 2, 6), [vec![1, 6], vec![2, 3]]);
     }
 
     #[test]
     fn addition_multisets_k3() {
         // n=4, k=3, s=6: [1,1,4], [1,2,3], [2,2,2]
-        assert_eq!(
-            addition_multisets(4, 3, 6).collect::<Vec<_>>(),
-            vec![vec![1, 1, 4], vec![1, 2, 3], vec![2, 2, 2]]
+        itertools::assert_equal(
+            addition_multisets(4, 3, 6),
+            [vec![1, 1, 4], vec![1, 2, 3], vec![2, 2, 2]],
         );
     }
 
     #[test]
     fn addition_multisets_no_results() {
         // s=1 with k=2 is impossible since min sum is 1+1=2
-        assert_eq!(
-            addition_multisets(4, 2, 1).collect::<Vec<_>>(),
-            Vec::<Tuple>::new()
-        );
+        itertools::assert_equal(addition_multisets(4, 2, 1), Vec::<Tuple>::new());
     }
 
     #[test]
     fn multiplication_multisets_k2() {
         // n=6, k=2, s=6: [1,6], [2,3]
-        assert_eq!(
-            multiplication_multisets(6, 2, 6).collect::<Vec<_>>(),
-            vec![vec![1, 6], vec![2, 3]]
-        );
+        itertools::assert_equal(multiplication_multisets(6, 2, 6), [vec![1, 6], vec![2, 3]]);
     }
 
     #[test]
     fn multiplication_multisets_k3() {
         // n=4, k=3, s=8: [1,2,4], [2,2,2]
-        assert_eq!(
-            multiplication_multisets(4, 3, 8).collect::<Vec<_>>(),
-            vec![vec![1, 2, 4], vec![2, 2, 2]]
+        itertools::assert_equal(
+            multiplication_multisets(4, 3, 8),
+            [vec![1, 2, 4], vec![2, 2, 2]],
         );
     }
 
     #[test]
     fn multiplication_multisets_no_results() {
         // s=7 is prime, so no factorization into 3 values in 1..=4
-        assert_eq!(
-            multiplication_multisets(4, 3, 7).collect::<Vec<_>>(),
-            Vec::<Tuple>::new()
-        );
+        itertools::assert_equal(multiplication_multisets(4, 3, 7), Vec::<Tuple>::new());
     }
 
     #[test]
     fn multiplication_multisets_large_product() {
         // 9^2 = 81 fits in N, but 9^3 = 729 does not — requires M
-        assert_eq!(
-            multiplication_multisets(9, 3, 729).collect::<Vec<_>>(),
-            vec![vec![9, 9, 9]]
-        );
+        itertools::assert_equal(multiplication_multisets(9, 3, 729), [vec![9, 9, 9]]);
     }
 
     fn add_acc(a: M, b: N) -> M {

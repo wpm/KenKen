@@ -78,14 +78,14 @@ mod tests {
 
     #[test]
     fn row_contains_correct_cells() {
-        assert_eq!(
-            row_4().cells().collect::<Vec<_>>(),
-            vec![
+        itertools::assert_equal(
+            row_4().cells(),
+            [
                 Cell::new(2, 0),
                 Cell::new(2, 1),
                 Cell::new(2, 2),
-                Cell::new(2, 3)
-            ]
+                Cell::new(2, 3),
+            ],
         );
     }
 
@@ -98,9 +98,9 @@ mod tests {
 
     #[test]
     fn column_contains_correct_cells() {
-        assert_eq!(
-            column_3().cells().collect::<Vec<_>>(),
-            vec![Cell::new(0, 1), Cell::new(1, 1), Cell::new(2, 1)]
+        itertools::assert_equal(
+            column_3().cells(),
+            [Cell::new(0, 1), Cell::new(1, 1), Cell::new(2, 1)],
         );
     }
 

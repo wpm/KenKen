@@ -74,27 +74,21 @@ mod test {
     #[test]
     fn cage_valid_targets_yields_legal_targets_in_ascending_order() {
         let cells = [Cell::new(0, 0), Cell::new(0, 1)];
-        let subtract: Vec<Operation> = Polyomino::valid_operations(&cells, Operator::Subtract, 4)
-            .unwrap()
-            .collect();
-        assert_eq!(
-            subtract,
-            vec![
+        itertools::assert_equal(
+            Polyomino::valid_operations(&cells, Operator::Subtract, 4).unwrap(),
+            [
                 Operation::Subtract(1),
                 Operation::Subtract(2),
                 Operation::Subtract(3),
-            ]
+            ],
         );
-        let divide: Vec<Operation> = Polyomino::valid_operations(&cells, Operator::Divide, 4)
-            .unwrap()
-            .collect();
-        assert_eq!(
-            divide,
-            vec![
+        itertools::assert_equal(
+            Polyomino::valid_operations(&cells, Operator::Divide, 4).unwrap(),
+            [
                 Operation::Divide(2),
                 Operation::Divide(3),
                 Operation::Divide(4),
-            ]
+            ],
         );
     }
 

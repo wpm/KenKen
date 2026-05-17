@@ -486,7 +486,7 @@ mod tests {
     #[test]
     fn polyomino_cells_are_sorted() {
         let r = Polyomino::from_cells(&[c10(), c00(), c01()]).unwrap();
-        assert_eq!(r.cells().collect::<Vec<_>>(), vec![c00(), c01(), c10()]);
+        itertools::assert_equal(r.cells(), [c00(), c01(), c10()]);
     }
 
     #[test]
@@ -536,20 +536,17 @@ mod tests {
 
     #[test]
     fn permutations_single_element() {
-        assert_eq!(permutations(&[1]).collect::<Vec<_>>(), vec![vec![1]]);
+        itertools::assert_equal(permutations(&[1]), [vec![1]]);
     }
 
     #[test]
     fn permutations_two_distinct_elements() {
-        assert_eq!(
-            permutations(&[1, 2]).collect::<Vec<_>>(),
-            vec![vec![1, 2], vec![2, 1]]
-        );
+        itertools::assert_equal(permutations(&[1, 2]), [vec![1, 2], vec![2, 1]]);
     }
 
     #[test]
     fn permutations_two_equal_elements() {
-        assert_eq!(permutations(&[2, 2]).collect::<Vec<_>>(), vec![vec![2, 2]]);
+        itertools::assert_equal(permutations(&[2, 2]), [vec![2, 2]]);
     }
 
     #[test]

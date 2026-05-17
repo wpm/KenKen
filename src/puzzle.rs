@@ -87,6 +87,12 @@ impl Puzzle {
         }
     }
 
+    /// Returns the puzzle's cages in ascending [`Cage`] order — by polyomino
+    /// cells (row-major), then operation, then tuples.
+    pub fn cages(&self) -> impl Iterator<Item = &Cage> {
+        self.cages.iter()
+    }
+
     #[cfg(test)]
     pub const fn grid(&self) -> &Grid {
         &self.grid
@@ -230,6 +236,36 @@ mod tests {
         let p = puzzle_4();
         let p2 = p.remove(&singleton_cage());
         assert!(p2.insert(singleton_cage()).is_ok());
+    }
+
+    // --- Puzzle::cages ---
+
+    #[test]
+    fn cages_fresh_puzzle_is_empty() {
+        assert_eq!(puzzle_4().cages().count(), 0);
+    }
+
+    #[test]
+    fn cages_yields_in_storage_order() {
+        let a = Cage::new(
+            4,
+            Polyomino::from_cells(&cells(&[(0, 0)])).unwrap(),
+            Operation::Given(3),
+        );
+        let b = Cage::new(
+            4,
+            Polyomino::from_cells(&cells(&[(1, 1)])).unwrap(),
+            Operation::Given(2),
+        );
+        // Insert b first so storage order (BTreeSet by Cage::Ord) differs from insertion order.
+        let puzzle = puzzle_4()
+            .insert(b.clone())
+            .unwrap()
+            .unwrap()
+            .insert(a.clone())
+            .unwrap()
+            .unwrap();
+        itertools::assert_equal(puzzle.cages(), &[a, b]);
     }
 
     // --- Puzzle::branch ---
