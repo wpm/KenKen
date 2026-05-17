@@ -111,8 +111,8 @@ impl Puzzle {
 
     /// Returns a new puzzle with `cage` removed and constraints re-propagated.
     ///
-    /// Cells covered by the removed cage have their fills reset to the full candidate
-    /// set before propagation, so the remaining constraints determine their new domains.
+    /// The entire grid is reset to `Fill::full(n)` before re-propagating with the remaining
+    /// cages, so all constraints determine their new domains from scratch.
     ///
     /// This is idempotent. Attempting to remove a `cage` that is not present returns
     /// the puzzle unchanged.
