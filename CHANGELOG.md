@@ -10,44 +10,50 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [0.3.0] - 2026-05-16
 
 ### Added
-- `Solver<S>` and `State` trait are now public, allowing direct solution enumeration
-  via `Solver::new(puzzle)`.
+- `Puzzle::solve` — enumerates solutions as an iterator (replaces the previously
+  public `Solver` / `State` types).
+- `Puzzle::generate` and `Puzzle::generate_with` — random puzzle generation
+  exposed as methods on `Puzzle` (the free `generate` / `generate_with`
+  functions are no longer public).
+- `Puzzle::default_op_policy` — the default cage-operation policy, exposed for
+  composition with `Puzzle::generate_with`.
+- `Puzzle::with_cages(n, &[Cage])` — bulk constructor that no longer requires
+  the caller to build a `Grid` first.
 - `Puzzle::insert` and `Puzzle::remove` replace the old `insert_cage`/`remove_cage`
   methods; `insert` now returns `Result<Option<Puzzle>>` (propagation may detect a
   contradiction).
-- `Puzzle::propagate` (fixed-point constraint propagation) and `Puzzle::branch` (MRV
-  branching heuristic) are now the primary solver primitives.
 - `Polyomino::intersects` — tests whether two polyominoes share any cell.
-- `generate` / `generate_with` — random puzzle generation with pluggable operation
-  policy and `SizeDistribution`.
-- `Cover` trait — implemented by `AllDifferent`, `Cage`, `Polyomino`, and `Puzzle`.
 
 ### Changed
 - `Constraint` trait redesigned: `apply_to(&Grid) -> Result<Grid, Error>` replaces the
   old `AllowedValues`-based callback model. Constraints are now composable via
   `try_fold` and all constraints are monotone filters (candidates are only removed,
   never added).
-- `Cover::cells` now returns `impl Iterator<Item = Cell>` instead of `Vec<Cell>`.
 - `Polyomino::new` renamed to `Polyomino::from_cells`.
-- `State::propagate` now returns `Result<Option<Self>, Error>` (was `Option<Self>`);
-  the `Err` path surfaces grid-access errors from out-of-bounds constraints.
 - CI coverage gate lowered to 99% — the `continue` branch in `greedy`'s frontier
   dedup and the `unreachable!()` path in `generate_with` are structurally unreachable
   in practice.
 
 ### Removed
+- `Solver<S>` and the `State` trait — collapsed into `Puzzle::solve`.
+- Free functions `generate`, `generate_with`, and `default_op_policy` — collapsed
+  into methods on `Puzzle`.
+- `Puzzle::new(grid, cages)` — superseded by `Puzzle::with_cages(n, cages)`,
+  which no longer requires the caller to construct a `Grid`.
+- `Grid`, `Fill`, the `Cover` trait, the `Constraint` trait, and the
+  `constraints` module are no longer part of the public API; they remain
+  crate-internal implementation details.
 - `Puzzle::uniqueness()`, `Puzzle::solutions()`, `Puzzle::solutions_at_most(k)` —
-  equivalent functionality is available by driving `Solver::new(puzzle)` directly.
+  equivalent functionality is available via `Puzzle::solve()`.
 - `Puzzle::rank_tuples_for_cage()` and `NarrowingScore` — internal tuning API with no
   replacement; cage constraint strength is now implicit in propagation.
-- `Puzzle::narrow()`, `Puzzle::widen()`, `Puzzle::propagate_fully()` — superseded by
-  `Puzzle::propagate`.
+- `Puzzle::narrow()`, `Puzzle::widen()`, `Puzzle::propagate_fully()` — propagation
+  now runs implicitly inside `with_cages`, `insert`, and `remove`.
 - `Puzzle::singleton_cells()`, `Puzzle::empty_cells()`, `Puzzle::candidates()` —
-  equivalent information is available via `Puzzle::cells()` and `Grid` accessors.
+  no replacement; solved puzzles are now returned directly by `Puzzle::solve`.
 - `Polyomino::new_unchecked()` — removed without replacement.
 - `M`, `Index`, and `N` type aliases removed from the public API; signatures now use
   `u16`, `usize`, and `u8` directly.
-- `itertools` dependency removed.
 
 ### Internal
 - `Error::FlipWouldDisconnect` renamed to `Error::WouldDisconnect`.

@@ -20,24 +20,17 @@ git config core.hooksPath .githooks
 
 ## What the library provides
 
-**Build puzzles** with `Puzzle::new(n)`, then add cages via `insert_cage` and remove them via
-`remove_cage`. Each `Cage` is a `Polyomino` paired with an `Operation` (`Add`, `Subtract`,
-`Multiply`, `Divide`, or `Given`).
+Everything is accessed through the [`Puzzle`] type.
 
-**Query solution counts** on any `Puzzle`:
+**Build puzzles** with `Puzzle::new_empty(n)`, then add cages via `insert(cage)` and remove them
+via `remove(&cage)`, or bulk-construct with `Puzzle::with_cages(n, &cages)`. Each `Cage` is a
+`Polyomino` paired with an `Operation` (`Add`, `Subtract`, `Multiply`, `Divide`, or `Given`).
 
-- `uniqueness()` — classifies the puzzle as having no solution, exactly one, or more than one; stops
-  the solver early once a second solution is found.
-- `solutions()` — exhaustive count of all solutions.
-- `solutions_at_most(k)` — count up to `k` solutions; useful for capping runtime when only a threshold
-  matters.
+**Enumerate solutions** with `puzzle.solve()`, a depth-first backtracking iterator that yields one
+solved `Puzzle` per solution. Stop after the first item for uniqueness checks, or drain the
+iterator to count all solutions.
 
-**Enumerate solutions** directly with `Solver::new(puzzle)`, a depth-first backtracking iterator
-that yields one solved `Puzzle` per solution.
-
-**Generate puzzles** randomly with `generate(n, rng)`, or use `generate_with(n, rng, op_policy,
-size_distribution)` to control how cage operations are assigned and how cage sizes are distributed:
-
-- `default_op_policy` / custom closure — maps a cage's cell values to an `Operation`.
-- `DEFAULT_SIZE_DISTRIBUTION` / `SizeDistribution` — controls cage-size sampling (`Fixed(n)` or
-  `Uniform { min, max }`).
+**Generate puzzles** randomly with `Puzzle::generate(n, rng)`, or use
+`Puzzle::generate_with(n, rng, op_policy, sizes)` for custom operation assignment and cage-size
+distribution. `Puzzle::default_op_policy` is exposed so callers can compose it with their own
+overrides.
