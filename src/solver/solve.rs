@@ -9,15 +9,18 @@ pub trait State: Sized {
     /// # Errors
     /// Returns [`Error`] if a constraint is applied to a cell outside the grid.
     fn propagate(&self) -> Result<Option<Self>, Error>;
-    /// Returns substates to explore. An empty iterator signals a solution.
+    /// Returns substates to explore.
     fn branch(&self) -> impl Iterator<Item = Self>;
+    /// Returns `true` when this state represents a complete solution. The
+    /// solver only yields states for which this is `true`.
+    fn is_solved(&self) -> bool;
 }
 
 /// A depth-first backtracking solver over any [`State`].
 ///
 /// Each call to [`Iterator::next`] returns one solution — a state for which
-/// [`State::branch`] yields no children. [`crate::Puzzle`] implements
-/// [`State`], so `Solver<Puzzle>` enumerates all solutions to a puzzle.
+/// [`State::is_solved`] is `true`. [`crate::Puzzle`] implements [`State`], so
+/// `Solver<Puzzle>` enumerates all solutions to a puzzle.
 pub struct Solver<S> {
     stack: Vec<S>,
 }
@@ -34,16 +37,13 @@ impl<S: State + Clone> Iterator for Solver<S> {
 
     fn next(&mut self) -> Option<S> {
         while let Some(state) = self.stack.pop() {
-            if let Ok(Some(state)) = state.propagate() {
-                let leaf_state = state.clone();
-                let mut branches = leaf_state.branch();
-                if let Some(first) = branches.next() {
-                    self.stack.push(first);
-                    self.stack.extend(branches);
-                } else {
-                    return Some(state);
-                }
+            let Ok(Some(state)) = state.propagate() else {
+                continue;
+            };
+            if state.is_solved() {
+                return Some(state);
             }
+            self.stack.extend(state.branch());
         }
         None
     }
@@ -107,6 +107,10 @@ mod tests {
                 })
             }
             .into_iter()
+        }
+
+        fn is_solved(&self) -> bool {
+            self.remaining == 1
         }
     }
 

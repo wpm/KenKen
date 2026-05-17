@@ -190,23 +190,31 @@ impl State for Puzzle {
         Ok(Some(puzzle))
     }
 
+    fn is_solved(&self) -> bool {
+        self.grid.is_solved()
+    }
+
     /// Returns one child puzzle per candidate value of the most-constrained
-    /// cell — the cell with the fewest remaining candidates, breaking ties by
-    /// cell order. Each child has that cell pinned to a single value.
+    /// *unsolved* cell — the cell with the fewest remaining candidates among
+    /// those with more than one candidate, breaking ties by cell order. Each
+    /// child has that cell pinned to a single value.
     ///
-    /// Returns an empty iterator if the grid has no cells, signaling a solution.
+    /// Returns an empty iterator when every cell is already a singleton.
     fn branch(&self) -> impl Iterator<Item = Self> {
-        self.grid
-            .most_constrained()
-            .into_iter()
-            .flat_map(move |(cell, fill)| {
-                let grid = self.grid.clone();
-                fill.iter().filter_map(move |v| {
-                    self.set_grid(grid.clone().set(&cell, Fill::new([v])))
-                        .ok()
-                        .flatten()
-                })
+        let pick = self
+            .grid
+            .cells()
+            .map(|cell| (cell, self.grid.get(&cell).unwrap_or_default()))
+            .filter(|(_, fill)| fill.len() > 1)
+            .min_by(|(a, fa), (b, fb)| fa.len().cmp(&fb.len()).then_with(|| a.cmp(b)));
+        pick.into_iter().flat_map(move |(cell, fill)| {
+            let grid = self.grid.clone();
+            fill.iter().filter_map(move |v| {
+                self.set_grid(grid.clone().set(&cell, Fill::new([v])))
+                    .ok()
+                    .flatten()
             })
+        })
     }
 }
 
@@ -408,28 +416,54 @@ mod tests {
     }
 
     #[test]
-    fn branch_after_given_cage_yields_one_child() {
-        // Given(3) pins (0,0) to {3}; it is the most-constrained cell (size 1).
+    fn branch_after_given_cage_skips_pinned_cell() {
+        // Given(3) pins (0,0) to {3}; AllDifferent narrows the other
+        // row-0 and column-0 cells to {1,2,4} (size 3). The most-constrained
+        // unsolved cell is (0,1) (size 3, first by row-major tie-break), so
+        // branch yields three children — one per remaining candidate.
         let puzzle = puzzle_4().insert(singleton_cage()).unwrap().unwrap();
-        assert_eq!(puzzle.branch().count(), 1);
+        assert_eq!(puzzle.branch().count(), 3);
     }
 
     #[test]
-    fn branch_children_pin_most_constrained_cell_to_distinct_singleton_values() {
+    fn branch_children_pin_branching_cell_to_distinct_singleton_values() {
+        // With (0,0)=3, branching happens on (0,1) ∈ {1,2,4}. Each child
+        // pins (0,1) to a different value.
         let puzzle = puzzle_4().insert(singleton_cage()).unwrap().unwrap();
         let mut values: Vec<Fill> = puzzle
             .branch()
-            .map(|child| {
-                let (_, fill) = child.grid().most_constrained().unwrap();
-                fill
-            })
+            .map(|child| child.grid().get(&Cell::new(0, 1)).unwrap())
             .collect();
-        // Each branch pins to exactly one value.
         assert!(values.iter().all(|f| f.len() == 1));
-        // All pinned values are distinct.
         values.sort_by_key(|f| f.iter().next().unwrap());
         values.dedup();
         assert_eq!(values.len(), puzzle.branch().count());
+    }
+
+    #[test]
+    fn branch_solved_puzzle_yields_no_children() {
+        // A 2×2 puzzle pinned by two non-overlapping Givens propagates to a
+        // fully-singleton grid. branch() must yield no children so the solver
+        // recognises the state as a solution.
+        let c1 = Cage::new(
+            2,
+            Polyomino::from_cells(&cells(&[(0, 0)])).unwrap(),
+            Operation::Given(1),
+        );
+        let c2 = Cage::new(
+            2,
+            Polyomino::from_cells(&cells(&[(0, 1)])).unwrap(),
+            Operation::Given(2),
+        );
+        let puzzle = Puzzle::new_empty(2)
+            .unwrap()
+            .insert(c1)
+            .unwrap()
+            .unwrap()
+            .insert(c2)
+            .unwrap()
+            .unwrap();
+        assert_eq!(puzzle.branch().count(), 0);
     }
 
     // --- Puzzle::set_grid ---
