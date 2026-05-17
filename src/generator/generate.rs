@@ -19,24 +19,34 @@ use crate::{
 /// rejection sampling.
 #[derive(Debug, Clone, Copy)]
 pub struct SizeDistribution {
-    /// Mean of the underlying (untruncated) Poisson distribution.
-    pub mean: f64,
+    mean: f64,
 }
 
 impl SizeDistribution {
     /// Creates a Poisson size distribution with the given mean.
     ///
-    /// The mean must be strictly greater than 0; otherwise sampling cannot
-    /// terminate (Poisson(0) is a point mass at 0, which is rejected).
-    pub fn new(mean: f64) -> Self {
-        debug_assert!(mean > 0.0, "Poisson mean must be > 0");
-        Self { mean }
+    /// Returns `None` if `mean` is not strictly positive. The mean must be
+    /// `> 0` so that rejection sampling on `Poisson(mean)` truncated to
+    /// `[1, n*n]` is guaranteed to terminate.
+    pub fn new(mean: f64) -> Option<Self> {
+        (mean > 0.0).then_some(Self { mean })
     }
 
-    /// Default distribution for an `n`×`n` grid: Poisson with mean `n / 3`.
+    /// Returns the mean of the underlying (untruncated) Poisson distribution.
+    pub const fn mean(self) -> f64 {
+        self.mean
+    }
+
+    /// Default distribution for an `n`×`n` grid: `Poisson(n / 3)`.
+    ///
+    /// For `n = 0`, the same distribution is returned as for `n = 1`. The
+    /// puzzle constructor rejects `n = 0` independently, so the degenerate
+    /// case never propagates to sampling.
     #[allow(clippy::cast_precision_loss)]
     pub fn default_for(n: Index) -> Self {
-        Self::new(n as f64 / 3.0)
+        Self {
+            mean: n.max(1) as f64 / 3.0,
+        }
     }
 
     /// Samples a cage size in `[1, n*n]` by rejection sampling on
@@ -108,9 +118,6 @@ pub fn default_op_policy(values: &[N], n: Index) -> Result<Operation, Error> {
 /// # Errors
 /// Returns `Error` if `n` is not in `1..=9`.
 pub fn generate<R: Rng>(n: Index, rng: &mut R) -> Result<Option<Puzzle>, Error> {
-    if !(1..=9).contains(&n) {
-        return Err(Error::InvalidGridSize(n));
-    }
     generate_with(n, rng, default_op_policy, SizeDistribution::default_for(n))
 }
 
@@ -279,7 +286,7 @@ mod tests {
     fn size_distribution_poisson_samples_within_bounds() {
         let mut rng = rand_chacha::ChaCha8Rng::seed_from_u64(0);
         for (mean, n) in [(0.5_f64, 3_usize), (1.0, 4), (3.0, 9), (5.0, 4)] {
-            let dist = SizeDistribution::new(mean);
+            let dist = SizeDistribution::new(mean).unwrap();
             for _ in 0..200 {
                 let s = dist.sample(n, &mut rng);
                 assert!((1..=n * n).contains(&s));
@@ -288,10 +295,33 @@ mod tests {
     }
 
     #[test]
+    fn size_distribution_new_rejects_non_positive_mean() {
+        assert!(SizeDistribution::new(0.0).is_none());
+        assert!(SizeDistribution::new(-1.0).is_none());
+        assert!(SizeDistribution::new(f64::NAN).is_none());
+        assert!(SizeDistribution::new(0.5).is_some());
+    }
+
+    #[test]
+    fn size_distribution_high_rejection_terminates_and_stays_in_bounds() {
+        // Mean (8) is well above the upper bound (n*n = 4), so most raw
+        // Poisson draws are rejected. Sampling must still terminate and
+        // never escape the truncation window.
+        let mut rng = rand_chacha::ChaCha8Rng::seed_from_u64(7);
+        let dist = SizeDistribution::new(8.0).unwrap();
+        for _ in 0..100 {
+            let s = dist.sample(2, &mut rng);
+            assert!((1..=4).contains(&s));
+        }
+    }
+
+    #[test]
     fn size_distribution_default_for_uses_n_over_three() {
-        assert!((SizeDistribution::default_for(9).mean - 3.0).abs() < 1e-12);
-        assert!((SizeDistribution::default_for(3).mean - 1.0).abs() < 1e-12);
-        assert!((SizeDistribution::default_for(4).mean - 4.0 / 3.0).abs() < 1e-12);
+        assert!((SizeDistribution::default_for(9).mean() - 3.0).abs() < 1e-12);
+        assert!((SizeDistribution::default_for(3).mean() - 1.0).abs() < 1e-12);
+        assert!((SizeDistribution::default_for(4).mean() - 4.0 / 3.0).abs() < 1e-12);
+        // n = 0 clamps to n = 1.
+        assert!((SizeDistribution::default_for(0).mean() - 1.0 / 3.0).abs() < 1e-12);
     }
 
     #[test]
@@ -314,7 +344,7 @@ mod tests {
         // Run many seeds across different means to maximize branch coverage.
         for seed in 0u64..200 {
             let mean = if seed % 2 == 0 { 1.0 } else { 2.5 };
-            let dist = SizeDistribution::new(mean);
+            let dist = SizeDistribution::new(mean).unwrap();
             let mut rng = rand_chacha::ChaCha8Rng::seed_from_u64(seed);
             let n = if seed % 3 == 0 { 4 } else { 3 };
             let tiling = greedy(n, dist, &mut rng).unwrap();
