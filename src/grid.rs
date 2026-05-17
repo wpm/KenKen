@@ -292,5 +292,4 @@ mod tests {
         let after = g.set(&Cell::new(9, 9), Fill::new([1]));
         assert_eq!(after, before);
     }
-
 }

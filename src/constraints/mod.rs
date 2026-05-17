@@ -5,7 +5,7 @@ pub mod cage;
 pub mod polyomino;
 pub mod regin;
 
-pub(crate) trait Constraint {
+pub trait Constraint {
     /// Applies this constraint to `grid` and returns the narrowed grid.
     ///
     /// # Errors
@@ -14,7 +14,7 @@ pub(crate) trait Constraint {
 }
 
 /// A set of [`Cell`]s.
-pub(crate) trait Cover {
+pub trait Cover {
     /// The covering [`Cell`]s in row-major order.
     ///
     /// Implementations must be cheap to call repeatedly; the default `len` and

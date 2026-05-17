@@ -144,9 +144,6 @@ pub enum Error {
     /// A row/column index used to build an internal all-different constraint
     /// is not less than the grid size `n`. Carries `(index, n)`.
     IndexOutOfRange(Index, Index),
-    /// A `Delta` passed to `Puzzle::narrow`/`widen` has a grid size that does
-    /// not match the puzzle's. Carries `(delta_n, puzzle_n)`.
-    DeltaSizeMismatch(Index, Index),
     /// An operation policy received an empty value slice.
     EmptyOpPolicyValues,
     /// A tuple operation was applied to an empty slice.
@@ -198,10 +195,6 @@ impl fmt::Display for Error {
             Self::IndexOutOfRange(index, n) => {
                 write!(f, "index {index} is out of range for grid of size {n}")
             }
-            Self::DeltaSizeMismatch(delta_n, puzzle_n) => write!(
-                f,
-                "delta size {delta_n} does not match puzzle size {puzzle_n}"
-            ),
             Self::EmptyOpPolicyValues => {
                 write!(f, "operation policy received an empty value slice")
             }
@@ -376,10 +369,6 @@ mod tests {
         assert_eq!(
             Error::IndexOutOfRange(3, 2).to_string(),
             "index 3 is out of range for grid of size 2"
-        );
-        assert_eq!(
-            Error::DeltaSizeMismatch(4, 3).to_string(),
-            "delta size 4 does not match puzzle size 3"
         );
         assert_eq!(
             Error::EmptyOpPolicyValues.to_string(),
