@@ -96,7 +96,7 @@ pub fn generate<R: Rng>(n: Index, rng: &mut R) -> Result<Option<Puzzle>, Error> 
 ///    and pass them to `op` to choose the cage's operation.
 ///
 /// # Errors
-/// Returns `Error` if `n` is not in `1..=9`. The `?` on `insert_cage` is
+/// Returns `Error` if `n` is not in `1..=9`. The `?` on `insert` is
 /// structurally unreachable because the tiling's polyominos are disjoint, but
 /// is kept rather than panicking to avoid load-bearing assertions inside the
 /// generator.
@@ -114,7 +114,7 @@ pub fn generate_with<R: Rng, F>(
 where
     F: Fn(&[N], Index) -> Result<Operation, Error>,
 {
-    let mut puzzle = Puzzle::new(n)?;
+    let mut puzzle = Puzzle::new_empty(n)?;
     let latin_square = generate_latin_square(n, rng);
     let tiling = greedy(n, &sizes, rng)?;
     let n_max = n as N;

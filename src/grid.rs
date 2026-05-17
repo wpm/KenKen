@@ -2,7 +2,7 @@ use std::collections::HashMap;
 
 use crate::{
     Error::InvalidCell,
-    constraints::Cover,
+    constraints::{Cover, all_different::AllDifferent},
     types::{Cell, Error, Fill},
 };
 
@@ -33,6 +33,21 @@ impl Grid {
     /// The number of rows or columns in the grid.
     pub const fn n(&self) -> usize {
         self.n
+    }
+
+    /// Returns all-different constraints for every row and column of this grid.
+    ///
+    /// # Errors
+    /// Returns [`Error`] if the grid size is invalid (structurally unreachable for
+    /// any `Grid` constructed via [`Grid::new`]).
+    pub fn all_different_constraints(&self) -> Result<Vec<AllDifferent>, Error> {
+        [
+            AllDifferent::row as fn(usize, usize) -> _,
+            AllDifferent::column,
+        ]
+        .into_iter()
+        .flat_map(|f| (0..self.n).map(move |i| f(self.n, i)))
+        .collect()
     }
 
     /// Returns the candidate values for `cell`.
@@ -105,6 +120,54 @@ impl Cover for Grid {
 #[allow(clippy::unwrap_used)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn all_different_constraints_count_is_2n() {
+        let g = Grid::new(4).unwrap();
+        assert_eq!(g.all_different_constraints().unwrap().len(), 8);
+    }
+
+    #[test]
+    fn all_different_constraints_covers_every_cell_exactly_twice() {
+        // Each cell belongs to exactly one row constraint and one column constraint.
+        let g = Grid::new(3).unwrap();
+        let constraints = g.all_different_constraints().unwrap();
+        for row in 0..3 {
+            for col in 0..3 {
+                let cell = Cell::new(row, col);
+                let count = constraints
+                    .iter()
+                    .filter(|c| c.cells().any(|c| c == cell))
+                    .count();
+                assert_eq!(
+                    count, 2,
+                    "cell ({row},{col}) should appear in exactly 2 constraints"
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn all_different_constraints_row_cells_share_row() {
+        let g = Grid::new(3).unwrap();
+        let constraints = g.all_different_constraints().unwrap();
+        // First n constraints are rows: all cells in each have the same row index.
+        for c in constraints.iter().take(3) {
+            let rows: Vec<usize> = c.cells().map(|cell| cell.row).collect();
+            assert!(rows.windows(2).all(|w| w[0] == w[1]));
+        }
+    }
+
+    #[test]
+    fn all_different_constraints_column_cells_share_column() {
+        let g = Grid::new(3).unwrap();
+        let constraints = g.all_different_constraints().unwrap();
+        // Last n constraints are columns: all cells in each have the same column index.
+        for c in constraints.iter().skip(3) {
+            let cols: Vec<usize> = c.cells().map(|cell| cell.column).collect();
+            assert!(cols.windows(2).all(|w| w[0] == w[1]));
+        }
+    }
 
     #[test]
     fn new_returns_err_for_zero() {
