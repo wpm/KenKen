@@ -10,6 +10,8 @@
 //! Puzzles can also be generated randomly via [`generate`] or
 //! [`generate_with`].
 
+#![allow(clippy::must_use_candidate, clippy::return_self_not_must_use)]
+
 pub mod constraints;
 mod generator;
 mod puzzle;
