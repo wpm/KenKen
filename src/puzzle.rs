@@ -1,12 +1,28 @@
+//! A [`Puzzle`] pairs a candidate [`Grid`] with a set of [`Cage`] constraints
+//! and all-different constraints for every row and column.
+
 use std::collections::BTreeSet;
 
 use crate::{
     Cage, Cell, Cover, Error,
-    Error::CageConflict,
+    Error::{CageConflict, CageNotInPuzzle},
     Fill, Grid, State,
     constraints::{Constraint, all_different::AllDifferent},
 };
 
+/// A KenKen puzzle: a [`Grid`] of candidate values together with cage and
+/// all-different constraints.
+///
+/// ## Fixpoint invariant
+///
+/// A *fixpoint* is a state in which applying all constraints produces no
+/// further change — every cell's candidate set is already as narrow as the
+/// constraints require. Every `Puzzle` upholds this invariant: construction
+/// and mutation methods ([`new`](Puzzle::new), [`new_empty`](Puzzle::new_empty),
+/// [`insert`](Puzzle::insert), `set_grid`) propagate constraints to
+/// fixpoint before returning. If propagation would empty any cell's candidate
+/// set (a contradiction), the method returns `None` instead of a `Puzzle`,
+/// so a `Puzzle` value always represents a consistent, fully propagated state.
 #[derive(Debug, Clone)]
 pub struct Puzzle {
     grid: Grid,
@@ -15,33 +31,55 @@ pub struct Puzzle {
 }
 
 impl Puzzle {
-    /// Creates an `n`×`n` puzzle with no cages and all-different constraints
-    /// on every row and column.
+    /// Creates an `n`×`n` puzzle with no cages.
     ///
     /// # Errors
     /// Returns [`Error::InvalidGridSize`] if `n` is not in `1..=9`.
-    pub fn new(n: usize) -> Result<Self, Error> {
+    pub fn new_empty(n: usize) -> Result<Self, Error> {
+        let grid = Grid::new(n)?;
         Ok(Self {
-            grid: Grid::new(n)?,
-            all_different: vec![AllDifferent::row, AllDifferent::column]
-                .into_iter()
-                .flat_map(|f| (0..n).map(move |i| f(n, i)))
-                .collect::<Result<_, _>>()?,
+            grid: grid.clone(),
+            all_different: grid.all_different_constraints()?,
             cages: BTreeSet::default(),
         })
     }
 
-    // TODO Puzzle.set() should propagate.
-    fn set(&self, grid: Grid) -> Self {
+    /// Creates a puzzle from an existing grid and a set of cages, then propagates
+    /// all constraints. Returns `None` if propagation finds a contradiction.
+    ///
+    /// # Errors
+    /// Returns [`CageNotInPuzzle`] if any cage contains a cell outside the grid.
+    /// Returns [`Error`] if propagation encounters a cell outside the grid bounds.
+    pub fn new(grid: &Grid, cages: &[Cage]) -> Result<Option<Self>, Error> {
+        let n = grid.n();
+        for cage in cages {
+            if cage.cells().any(|c| c.row >= n || c.column >= n) {
+                return Err(CageNotInPuzzle(cage.clone()));
+            }
+        }
+        Self {
+            grid: grid.clone(),
+            all_different: grid.all_different_constraints()?,
+            cages: cages.iter().cloned().collect(),
+        }
+        .propagate()
+    }
+
+    /// Returns a new puzzle with `grid` substituted in place of the current grid,
+    /// then propagates all constraints. Returns `None` if propagation finds a
+    /// contradiction. Cages and all-different constraints are carried over unchanged.
+    fn set_grid(&self, grid: Grid) -> Result<Option<Self>, Error> {
         Self {
             grid,
             all_different: self.all_different.clone(),
             cages: self.cages.clone(),
         }
+        .propagate()
     }
 
     /// Returns a new [`Puzzle`] with `cage` added. The puzzle's grid will reflect the constraints
-    /// imposed by the new cage.
+    /// imposed by the new cage. If this results in an invalid [`Grid`] state, this function
+    /// will return `none`.
     ///
     /// This is idempotent. Adding a cage identical to one already present returns the puzzle
     /// unchanged.
@@ -71,20 +109,29 @@ impl Puzzle {
         .propagate()
     }
 
-    /// Returns a new puzzle with `cage` removed.
+    /// Returns a new puzzle with `cage` removed and constraints re-propagated.
     ///
-    /// This is idempotent. Attempting to remove a `cage` that is not present returns the puzzle
-    /// unchanged.
-    pub fn remove(&self, cage: &Cage) -> Self {
+    /// Cells covered by the removed cage have their fills reset to the full candidate
+    /// set before propagation, so the remaining constraints determine their new domains.
+    ///
+    /// This is idempotent. Attempting to remove a `cage` that is not present returns
+    /// the puzzle unchanged.
+    ///
+    /// # Errors
+    /// Returns [`Error`] if propagation encounters a cell outside the grid bounds.
+    pub fn remove(&self, cage: &Cage) -> Result<Self, Error> {
         let mut cages = self.cages.clone();
         if !cages.remove(cage) {
-            return self.clone();
+            return Ok(self.clone());
         }
-        Self {
-            grid: self.grid.clone(),
+        let n = self.grid.n();
+        Ok(Self {
+            grid: Grid::new(n)?,
             all_different: self.all_different.clone(),
             cages,
         }
+        .propagate()?
+        .unwrap_or_else(|| unreachable!("widening fills cannot produce a contradiction")))
     }
 
     /// Returns the puzzle's cages in ascending [`Cage`] order — by polyomino
@@ -99,17 +146,20 @@ impl Puzzle {
     }
 
     /// Applies every constraint once, folding them left over the current grid.
+    /// Returns `None` if any cell's fill becomes empty after applying constraints.
     ///
     /// Order is arbitrary: all constraints are monotone filters (they only
     /// remove candidates, never add them), so application order does not affect
     /// the fixed-point result.
-    fn apply_constraints(&self) -> Result<Grid, Error> {
+    fn apply_constraints(&self) -> Result<Option<Grid>, Error> {
         self.all_different
             .iter()
             .map(|c| c as &dyn Constraint)
             .chain(self.cages.iter().map(|c| c as &dyn Constraint))
             .try_fold(self.grid.clone(), |grid, c| c.apply_to(&grid))
+            .map(|grid| (!grid.is_invalid()).then_some(grid))
     }
+
 }
 
 impl State for Puzzle {
@@ -124,14 +174,16 @@ impl State for Puzzle {
     fn propagate(&self) -> Result<Option<Self>, Error> {
         let mut puzzle = self.clone();
         loop {
-            let grid = puzzle.apply_constraints()?;
-            if grid.is_invalid() {
+            let Some(grid) = puzzle.apply_constraints()? else {
                 return Ok(None);
-            }
+            };
             if grid == puzzle.grid {
                 break;
             }
-            puzzle = puzzle.set(grid);
+            match puzzle.set_grid(grid)? {
+                Some(p) => puzzle = p,
+                None => return Ok(None),
+            }
         }
         Ok(Some(puzzle))
     }
@@ -147,8 +199,11 @@ impl State for Puzzle {
             .into_iter()
             .flat_map(move |(cell, fill)| {
                 let grid = self.grid.clone();
-                fill.iter()
-                    .map(move |v| self.set(grid.clone().set(&cell, Fill::new([v]))))
+                fill.iter().filter_map(move |v| {
+                    self.set_grid(grid.clone().set(&cell, Fill::new([v])))
+                        .ok()
+                        .flatten()
+                })
             })
     }
 }
@@ -164,12 +219,12 @@ impl Cover for Puzzle {
 mod tests {
     use super::Puzzle;
     use crate::{
-        Cage, Cell, Cover, Error, Fill, Operation, Polyomino, State,
+        Cage, Cell, Cover, Error, Fill, Grid, Operation, Polyomino, State,
         constraints::test_utils::{cells, singleton},
     };
 
     fn puzzle_4() -> Puzzle {
-        Puzzle::new(4).unwrap()
+        Puzzle::new_empty(4).unwrap()
     }
 
     fn singleton_cage() -> Cage {
@@ -179,15 +234,71 @@ mod tests {
     // --- Puzzle::new ---
 
     #[test]
-    fn new_invalid_size_returns_err() {
-        assert!(Puzzle::new(0).is_err());
-        assert!(Puzzle::new(10).is_err());
+    fn new_cage_outside_grid_returns_err() {
+        // A 2-cell cage whose second cell lies outside the 1×1 grid.
+        let grid = Grid::new(1).unwrap();
+        let out_of_bounds = Cage::new(
+            4,
+            Polyomino::from_cells(&cells(&[(0, 0), (0, 1)])).unwrap(),
+            Operation::Add(3),
+        );
+        assert!(matches!(
+            Puzzle::new(&grid, &[out_of_bounds]),
+            Err(Error::CageNotInPuzzle(_))
+        ));
     }
 
     #[test]
-    fn new_valid_size_succeeds() {
-        assert!(Puzzle::new(1).is_ok());
-        assert!(Puzzle::new(9).is_ok());
+    fn new_empty_invalid_size_returns_err() {
+        assert!(Puzzle::new_empty(0).is_err());
+        assert!(Puzzle::new_empty(10).is_err());
+    }
+
+    #[test]
+    fn new_empty_valid_size_succeeds() {
+        assert!(Puzzle::new_empty(1).is_ok());
+        assert!(Puzzle::new_empty(9).is_ok());
+    }
+
+    #[test]
+    fn new_empty_cells_have_full_candidates() {
+        let puzzle = Puzzle::new_empty(3).unwrap();
+        assert!(
+            puzzle
+                .cells()
+                .all(|c| puzzle.grid().get(&c).unwrap() == Fill::full(3))
+        );
+    }
+
+    #[test]
+    fn new_with_no_cages_returns_some() {
+        let grid = Grid::new(4).unwrap();
+        assert!(Puzzle::new(&grid, &[]).unwrap().is_some());
+    }
+
+    #[test]
+    fn new_with_valid_cage_returns_some_and_propagates() {
+        let grid = Grid::new(4).unwrap();
+        let cage = Cage::new(4, singleton(), Operation::Given(2));
+        let puzzle = Puzzle::new(&grid, &[cage]).unwrap().unwrap();
+        assert_eq!(puzzle.grid().get(&Cell::new(0, 0)).unwrap(), Fill::new([2]));
+    }
+
+    #[test]
+    fn new_with_contradicting_cages_returns_none() {
+        // Two Given(1) cages in the same row of a 2×2 grid: AllDifferent makes it unsolvable.
+        let grid = Grid::new(2).unwrap();
+        let c1 = Cage::new(
+            2,
+            Polyomino::from_cells(&cells(&[(0, 0)])).unwrap(),
+            Operation::Given(1),
+        );
+        let c2 = Cage::new(
+            2,
+            Polyomino::from_cells(&cells(&[(0, 1)])).unwrap(),
+            Operation::Given(1),
+        );
+        assert!(Puzzle::new(&grid, &[c1, c2]).unwrap().is_none());
     }
 
     // --- Puzzle::insert ---
@@ -202,7 +313,10 @@ mod tests {
     fn insert_overlapping_cage_returns_err() {
         let p = puzzle_4().insert(singleton_cage()).unwrap().unwrap();
         let overlap = Cage::new(4, singleton(), Operation::Given(1));
-        assert!(matches!(p.insert(overlap), Err(Error::CageConflict(_))));
+        assert!(matches!(
+            p.insert(overlap),
+            Err(Error::CageConflict(_))
+        ));
     }
 
     #[test]
@@ -226,7 +340,7 @@ mod tests {
     fn remove_present_cage_returns_puzzle_without_it() {
         let cage = singleton_cage();
         let p = puzzle_4().insert(cage.clone()).unwrap().unwrap();
-        let p2 = p.remove(&cage);
+        let p2 = p.remove(&cage).unwrap();
         // Can insert the same cage again after removal
         assert!(p2.insert(cage).is_ok());
     }
@@ -234,8 +348,19 @@ mod tests {
     #[test]
     fn remove_absent_cage_is_noop() {
         let p = puzzle_4();
-        let p2 = p.remove(&singleton_cage());
+        let p2 = p.remove(&singleton_cage()).unwrap();
         assert!(p2.insert(singleton_cage()).is_ok());
+    }
+
+    #[test]
+    fn remove_resets_cells_to_full() {
+        // Insert Given(3) at (0,0), which pins that cell to {3}.
+        // After removal, (0,0) should be widened back to the full candidate set.
+        let cage = singleton_cage(); // Given(3) at (0,0)
+        let p = puzzle_4().insert(cage.clone()).unwrap().unwrap();
+        assert_eq!(p.grid().get(&Cell::new(0, 0)).unwrap(), Fill::new([3]));
+        let p2 = p.remove(&cage).unwrap();
+        assert_eq!(p2.grid().get(&Cell::new(0, 0)).unwrap(), Fill::full(4));
     }
 
     // --- Puzzle::cages ---
@@ -308,6 +433,37 @@ mod tests {
         assert_eq!(values.len(), puzzle.branch().count());
     }
 
+    // --- Puzzle::set_grid ---
+
+    #[test]
+    fn set_grid_replaces_grid_and_propagates() {
+        // Pin (0,0) to {2} in a fresh grid and set it into a puzzle that has a
+        // Given(2) cage at (0,0). Propagation should confirm the cell stays {2}.
+        let cage = Cage::new(4, singleton(), Operation::Given(2));
+        let puzzle = puzzle_4().insert(cage).unwrap().unwrap();
+        let new_grid = puzzle.grid().clone().set(&Cell::new(0, 0), Fill::new([2]));
+        let result = puzzle.set_grid(new_grid).unwrap().unwrap();
+        assert_eq!(result.grid().get(&Cell::new(0, 0)).unwrap(), Fill::new([2]));
+    }
+
+    #[test]
+    fn set_grid_preserves_cages() {
+        // After set_grid, a cage that was present before is still enforced.
+        let cage = singleton_cage(); // Given(3) at (0,0)
+        let puzzle = puzzle_4().insert(cage).unwrap().unwrap();
+        let same_grid = puzzle.grid().clone();
+        let result = puzzle.set_grid(same_grid).unwrap().unwrap();
+        assert_eq!(result.grid().get(&Cell::new(0, 0)).unwrap(), Fill::new([3]));
+    }
+
+    #[test]
+    fn set_grid_returns_none_on_contradiction() {
+        // Force an empty fill on a cell — propagation should detect it as invalid.
+        let puzzle = puzzle_4();
+        let contradicting_grid = puzzle.grid().clone().set(&Cell::new(0, 0), Fill::default());
+        assert!(puzzle.set_grid(contradicting_grid).unwrap().is_none());
+    }
+
     // --- Puzzle::propagate ---
 
     #[test]
@@ -342,7 +498,7 @@ mod tests {
             Polyomino::from_cells(&cells(&[(0, 1)])).unwrap(),
             Operation::Given(1),
         );
-        let result = Puzzle::new(2)
+        let result = Puzzle::new_empty(2)
             .unwrap()
             .insert(c1)
             .unwrap()

@@ -1,6 +1,6 @@
 //! KenKen puzzle generator and solver.
 //!
-//! The primary interface is [`Puzzle`]: construct one with [`Puzzle::new`] and
+//! The primary interface is [`Puzzle`]: construct one with [`Puzzle::new_empty`] and
 //! add [`Cage`]s via [`Puzzle::insert`].
 //!
 //! For direct enumeration of solutions, [`Solver`] is a depth-first
