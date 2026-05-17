@@ -5,8 +5,8 @@
 mod test {
 
     use kenken::{
-        Cage, Cell, Fill, Grid, Operation, Operator, Polyomino, Puzzle, Solver,
-        constraints::Cover, generate,
+        Cage, Cell, Fill, Grid, Operation, Operator, Polyomino, Puzzle, Solver, constraints::Cover,
+        generate,
     };
     use rand::SeedableRng;
     use rand_chacha::ChaCha8Rng;
