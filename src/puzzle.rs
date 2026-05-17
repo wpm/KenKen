@@ -201,6 +201,8 @@ impl State for Puzzle {
     ///
     /// Returns an empty iterator when every cell is already a singleton.
     fn branch(&self) -> impl Iterator<Item = Self> {
+        // Skip singletons: branching on a one-value fill would yield a child
+        // identical to the parent, so the solver would loop on it forever.
         let pick = self
             .grid
             .cells()
