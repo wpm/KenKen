@@ -40,6 +40,10 @@ impl<S: State + Clone> Iterator for Solver<S> {
             let Ok(Some(state)) = state.propagate() else {
                 continue;
             };
+            // is_solved is authoritative: a `State` is free to prune children
+            // inside branch(), so an empty branch iterator can mean either
+            // "no work left" or "all candidates were infeasible" — only the
+            // former is a solution.
             if state.is_solved() {
                 return Some(state);
             }
