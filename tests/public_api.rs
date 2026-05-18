@@ -4,7 +4,7 @@
 #![allow(clippy::unwrap_used)]
 mod test {
 
-    use kenken::{Cage, Cell, Fill, Operation, Polyomino, Puzzle};
+    use kenken::{Cage, CageSlot, Cell, Fill, Operation, Polyomino, Puzzle};
 
     const fn cell(row: usize, column: usize) -> Cell {
         Cell::new(row, column)
@@ -15,6 +15,12 @@ mod test {
     fn cage(n: u8, cells: &[(usize, usize)], op: Operation) -> Cage {
         let cells: Vec<Cell> = cells.iter().map(|&(r, c)| cell(r, c)).collect();
         Cage::new(n, Polyomino::from_cells(&cells).unwrap(), op)
+    }
+
+    /// Builds a [`Polyomino`] over `cells` (given as `(row, column)` pairs).
+    fn region(cells: &[(usize, usize)]) -> Polyomino {
+        let cells: Vec<Cell> = cells.iter().map(|&(r, c)| cell(r, c)).collect();
+        Polyomino::from_cells(&cells).unwrap()
     }
 
     /// A 6×6 puzzle fully covered by 18 vertical `Subtract(1)` pair cages,
@@ -212,5 +218,76 @@ mod test {
             .map(|(_, f)| *f)
             .unwrap();
         assert_eq!(pinned, Fill::new([2]));
+    }
+
+    #[test]
+    fn insert_region_is_publicly_callable_and_appears_in_regions_and_slots() {
+        let p = region(&[(0, 0)]);
+        let puzzle = Puzzle::new(4).unwrap().insert_region(p.clone()).unwrap();
+        let regions: Vec<&Polyomino> = puzzle.regions().collect();
+        assert_eq!(regions, vec![&p]);
+        assert_eq!(puzzle.slots().count(), 1);
+    }
+
+    #[test]
+    fn promote_then_demote_round_trips() {
+        let p = region(&[(0, 0)]);
+        let puzzle = Puzzle::new(4)
+            .unwrap()
+            .insert_region(p.clone())
+            .unwrap()
+            .promote(&p, Operation::Given(3))
+            .unwrap()
+            .unwrap();
+        assert_eq!(puzzle.cages().count(), 1);
+        let widened = puzzle.demote(&p).unwrap();
+        assert_eq!(widened.cages().count(), 0);
+        assert_eq!(widened.regions().count(), 1);
+        assert_eq!(
+            widened
+                .candidates()
+                .find(|(c, _)| *c == cell(0, 0))
+                .unwrap()
+                .1,
+            Fill::full(4)
+        );
+    }
+
+    #[test]
+    fn promote_infeasible_returns_public_error() {
+        // Subtract on a 3-cell L-shape is not a valid operator for the shape.
+        let l = region(&[(0, 0), (1, 0), (1, 1)]);
+        let puzzle = Puzzle::new(4).unwrap().insert_region(l.clone()).unwrap();
+        assert!(matches!(
+            puzzle.promote(&l, Operation::Subtract(1)),
+            Err(kenken::Error::InfeasibleOperation(
+                _,
+                Operation::Subtract(1)
+            ))
+        ));
+    }
+
+    #[test]
+    fn insert_region_overlap_returns_public_region_conflict() {
+        let puzzle = Puzzle::new(4)
+            .unwrap()
+            .insert(cage(4, &[(0, 0)], Operation::Given(3)))
+            .unwrap()
+            .unwrap();
+        assert!(matches!(
+            puzzle.insert_region(region(&[(0, 0)])),
+            Err(kenken::Error::RegionConflict(_))
+        ));
+    }
+
+    #[test]
+    fn slots_iterator_yields_cage_slot_references() {
+        let puzzle = Puzzle::new(4)
+            .unwrap()
+            .insert_region(region(&[(0, 0)]))
+            .unwrap();
+        let slots: Vec<&CageSlot> = puzzle.slots().collect();
+        assert_eq!(slots.len(), 1);
+        assert!(matches!(slots[0], CageSlot::Region(_)));
     }
 }

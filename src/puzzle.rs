@@ -7,14 +7,12 @@ use std::collections::BTreeSet;
 use rand::Rng;
 
 #[cfg(feature = "generate")]
-use crate::constraints::cage::operation::Operation;
-#[cfg(feature = "generate")]
 use crate::generator::generate::{SizeDistribution, default_op_policy, generate, generate_with};
 use crate::{
     Cage, CageSlot, Cell, Cover, Error,
-    Error::{CageConflict, CageNotInPuzzle},
-    Fill, Grid,
-    constraints::{Constraint, all_different::AllDifferent},
+    Error::{CageConflict, CageNotInPuzzle, InfeasibleOperation, RegionConflict},
+    Fill, Grid, Polyomino,
+    constraints::{Constraint, all_different::AllDifferent, cage::operation::Operation},
     solver::solve::{Solver, State},
 };
 
@@ -27,11 +25,13 @@ use crate::{
 /// further change — every cell's candidate set is already as narrow as the
 /// constraints require. Every `Puzzle` upholds this invariant: construction
 /// and mutation methods ([`with_cages`](Puzzle::with_cages),
-/// [`new`](Puzzle::new), [`insert`](Puzzle::insert)) propagate
-/// constraints to fixpoint before returning. If propagation would empty any
-/// cell's candidate set (a contradiction), the method returns `None` instead
-/// of a `Puzzle`, so a `Puzzle` value always represents a consistent, fully
-/// propagated state.
+/// [`new`](Puzzle::new), [`insert`](Puzzle::insert),
+/// [`insert_region`](Puzzle::insert_region), [`promote`](Puzzle::promote),
+/// [`demote`](Puzzle::demote)) propagate constraints to fixpoint before
+/// returning. If propagation would empty any cell's candidate set (a
+/// contradiction), the method returns `None` instead of a `Puzzle`, so a
+/// `Puzzle` value always represents a consistent, fully propagated state.
+/// Regions contribute no propagation, so `insert_region` skips that step.
 #[derive(Debug, Clone)]
 pub struct Puzzle {
     grid: Grid,
@@ -157,11 +157,128 @@ impl Puzzle {
         .unwrap_or_else(|| unreachable!("widening fills cannot produce a contradiction")))
     }
 
+    /// Returns a new [`Puzzle`] with `polyomino` added as a region — a claimed
+    /// cage shape with no operation yet. Regions contribute no propagation, so
+    /// the grid is unchanged.
+    ///
+    /// This is idempotent. Adding a region whose polyomino is value-identical
+    /// to one already present returns the puzzle unchanged.
+    ///
+    /// # Errors
+    /// Returns [`RegionConflict`] if `polyomino` overlaps any existing slot
+    /// (cage or region) and is not value-identical to an existing region.
+    pub fn insert_region(&self, polyomino: Polyomino) -> Result<Self, Error> {
+        // CageSlot's Ord compares by polyomino only, so any slot whose
+        // polyomino intersects this one is a candidate for either idempotency
+        // (same region) or conflict — distinguish by exact value equality.
+        match self
+            .slots
+            .iter()
+            .find(|s| s.polyomino().intersects(&polyomino))
+        {
+            Some(CageSlot::Region(existing)) if existing == &polyomino => {
+                return Ok(self.clone());
+            }
+            Some(CageSlot::Cage(_) | CageSlot::Region(_)) => {
+                return Err(RegionConflict(polyomino));
+            }
+            None => {}
+        }
+        let mut slots = self.slots.clone();
+        let _ = slots.insert(CageSlot::Region(polyomino));
+        // Regions are excluded from apply_constraints, so no propagation
+        // is needed.
+        Ok(Self {
+            grid: self.grid.clone(),
+            all_different: self.all_different.clone(),
+            slots,
+        })
+    }
+
+    /// Returns a new [`Puzzle`] with the region at `polyomino` replaced by a
+    /// cage carrying `op`, then re-propagated.
+    ///
+    /// This is idempotent on a same-op cage already present, and on a missing
+    /// polyomino (no-op, returns the puzzle unchanged).
+    ///
+    /// # Errors
+    /// - [`CageConflict`] if a cage with `polyomino` exists but uses a different operation.
+    /// - [`InfeasibleOperation`] if `op` admits no valid tuples for `polyomino` (operator invalid
+    ///   for the cell count, or target unreachable).
+    pub fn promote(&self, polyomino: &Polyomino, op: Operation) -> Result<Option<Self>, Error> {
+        let n = u8::try_from(self.grid.n()).expect("Puzzle invariant: n is in 1..=9");
+        // CageSlot::Ord matches by polyomino only, so the Region probe key
+        // returns whatever slot variant lives at this polyomino.
+        match self.slots.get(&CageSlot::Region(polyomino.clone())) {
+            Some(CageSlot::Cage(existing)) if existing.operation() == op => {
+                return Ok(Some(self.clone()));
+            }
+            Some(CageSlot::Cage(_)) => {
+                return Err(CageConflict(Cage::new(n, polyomino.clone(), op)));
+            }
+            None => return Ok(Some(self.clone())),
+            Some(CageSlot::Region(_)) => {}
+        }
+        let cage = Cage::new(n, polyomino.clone(), op);
+        if cage.tuples().is_empty() {
+            return Err(InfeasibleOperation(polyomino.clone(), op));
+        }
+        let mut slots = self.slots.clone();
+        // BTreeSet::replace swaps the Region for the Cage in-place (Ord
+        // matches by polyomino), preserving tab order.
+        let _ = slots.replace(CageSlot::Cage(cage));
+        Self {
+            grid: self.grid.clone(),
+            all_different: self.all_different.clone(),
+            slots,
+        }
+        .propagate()
+    }
+
+    /// Returns a new [`Puzzle`] with the cage at `polyomino` replaced by a
+    /// region, with the grid widened and constraints re-propagated.
+    ///
+    /// The grid is reset to `Fill::full(n)` before re-propagating, so all
+    /// constraints determine their new domains from scratch.
+    ///
+    /// This is idempotent: if no cage at `polyomino` is present, the puzzle is
+    /// returned unchanged.
+    ///
+    /// # Errors
+    /// Returns [`Error`] if internal grid reconstruction fails.
+    pub fn demote(&self, polyomino: &Polyomino) -> Result<Self, Error> {
+        match self.slots.get(&CageSlot::Region(polyomino.clone())) {
+            None | Some(CageSlot::Region(_)) => return Ok(self.clone()),
+            Some(CageSlot::Cage(_)) => {}
+        }
+        let mut slots = self.slots.clone();
+        let _ = slots.replace(CageSlot::Region(polyomino.clone()));
+        let n = self.grid.n();
+        Ok(Self {
+            grid: Grid::new(n)?,
+            all_different: self.all_different.clone(),
+            slots,
+        }
+        .propagate()?
+        .unwrap_or_else(|| unreachable!("widening fills cannot produce a contradiction")))
+    }
+
     /// Returns the puzzle's cages in ascending order by polyomino cells
     /// (row-major). The puzzle invariant guarantees no two stored cages share
     /// a polyomino, so ties never arise.
     pub fn cages(&self) -> impl Iterator<Item = &Cage> {
         self.slots.iter().filter_map(CageSlot::as_cage)
+    }
+
+    /// Returns the puzzle's regions (claimed cage shapes with no operation
+    /// yet) in ascending polyomino order.
+    pub fn regions(&self) -> impl Iterator<Item = &Polyomino> {
+        self.slots.iter().filter_map(CageSlot::as_region)
+    }
+
+    /// Returns all slots (cages and regions) in ascending polyomino order.
+    pub fn slots(&self) -> impl Iterator<Item = &CageSlot> {
+        self.slots.iter()
     }
 
     /// Returns each cell paired with its current candidate [`Fill`], in
@@ -370,7 +487,7 @@ mod tests {
     use super::Puzzle;
     use crate::{
         Cage, CageSlot, Cell, Cover, Error, Fill, Grid, Operation, Polyomino,
-        constraints::test_utils::{cells, singleton},
+        constraints::test_utils::{cells, l_shape, pair, singleton},
         solver::solve::State,
     };
 
@@ -524,6 +641,227 @@ mod tests {
         assert_eq!(p.grid().get(&Cell::new(0, 0)).unwrap(), Fill::new([3]));
         let p2 = p.remove(&cage).unwrap();
         assert_eq!(p2.grid().get(&Cell::new(0, 0)).unwrap(), Fill::full(4));
+    }
+
+    // --- Puzzle::insert_region ---
+
+    #[test]
+    fn insert_region_into_empty_puzzle_succeeds() {
+        let p = puzzle_4().insert_region(singleton()).unwrap();
+        assert_eq!(p.regions().count(), 1);
+        assert_eq!(p.cages().count(), 0);
+    }
+
+    #[test]
+    fn insert_region_does_not_narrow_cells() {
+        // Regions contribute no propagation; the grid stays at Fill::full(n).
+        let p = puzzle_4().insert_region(singleton()).unwrap();
+        assert_eq!(p.grid().get(&Cell::new(0, 0)).unwrap(), Fill::full(4));
+    }
+
+    #[test]
+    fn insert_region_overlap_with_cage_returns_err() {
+        let p = puzzle_4().insert(singleton_cage()).unwrap().unwrap();
+        assert!(matches!(
+            p.insert_region(singleton()),
+            Err(Error::RegionConflict(_))
+        ));
+    }
+
+    #[test]
+    fn insert_region_overlap_with_region_returns_err() {
+        let p = puzzle_4().insert_region(singleton()).unwrap();
+        // pair() = [(0,0),(0,1)] overlaps singleton() at (0,0).
+        assert!(matches!(
+            p.insert_region(pair()),
+            Err(Error::RegionConflict(_))
+        ));
+    }
+
+    #[test]
+    fn insert_region_duplicate_is_idempotent() {
+        let p = puzzle_4().insert_region(singleton()).unwrap();
+        let p2 = p.insert_region(singleton()).unwrap();
+        assert_eq!(p.regions().count(), p2.regions().count());
+        assert_eq!(p.grid(), p2.grid());
+    }
+
+    #[test]
+    fn insert_region_is_non_destructive() {
+        let base = puzzle_4();
+        let _ = base.insert_region(singleton()).unwrap();
+        assert!(base.insert_region(singleton()).is_ok());
+    }
+
+    // --- Puzzle::promote ---
+
+    #[test]
+    fn promote_region_succeeds_and_propagates() {
+        let p = puzzle_4().insert_region(singleton()).unwrap();
+        let promoted = p
+            .promote(&singleton(), Operation::Given(3))
+            .unwrap()
+            .unwrap();
+        assert_eq!(promoted.cages().count(), 1);
+        assert_eq!(promoted.regions().count(), 0);
+        assert_eq!(
+            promoted.grid().get(&Cell::new(0, 0)).unwrap(),
+            Fill::new([3])
+        );
+    }
+
+    #[test]
+    fn promote_infeasible_target_returns_err() {
+        // Add(1) on a 2-cell pair: minimum sum is 1 + 2 = 3, so no tuples.
+        let p = puzzle_4().insert_region(pair()).unwrap();
+        assert!(matches!(
+            p.promote(&pair(), Operation::Add(1)),
+            Err(Error::InfeasibleOperation(_, Operation::Add(1)))
+        ));
+    }
+
+    #[test]
+    fn promote_invalid_operator_for_shape_returns_err() {
+        // Subtract on a 3-cell L-shape: operator only legal for 2-cell shapes.
+        let p = puzzle_4().insert_region(l_shape()).unwrap();
+        assert!(matches!(
+            p.promote(&l_shape(), Operation::Subtract(1)),
+            Err(Error::InfeasibleOperation(_, Operation::Subtract(1)))
+        ));
+    }
+
+    #[test]
+    fn promote_missing_polyomino_is_noop() {
+        let p = puzzle_4();
+        let p2 = p
+            .promote(&singleton(), Operation::Given(3))
+            .unwrap()
+            .unwrap();
+        assert_eq!(p2.cages().count(), 0);
+        assert_eq!(p2.regions().count(), 0);
+    }
+
+    #[test]
+    fn promote_existing_cage_same_op_is_idempotent() {
+        let p = puzzle_4().insert(singleton_cage()).unwrap().unwrap();
+        let p2 = p
+            .promote(&singleton(), Operation::Given(3))
+            .unwrap()
+            .unwrap();
+        assert_eq!(p.grid(), p2.grid());
+        itertools::assert_equal(p.cages(), p2.cages());
+    }
+
+    #[test]
+    fn promote_existing_cage_different_op_returns_cage_conflict() {
+        let p = puzzle_4().insert(singleton_cage()).unwrap().unwrap();
+        assert!(matches!(
+            p.promote(&singleton(), Operation::Given(2)),
+            Err(Error::CageConflict(_))
+        ));
+    }
+
+    // --- Puzzle::demote ---
+
+    #[test]
+    fn demote_widens_pinned_cell() {
+        // Given(3) at (0,0) pins that cell to {3}; after demote, widens back.
+        let p = puzzle_4().insert(singleton_cage()).unwrap().unwrap();
+        assert_eq!(p.grid().get(&Cell::new(0, 0)).unwrap(), Fill::new([3]));
+        let p2 = p.demote(&singleton()).unwrap();
+        assert_eq!(p2.grid().get(&Cell::new(0, 0)).unwrap(), Fill::full(4));
+    }
+
+    #[test]
+    fn demote_replaces_cage_with_region() {
+        let p = puzzle_4().insert(singleton_cage()).unwrap().unwrap();
+        let p2 = p.demote(&singleton()).unwrap();
+        assert_eq!(p2.cages().count(), 0);
+        assert_eq!(p2.regions().count(), 1);
+        assert_eq!(p2.regions().next().unwrap(), &singleton());
+    }
+
+    #[test]
+    fn demote_absent_polyomino_is_noop() {
+        let p = puzzle_4();
+        let p2 = p.demote(&singleton()).unwrap();
+        assert_eq!(p.grid(), p2.grid());
+        assert_eq!(p2.slots().count(), 0);
+    }
+
+    #[test]
+    fn demote_already_region_is_noop() {
+        let p = puzzle_4().insert_region(singleton()).unwrap();
+        let p2 = p.demote(&singleton()).unwrap();
+        assert_eq!(p.grid(), p2.grid());
+        assert_eq!(p2.regions().count(), 1);
+    }
+
+    #[test]
+    fn demote_then_promote_round_trips() {
+        let cage = singleton_cage();
+        let p = puzzle_4().insert(cage.clone()).unwrap().unwrap();
+        let p2 = p
+            .demote(&singleton())
+            .unwrap()
+            .promote(&singleton(), Operation::Given(3))
+            .unwrap()
+            .unwrap();
+        assert_eq!(p.grid(), p2.grid());
+        itertools::assert_equal(p.cages(), p2.cages());
+    }
+
+    // --- Puzzle::regions / Puzzle::slots ---
+
+    #[test]
+    fn regions_fresh_puzzle_is_empty() {
+        assert_eq!(puzzle_4().regions().count(), 0);
+    }
+
+    #[test]
+    fn regions_yields_only_region_variants() {
+        // Cage at (0,0), region at (1,1) — disjoint polyominoes.
+        let region_at_11 = Polyomino::from_cells(&cells(&[(1, 1)])).unwrap();
+        let p = puzzle_4()
+            .insert(singleton_cage())
+            .unwrap()
+            .unwrap()
+            .insert_region(region_at_11.clone())
+            .unwrap();
+        itertools::assert_equal(p.regions(), &[region_at_11]);
+    }
+
+    #[test]
+    fn slots_interleaves_regions_and_cages_by_polyomino_order() {
+        let region_at_11 = Polyomino::from_cells(&cells(&[(1, 1)])).unwrap();
+        let p = puzzle_4()
+            .insert_region(region_at_11.clone())
+            .unwrap()
+            .insert(singleton_cage())
+            .unwrap()
+            .unwrap();
+        let collected: Vec<&CageSlot> = p.slots().collect();
+        assert_eq!(collected.len(), 2);
+        // (0,0) sorts before (1,1) in row-major order.
+        assert!(matches!(collected[0], CageSlot::Cage(_)));
+        assert!(matches!(collected[1], CageSlot::Region(_)));
+    }
+
+    #[test]
+    fn slots_after_promote_preserves_order() {
+        let region_at_11 = Polyomino::from_cells(&cells(&[(1, 1)])).unwrap();
+        let before = puzzle_4()
+            .insert_region(singleton())
+            .unwrap()
+            .insert_region(region_at_11.clone())
+            .unwrap();
+        let after = before
+            .promote(&singleton(), Operation::Given(3))
+            .unwrap()
+            .unwrap();
+        let before_polys: Vec<&Polyomino> = before.slots().map(CageSlot::polyomino).collect();
+        let after_polys: Vec<&Polyomino> = after.slots().map(CageSlot::polyomino).collect();
+        assert_eq!(before_polys, after_polys);
     }
 
     // --- Puzzle::cages ---
