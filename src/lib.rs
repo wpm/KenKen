@@ -8,8 +8,10 @@
 //!   operation policy and cage-size distribution).
 
 #![allow(clippy::must_use_candidate, clippy::return_self_not_must_use)]
+#![cfg_attr(not(feature = "generate"), allow(rustdoc::broken_intra_doc_links))]
 
 mod constraints;
+#[cfg(feature = "generate")]
 mod generator;
 mod grid;
 mod puzzle;
@@ -24,6 +26,7 @@ pub use constraints::{
     },
     polyomino::Polyomino,
 };
+#[cfg(feature = "generate")]
 pub use generator::generate::SizeDistribution;
 pub(crate) use grid::Grid;
 pub use puzzle::Puzzle;
