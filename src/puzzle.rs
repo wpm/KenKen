@@ -784,7 +784,7 @@ mod tests {
         let grid = Grid::new(4).unwrap();
         let all_different = grid.all_different_constraints().unwrap();
         let original = Puzzle {
-            grid: grid.clone(),
+            grid,
             all_different,
             slots: [CageSlot::Region(region_poly), CageSlot::Cage(cage)]
                 .into_iter()
