@@ -19,7 +19,6 @@ jobs:
       - uses: dtolnay/rust-toolchain@stable
         with:
           components: rustfmt, clippy, llvm-tools
-          targets: wasm32-unknown-unknown
 
       - uses: Swatinem/rust-cache@v2
 
@@ -55,7 +54,12 @@ jobs:
           files: lcov.info
 
       - name: Wasm build (no default features)
-        run: cargo build --target wasm32-unknown-unknown --no-default-features
+        # rustup target add (not dtolnay's `targets:` field) is what installs the
+        # wasm target onto the toolchain that rust-toolchain.toml selects; the
+        # action's input would install it onto the wrong toolchain.
+        run: |
+          rustup target add wasm32-unknown-unknown
+          cargo build --target wasm32-unknown-unknown --no-default-features
 
       - name: Test (no default features)
         run: cargo test --no-default-features --lib --tests
