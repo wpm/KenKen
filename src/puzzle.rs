@@ -245,7 +245,7 @@ impl Puzzle {
     /// returned unchanged.
     ///
     /// # Errors
-    /// Returns [`Error`] if internal grid reconstruction fails.
+    /// Returns [`Error`] if propagation encounters a cell outside the grid bounds.
     pub fn demote(&self, polyomino: &Polyomino) -> Result<Self, Error> {
         match self.slots.get(&CageSlot::Region(polyomino.clone())) {
             None | Some(CageSlot::Region(_)) => return Ok(self.clone()),
