@@ -39,7 +39,7 @@ impl Cage {
     }
 
     /// Iterates this cage's cells in row-major order.
-    pub fn cells(&self) -> impl Iterator<Item = Cell> + '_ {
+    pub fn cells(&self) -> impl Iterator<Item = Cell> {
         self.polyomino.cells()
     }
 

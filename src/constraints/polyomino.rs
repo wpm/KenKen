@@ -30,7 +30,7 @@ impl Polyomino {
     }
 
     /// Iterates this polyomino's cells in row-major (sorted) order.
-    pub fn cells(&self) -> impl Iterator<Item = Cell> + '_ {
+    pub fn cells(&self) -> impl Iterator<Item = Cell> {
         self.0.iter().copied()
     }
 
@@ -49,6 +49,11 @@ impl Polyomino {
 
     /// Returns `true` if `cells` form a single edge-connected component, or are
     /// empty. Two cells are edge-connected when they share a side.
+    ///
+    /// Allocates a `BTreeSet` to delegate to the internal helper used by
+    /// [`Polyomino::from_cells`]; for typical cage sizes (≤10 cells) the cost
+    /// is negligible and avoiding it would require building a lookup set in
+    /// the more frequently called construction path.
     pub fn is_edge_connected_component(cells: &[Cell]) -> bool {
         let set: BTreeSet<Cell> = cells.iter().copied().collect();
         is_edge_connected_component(&set)
