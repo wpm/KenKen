@@ -22,7 +22,7 @@ git config core.hooksPath .githooks
 
 Everything is accessed through the [`Puzzle`] type.
 
-**Build puzzles** with `Puzzle::new_empty(n)`, then add cages via `insert(cage)` and remove them
+**Build puzzles** with `Puzzle::new(n)`, then add cages via `insert(cage)` and remove them
 via `remove(&cage)`, or bulk-construct with `Puzzle::with_cages(n, &cages)`. Each `Cage` is a
 `Polyomino` paired with an `Operation` (`Add`, `Subtract`, `Multiply`, `Divide`, or `Given`).
 

@@ -1,8 +1,8 @@
 //! KenKen puzzle generator and solver.
 //!
 //! [`Puzzle`] is the entry point for everything the crate does:
-//! - Build an empty board with [`Puzzle::new_empty`] and add constraints with [`Puzzle::insert`],
-//!   or bulk-construct with [`Puzzle::with_cages`].
+//! - Build an empty board with [`Puzzle::new`] and add constraints with [`Puzzle::insert`], or
+//!   bulk-construct with [`Puzzle::with_cages`].
 //! - Enumerate solutions with [`Puzzle::solve`].
 //! - Generate a random puzzle with [`Puzzle::generate`] (or [`Puzzle::generate_with`] for a custom
 //!   operation policy and cage-size distribution).

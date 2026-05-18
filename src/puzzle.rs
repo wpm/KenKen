@@ -23,7 +23,7 @@ use crate::{
 /// further change — every cell's candidate set is already as narrow as the
 /// constraints require. Every `Puzzle` upholds this invariant: construction
 /// and mutation methods ([`with_cages`](Puzzle::with_cages),
-/// [`new_empty`](Puzzle::new_empty), [`insert`](Puzzle::insert)) propagate
+/// [`new`](Puzzle::new), [`insert`](Puzzle::insert)) propagate
 /// constraints to fixpoint before returning. If propagation would empty any
 /// cell's candidate set (a contradiction), the method returns `None` instead
 /// of a `Puzzle`, so a `Puzzle` value always represents a consistent, fully
@@ -36,11 +36,11 @@ pub struct Puzzle {
 }
 
 impl Puzzle {
-    /// Creates an `n`×`n` puzzle with no cages.
+    /// Creates an `n`×`n` puzzle with no cages and all cells with total fills.
     ///
     /// # Errors
     /// Returns [`Error::InvalidGridSize`] if `n` is not in `1..=9`.
-    pub fn new_empty(n: usize) -> Result<Self, Error> {
+    pub fn new(n: usize) -> Result<Self, Error> {
         let grid = Grid::new(n)?;
         Ok(Self {
             grid: grid.clone(),
@@ -298,7 +298,7 @@ mod tests {
     };
 
     fn puzzle_4() -> Puzzle {
-        Puzzle::new_empty(4).unwrap()
+        Puzzle::new(4).unwrap()
     }
 
     fn singleton_cage() -> Cage {
@@ -322,20 +322,20 @@ mod tests {
     }
 
     #[test]
-    fn new_empty_invalid_size_returns_err() {
-        assert!(Puzzle::new_empty(0).is_err());
-        assert!(Puzzle::new_empty(10).is_err());
+    fn new_invalid_size_returns_err() {
+        assert!(Puzzle::new(0).is_err());
+        assert!(Puzzle::new(10).is_err());
     }
 
     #[test]
-    fn new_empty_valid_size_succeeds() {
-        assert!(Puzzle::new_empty(1).is_ok());
-        assert!(Puzzle::new_empty(9).is_ok());
+    fn new_valid_size_succeeds() {
+        assert!(Puzzle::new(1).is_ok());
+        assert!(Puzzle::new(9).is_ok());
     }
 
     #[test]
-    fn new_empty_cells_have_full_candidates() {
-        let puzzle = Puzzle::new_empty(3).unwrap();
+    fn new_cells_have_full_candidates() {
+        let puzzle = Puzzle::new(3).unwrap();
         assert!(
             puzzle
                 .cells()
@@ -520,7 +520,7 @@ mod tests {
             Polyomino::from_cells(&cells(&[(0, 1)])).unwrap(),
             Operation::Given(2),
         );
-        let puzzle = Puzzle::new_empty(2)
+        let puzzle = Puzzle::new(2)
             .unwrap()
             .insert(c1)
             .unwrap()
@@ -596,7 +596,7 @@ mod tests {
             Polyomino::from_cells(&cells(&[(0, 1)])).unwrap(),
             Operation::Given(1),
         );
-        let result = Puzzle::new_empty(2)
+        let result = Puzzle::new(2)
             .unwrap()
             .insert(c1)
             .unwrap()
