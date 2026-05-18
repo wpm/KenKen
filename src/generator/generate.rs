@@ -146,7 +146,7 @@ pub fn generate_with<R: Rng, F>(
 where
     F: Fn(&[N], Index) -> Result<Operation, Error>,
 {
-    let mut puzzle = Puzzle::new_empty(n)?;
+    let mut puzzle = Puzzle::new(n)?;
     let latin_square = generate_latin_square(n, rng);
     let tiling = greedy(n, sizes, rng)?;
     let n_max = n as N;
