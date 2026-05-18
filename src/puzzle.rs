@@ -248,6 +248,9 @@ impl<'de> serde::Deserialize<'de> for Puzzle {
             cages: Vec<CageData>,
         }
         let PuzzleData { n, cages } = PuzzleData::deserialize(d)?;
+        // n_u8 is used only for Cage::new; with_cages takes usize and validates 1..=9 via
+        // Grid::new. The u8 conversion fails before with_cages for n > 255, giving an early
+        // error.
         let n_u8 = u8::try_from(n).map_err(serde::de::Error::custom)?;
         let cages: Vec<Cage> = cages
             .into_iter()

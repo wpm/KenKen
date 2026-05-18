@@ -122,7 +122,15 @@ impl serde::Serialize for Fill {
 
 impl<'de> serde::Deserialize<'de> for Fill {
     fn deserialize<D: serde::Deserializer<'de>>(d: D) -> Result<Self, D::Error> {
-        Vec::<N>::deserialize(d).map(Self::new)
+        let values = Vec::<N>::deserialize(d)?;
+        for &v in &values {
+            if !(1..=9).contains(&v) {
+                return Err(serde::de::Error::custom(format!(
+                    "Fill value {v} is out of range 1..=9"
+                )));
+            }
+        }
+        Ok(Self::new(values))
     }
 }
 
@@ -429,5 +437,11 @@ mod tests {
         let json = serde_json::to_string(&fill).unwrap();
         let restored: Fill = serde_json::from_str(&json).unwrap();
         assert_eq!(fill, restored);
+    }
+
+    #[test]
+    fn fill_deserialize_rejects_out_of_range_values() {
+        assert!(serde_json::from_str::<Fill>("[0]").is_err());
+        assert!(serde_json::from_str::<Fill>("[10]").is_err());
     }
 }
