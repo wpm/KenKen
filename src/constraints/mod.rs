@@ -2,6 +2,7 @@ use crate::{Cell, Error, Grid};
 
 pub mod all_different;
 pub mod cage;
+pub mod cage_slot;
 pub mod polyomino;
 pub mod regin;
 

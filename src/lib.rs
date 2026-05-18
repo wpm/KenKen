@@ -22,6 +22,7 @@ pub use constraints::{
         Cage, Tuple,
         operation::{Operation, Operator},
     },
+    cage_slot::CageSlot,
     polyomino::Polyomino,
 };
 pub use generator::generate::SizeDistribution;
