@@ -95,7 +95,6 @@ impl Puzzle {
     /// # Errors
     /// Returns [`CageConflict`] if `cage` overlaps any cage already in
     /// the puzzle not identical to `cage`.
-    #[allow(unused_results)]
     pub fn insert(&self, cage: Cage) -> Result<Option<Self>, Error> {
         if self.cages.contains(&cage) {
             return Ok(Some(self.clone()));
@@ -108,7 +107,7 @@ impl Puzzle {
             return Err(CageConflict(cage));
         }
         let mut cages = self.cages.clone();
-        cages.insert(cage);
+        let _ = cages.insert(cage);
         Self {
             grid: self.grid.clone(),
             all_different: self.all_different.clone(),
