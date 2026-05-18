@@ -154,12 +154,12 @@ mod tests {
 
     #[test]
     fn one_has_no_factors() {
-        assert_eq!(factors(1), vec![]);
+        assert_eq!(factors(1), Vec::<u64>::new());
     }
 
     #[test]
     fn zero_has_no_factors() {
-        assert_eq!(factors(0), vec![]);
+        assert_eq!(factors(0), Vec::<u64>::new());
     }
 
     #[test]

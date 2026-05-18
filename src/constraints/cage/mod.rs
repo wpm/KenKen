@@ -88,6 +88,42 @@ impl Cover for Cage {
     }
 }
 
+impl serde::Serialize for Cage {
+    fn serialize<S: serde::Serializer>(&self, s: S) -> Result<S::Ok, S::Error> {
+        use serde::ser::SerializeStruct;
+        // `tuples` is derived from `polyomino`, `operation`, and `n`; it is not stored.
+        // We recover `n` as the largest value across all tuples (or 0 for an empty cage).
+        let n: N = self
+            .tuples
+            .iter()
+            .flat_map(|t| t.iter().copied())
+            .max()
+            .unwrap_or(0);
+        let mut st = s.serialize_struct("Cage", 3)?;
+        st.serialize_field("n", &n)?;
+        st.serialize_field("polyomino", &self.polyomino)?;
+        st.serialize_field("operation", &self.operation)?;
+        st.end()
+    }
+}
+
+impl<'de> serde::Deserialize<'de> for Cage {
+    fn deserialize<D: serde::Deserializer<'de>>(d: D) -> Result<Self, D::Error> {
+        #[derive(serde::Deserialize)]
+        struct CageData {
+            n: N,
+            polyomino: crate::Polyomino,
+            operation: crate::Operation,
+        }
+        let CageData {
+            n,
+            polyomino,
+            operation,
+        } = CageData::deserialize(d)?;
+        Ok(Self::new(n, polyomino, operation))
+    }
+}
+
 #[cfg(test)]
 #[allow(clippy::unwrap_used)]
 mod tests {

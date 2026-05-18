@@ -411,6 +411,19 @@ pub fn is_edge_connected_component(cells: &BTreeSet<Cell>) -> bool {
     visited.len() == cells.len()
 }
 
+impl serde::Serialize for Polyomino {
+    fn serialize<S: serde::Serializer>(&self, s: S) -> Result<S::Ok, S::Error> {
+        s.collect_seq(self.0.iter())
+    }
+}
+
+impl<'de> serde::Deserialize<'de> for Polyomino {
+    fn deserialize<D: serde::Deserializer<'de>>(d: D) -> Result<Self, D::Error> {
+        let cells = Vec::<Cell>::deserialize(d)?;
+        Self::from_cells(&cells).map_err(serde::de::Error::custom)
+    }
+}
+
 #[cfg(test)]
 #[allow(clippy::unwrap_used)]
 mod tests {
