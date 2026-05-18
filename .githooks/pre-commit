@@ -9,7 +9,7 @@ cargo fmt --all
 git add -u
 
 echo "==> cargo clippy"
-cargo clippy --all-targets --all-features -- \
+cargo clippy --all-targets -- \
   -D warnings \
   -D clippy::all \
   -D clippy::pedantic \
@@ -25,6 +25,6 @@ cargo clippy --all-targets --all-features -- \
   2>&1
 
 echo "==> cargo doc"
-RUSTDOCFLAGS="-D warnings" cargo doc --no-deps --all-features 2>&1
+RUSTDOCFLAGS="-D warnings" cargo doc --no-deps 2>&1
 
 echo "==> Pre-commit checks passed"

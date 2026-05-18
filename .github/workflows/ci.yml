@@ -29,7 +29,7 @@ jobs:
 
       - name: Clippy
         run: |
-          cargo clippy --all-targets --all-features -- \
+          cargo clippy --all-targets -- \
             -D warnings \
             -D clippy::all \
             -D clippy::pedantic \
@@ -44,7 +44,7 @@ jobs:
             -D clippy::print_stderr
 
       - name: Test
-        run: cargo llvm-cov --all-features --lcov --output-path lcov.info --fail-under-lines 99
+        run: cargo llvm-cov --lcov --output-path lcov.info --fail-under-lines 99
 
       - name: Upload coverage reports to Codecov
         uses: codecov/codecov-action@v5
@@ -53,18 +53,7 @@ jobs:
           slug: wpm/KenKen
           files: lcov.info
 
-      - name: Wasm build (no default features)
-        # rustup target add (not dtolnay's `targets:` field) is what installs the
-        # wasm target onto the toolchain that rust-toolchain.toml selects; the
-        # action's input would install it onto the wrong toolchain.
-        run: |
-          rustup target add wasm32-unknown-unknown
-          cargo build --target wasm32-unknown-unknown --no-default-features
-
-      - name: Test (no default features)
-        run: cargo test --no-default-features --lib --tests
-
       - name: Doc
-        run: cargo doc --no-deps --all-features
+        run: cargo doc --no-deps
         env:
           RUSTDOCFLAGS: -D warnings

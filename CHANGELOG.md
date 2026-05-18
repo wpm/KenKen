@@ -29,6 +29,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `Error::CageNotInPuzzle(Cage)` renamed to `Error::SlotNotInPuzzle(CageSlot)`
   to cover both cage and region out-of-bounds cases.
 
+### Removed
+- `generate` Cargo feature — generation is now unconditional and `rand`
+  is a required dependency.
+
 ## [0.3.0] - 2026-05-17
 
 ### Added
