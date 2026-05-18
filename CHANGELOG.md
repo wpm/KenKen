@@ -7,7 +7,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-## [0.3.0] - 2026-05-16
+## [0.3.0] - 2026-05-17
 
 ### Added
 - `Puzzle::solve` — enumerates solutions as an iterator (replaces the previously
@@ -18,29 +18,39 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   previous `Result<Option<Puzzle>, Error>` had a vestigial `None` arm.
 - `Puzzle::default_op_policy` — the default cage-operation policy, exposed for
   composition with `Puzzle::generate_with`.
-- `Puzzle::with_cages(n, &[Cage])` — bulk constructor that no longer requires
-  the caller to build a `Grid` first.
+- `Puzzle::with_cages(n, &[Cage])` — bulk constructor that validates cage bounds,
+  then propagates all constraints to fixpoint. Returns `None` if the cages
+  produce a contradiction.
+- `Puzzle::n()` — returns the grid size.
+- `Puzzle::cages()` — iterates over the puzzle's cages in sorted order.
 - `Puzzle::insert` and `Puzzle::remove` replace the old `insert_cage`/`remove_cage`
-  methods; `insert` now returns `Result<Option<Puzzle>>` (propagation may detect a
-  contradiction).
+  methods; `insert` returns `Result<Option<Puzzle>>` (propagation may detect a
+  contradiction); `remove` resets the full grid before re-propagating so
+  `AllDifferent` cascade effects are correctly unwound.
 - `Polyomino::intersects` — tests whether two polyominoes share any cell.
+- `serde` support: `Puzzle`, `Cage`, `Polyomino`, `Operation`, `Cell`, and `Fill`
+  all implement `Serialize` and `Deserialize`. `Puzzle` serializes as
+  `{"n": …, "cages": […]}`; the propagated grid is reconstructed on
+  deserialization.
 
 ### Changed
-- `Constraint` trait redesigned: `apply_to(&Grid) -> Result<Grid, Error>` replaces the
-  old `AllowedValues`-based callback model. Constraints are now composable via
-  `try_fold` and all constraints are monotone filters (candidates are only removed,
-  never added).
+- `Puzzle::new(n)` creates an empty `n`×`n` puzzle (no cages). The previous
+  `new(grid, cages)` signature is superseded by `with_cages`.
+- `SizeDistribution` replaced the fixed/uniform cage-size scheme with a
+  Poisson distribution (mean `n/3`, clamped to `1..=n`) that better matches
+  the irregular cage sizes of published KenKen puzzles.
+- `Constraint` trait redesigned: `apply_to(&Grid) -> Result<Grid, Error>` replaces
+  the old `AllowedValues`-based callback model. Constraints are now composable via
+  `try_fold` and are monotone filters (candidates are only removed, never added).
 - `Polyomino::new` renamed to `Polyomino::from_cells`.
 - CI coverage gate lowered to 99% — the `continue` branch in `greedy`'s frontier
-  dedup and the `unreachable!()` path in `generate_with` are structurally unreachable
-  in practice.
+  dedup and the `unreachable!()` path in `generate_with` are structurally
+  unreachable in practice.
 
 ### Removed
 - `Solver<S>` and the `State` trait — collapsed into `Puzzle::solve`.
 - Free functions `generate`, `generate_with`, and `default_op_policy` — collapsed
   into methods on `Puzzle`.
-- `Puzzle::new(grid, cages)` — superseded by `Puzzle::with_cages(n, cages)`,
-  which no longer requires the caller to construct a `Grid`.
 - `Grid`, `Fill`, the `Cover` trait, the `Constraint` trait, and the
   `constraints` module are no longer part of the public API; they remain
   crate-internal implementation details.
@@ -65,6 +75,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   module.
 - Shared test fixtures (`singleton`, `pair`, `l_shape`, etc.) consolidated into
   `constraints::test_utils`.
+- `AllDifferent` constraint construction moved into `Grid::all_different_constraints()`.
 
 ## [0.1.0] - 2026-05-12
 
