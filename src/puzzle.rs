@@ -155,8 +155,9 @@ impl Puzzle {
         .unwrap_or_else(|| unreachable!("widening fills cannot produce a contradiction")))
     }
 
-    /// Returns the puzzle's cages in ascending [`Cage`] order — by polyomino
-    /// cells (row-major), then operation, then tuples.
+    /// Returns the puzzle's cages in ascending order by polyomino cells
+    /// (row-major). The puzzle invariant guarantees no two stored cages share
+    /// a polyomino, so ties never arise.
     pub fn cages(&self) -> impl Iterator<Item = &Cage> {
         self.slots.iter().filter_map(CageSlot::as_cage)
     }
@@ -482,6 +483,20 @@ mod tests {
         let p = puzzle_4();
         let p2 = p.remove(&singleton_cage()).unwrap();
         assert!(p2.insert(singleton_cage()).is_ok());
+    }
+
+    #[test]
+    fn remove_same_polyomino_different_operation_is_noop() {
+        // CageSlot::Ord matches on polyomino alone, so naive BTreeSet::remove
+        // would drop the existing cage even when the operation differs.
+        // remove() must guard with value equality and leave the puzzle intact.
+        let original = singleton_cage(); // Given(3) at (0,0)
+        let p = puzzle_4().insert(original.clone()).unwrap().unwrap();
+        let other_op = Cage::new(4, singleton(), Operation::Given(2));
+        let p2 = p.remove(&other_op).unwrap();
+        // The original Given(3) cage is still enforced.
+        assert_eq!(p2.grid().get(&Cell::new(0, 0)).unwrap(), Fill::new([3]));
+        itertools::assert_equal(p2.cages(), &[original]);
     }
 
     #[test]
