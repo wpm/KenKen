@@ -9,7 +9,7 @@ use rand::Rng;
 #[cfg(feature = "generate")]
 use crate::generator::generate::{SizeDistribution, default_op_policy, generate, generate_with};
 use crate::{
-    Cage, Cell, Cover, Error,
+    Cage, CageSlot, Cell, Cover, Error,
     Error::{CageConflict, CageNotInPuzzle},
     Fill, Grid,
     constraints::{Constraint, all_different::AllDifferent, cage::operation::Operation},
@@ -34,7 +34,7 @@ use crate::{
 pub struct Puzzle {
     grid: Grid,
     all_different: Vec<AllDifferent>,
-    cages: BTreeSet<Cage>,
+    slots: BTreeSet<CageSlot>,
 }
 
 impl Puzzle {
@@ -47,7 +47,7 @@ impl Puzzle {
         Ok(Self {
             grid: grid.clone(),
             all_different: grid.all_different_constraints()?,
-            cages: BTreeSet::default(),
+            slots: BTreeSet::default(),
         })
     }
 
@@ -67,7 +67,7 @@ impl Puzzle {
         Self {
             grid: grid.clone(),
             all_different: grid.all_different_constraints()?,
-            cages: cages.iter().cloned().collect(),
+            slots: cages.iter().cloned().map(CageSlot::Cage).collect(),
         }
         .propagate()
     }
@@ -83,7 +83,7 @@ impl Puzzle {
         Self {
             grid,
             all_different: self.all_different.clone(),
-            cages: self.cages.clone(),
+            slots: self.slots.clone(),
         }
         .propagate()
     }
@@ -98,22 +98,26 @@ impl Puzzle {
     /// Returns [`CageConflict`] if `cage` overlaps any cage already in
     /// the puzzle not identical to `cage`.
     pub fn insert(&self, cage: Cage) -> Result<Option<Self>, Error> {
-        if self.cages.contains(&cage) {
-            return Ok(Some(self.clone()));
-        }
-        if self
-            .cages
+        // CageSlot's Ord compares by polyomino only, so any slot whose polyomino
+        // intersects the new cage's is a candidate for either idempotency or
+        // conflict — distinguish by exact value equality.
+        match self
+            .slots
             .iter()
-            .any(|puzzle_cage| puzzle_cage.polyomino().intersects(cage.polyomino()))
+            .find(|s| s.polyomino().intersects(cage.polyomino()))
         {
-            return Err(CageConflict(cage));
+            Some(CageSlot::Cage(existing)) if existing == &cage => {
+                return Ok(Some(self.clone()));
+            }
+            Some(CageSlot::Cage(_) | CageSlot::Region(_)) => return Err(CageConflict(cage)),
+            None => {}
         }
-        let mut cages = self.cages.clone();
-        let _ = cages.insert(cage);
+        let mut slots = self.slots.clone();
+        let _ = slots.insert(CageSlot::Cage(cage));
         Self {
             grid: self.grid.clone(),
             all_different: self.all_different.clone(),
-            cages,
+            slots,
         }
         .propagate()
     }
@@ -129,15 +133,20 @@ impl Puzzle {
     /// # Errors
     /// Returns [`Error`] if propagation encounters a cell outside the grid bounds.
     pub fn remove(&self, cage: &Cage) -> Result<Self, Error> {
-        let mut cages = self.cages.clone();
-        if !cages.remove(cage) {
+        // CageSlot::Ord matches on polyomino alone; require exact value equality
+        // before removing so a different-operation cage on the same polyomino
+        // stays a no-op.
+        let key = CageSlot::Cage(cage.clone());
+        if self.slots.get(&key) != Some(&key) {
             return Ok(self.clone());
         }
+        let mut slots = self.slots.clone();
+        let _ = slots.remove(&key);
         let n = self.grid.n();
         Ok(Self {
             grid: Grid::new(n)?,
             all_different: self.all_different.clone(),
-            cages,
+            slots,
         }
         .propagate()?
         // Safe: Grid::new(n) succeeds because n came from a valid Puzzle (n in 1..=9),
@@ -149,7 +158,7 @@ impl Puzzle {
     /// Returns the puzzle's cages in ascending [`Cage`] order — by polyomino
     /// cells (row-major), then operation, then tuples.
     pub fn cages(&self) -> impl Iterator<Item = &Cage> {
-        self.cages.iter()
+        self.slots.iter().filter_map(CageSlot::as_cage)
     }
 
     /// Returns each cell paired with its current candidate [`Fill`], in
@@ -233,7 +242,7 @@ impl Puzzle {
         self.all_different
             .iter()
             .map(|c| c as &dyn Constraint)
-            .chain(self.cages.iter().map(|c| c as &dyn Constraint))
+            .chain(self.cages().map(|c| c as &dyn Constraint))
             .try_fold(self.grid.clone(), |grid, c| c.apply_to(&grid))
             .map(|grid| (!grid.is_invalid()).then_some(grid))
     }
@@ -244,7 +253,7 @@ impl serde::Serialize for Puzzle {
         use serde::ser::SerializeStruct;
         let mut st = s.serialize_struct("Puzzle", 2)?;
         st.serialize_field("n", &self.grid.n())?;
-        st.serialize_field("cages", &self.cages.iter().collect::<Vec<_>>())?;
+        st.serialize_field("cages", &self.cages().collect::<Vec<_>>())?;
         st.end()
     }
 }
