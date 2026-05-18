@@ -7,12 +7,14 @@ use std::collections::BTreeSet;
 use rand::Rng;
 
 #[cfg(feature = "generate")]
+use crate::constraints::cage::operation::Operation;
+#[cfg(feature = "generate")]
 use crate::generator::generate::{SizeDistribution, default_op_policy, generate, generate_with};
 use crate::{
     Cage, CageSlot, Cell, Cover, Error,
     Error::{CageConflict, CageNotInPuzzle},
     Fill, Grid,
-    constraints::{Constraint, all_different::AllDifferent, cage::operation::Operation},
+    constraints::{Constraint, all_different::AllDifferent},
     solver::solve::{Solver, State},
 };
 
@@ -254,7 +256,7 @@ impl serde::Serialize for Puzzle {
         use serde::ser::SerializeStruct;
         let mut st = s.serialize_struct("Puzzle", 2)?;
         st.serialize_field("n", &self.grid.n())?;
-        st.serialize_field("cages", &self.cages().collect::<Vec<_>>())?;
+        st.serialize_field("slots", &self.slots)?;
         st.end()
     }
 }
@@ -262,27 +264,41 @@ impl serde::Serialize for Puzzle {
 impl<'de> serde::Deserialize<'de> for Puzzle {
     fn deserialize<D: serde::Deserializer<'de>>(d: D) -> Result<Self, D::Error> {
         #[derive(serde::Deserialize)]
-        struct CageData {
-            polyomino: crate::Polyomino,
-            operation: Operation,
-        }
-        #[derive(serde::Deserialize)]
         struct PuzzleData {
             n: usize,
-            cages: Vec<CageData>,
+            slots: Vec<CageSlot>,
         }
-        let PuzzleData { n, cages } = PuzzleData::deserialize(d)?;
-        // n_u8 is used only for Cage::new; with_cages takes usize and validates 1..=9 via
-        // Grid::new. The u8 conversion fails before with_cages for n > 255, giving an early
-        // error.
-        let n_u8 = u8::try_from(n).map_err(serde::de::Error::custom)?;
-        let cages: Vec<Cage> = cages
-            .into_iter()
-            .map(|c| Cage::new(n_u8, c.polyomino, c.operation))
-            .collect();
-        Self::with_cages(n, &cages)
-            .map_err(serde::de::Error::custom)?
-            .ok_or_else(|| serde::de::Error::custom("puzzle cages produce a contradiction"))
+        let PuzzleData { n, slots } = PuzzleData::deserialize(d)?;
+        let grid = Grid::new(n).map_err(serde::de::Error::custom)?;
+        for slot in &slots {
+            if slot.cells().any(|c| c.row >= n || c.column >= n) {
+                return Err(serde::de::Error::custom(
+                    "slot covers a cell outside the grid",
+                ));
+            }
+        }
+        // Reject same-polyomino duplicates at the wire-format boundary. Two slots over
+        // the same polyomino would violate the Puzzle invariant; relying on BTreeSet to
+        // dedupe is unsafe because CageSlot's Ord and PartialEq deliberately disagree.
+        let mut seen_polys = BTreeSet::new();
+        for slot in &slots {
+            if !seen_polys.insert(slot.polyomino()) {
+                return Err(serde::de::Error::custom(
+                    "puzzle slots contain duplicate polyominoes",
+                ));
+            }
+        }
+        let all_different = grid
+            .all_different_constraints()
+            .map_err(serde::de::Error::custom)?;
+        Self {
+            grid,
+            all_different,
+            slots: slots.into_iter().collect(),
+        }
+        .propagate()
+        .map_err(serde::de::Error::custom)?
+        .ok_or_else(|| serde::de::Error::custom("puzzle slots produce a contradiction"))
     }
 }
 
@@ -353,7 +369,7 @@ impl Cover for Puzzle {
 mod tests {
     use super::Puzzle;
     use crate::{
-        Cage, Cell, Cover, Error, Fill, Operation, Polyomino,
+        Cage, CageSlot, Cell, Cover, Error, Fill, Grid, Operation, Polyomino,
         constraints::test_utils::{cells, singleton},
         solver::solve::State,
     };
@@ -731,11 +747,11 @@ mod tests {
     // --- serde ---
 
     #[test]
-    fn puzzle_serializes_to_json_with_n_and_cages() {
+    fn puzzle_serializes_to_json_with_n_and_slots() {
         let puzzle = puzzle_4().insert(singleton_cage()).unwrap().unwrap();
         let json = serde_json::to_string(&puzzle).unwrap();
         assert!(json.contains("\"n\":4"));
-        assert!(json.contains("\"cages\""));
+        assert!(json.contains("\"slots\""));
     }
 
     #[test]
@@ -757,30 +773,100 @@ mod tests {
     }
 
     #[test]
-    fn puzzle_cage_serialized_without_n() {
-        // Cage wire format should be {polyomino, operation} — no "n" field.
-        let puzzle = puzzle_4().insert(singleton_cage()).unwrap().unwrap();
-        let json = serde_json::to_string(&puzzle).unwrap();
-        let v: serde_json::Value = serde_json::from_str(&json).unwrap();
-        let cage = &v["cages"][0];
-        assert!(cage.get("polyomino").is_some());
-        assert!(cage.get("operation").is_some());
-        assert!(cage.get("n").is_none(), "n should not appear in cage JSON");
+    fn puzzle_round_trips_with_regions_preserved() {
+        // Mixed Region + Cage slots must survive a JSON round-trip.
+        let region_poly = Polyomino::from_cells(&cells(&[(0, 0)])).unwrap();
+        let cage = Cage::new(
+            4,
+            Polyomino::from_cells(&cells(&[(1, 1)])).unwrap(),
+            Operation::Given(2),
+        );
+        let grid = Grid::new(4).unwrap();
+        let all_different = grid.all_different_constraints().unwrap();
+        let original = Puzzle {
+            grid,
+            all_different,
+            slots: [CageSlot::Region(region_poly), CageSlot::Cage(cage)]
+                .into_iter()
+                .collect(),
+        }
+        .propagate()
+        .unwrap()
+        .unwrap();
+
+        let json = serde_json::to_string(&original).unwrap();
+        let restored: Puzzle = serde_json::from_str(&json).unwrap();
+
+        assert_eq!(original.slots, restored.slots);
+        assert_eq!(original.grid(), restored.grid());
+    }
+
+    #[test]
+    fn puzzle_serialize_format_locks_shape() {
+        // Lock in the wire format: any future drift breaks this test.
+        let region_poly = Polyomino::from_cells(&cells(&[(0, 0)])).unwrap();
+        let cage = Cage::new(
+            2,
+            Polyomino::from_cells(&cells(&[(1, 1)])).unwrap(),
+            Operation::Given(2),
+        );
+        let grid = Grid::new(2).unwrap();
+        let all_different = grid.all_different_constraints().unwrap();
+        // Skip propagate(): we only inspect the serialized shape (n + slots), not the grid.
+        let puzzle = Puzzle {
+            grid,
+            all_different,
+            slots: [CageSlot::Region(region_poly), CageSlot::Cage(cage)]
+                .into_iter()
+                .collect(),
+        };
+        assert_eq!(
+            serde_json::to_value(&puzzle).unwrap(),
+            serde_json::json!({
+                "n": 2,
+                "slots": [
+                    {"Region": [{"row": 0, "column": 0}]},
+                    {"Cage": {
+                        "polyomino": [{"row": 1, "column": 1}],
+                        "operation": {"Given": 2},
+                        "n": 2,
+                    }},
+                ],
+            }),
+        );
     }
 
     #[test]
     fn puzzle_deserialize_contradicting_json_returns_err() {
         // Two Given(1) cages in the same row of a 2×2 grid is a contradiction.
-        let json = r#"{"n":2,"cages":[
-            {"polyomino":[{"row":0,"column":0}],"operation":{"Given":1}},
-            {"polyomino":[{"row":0,"column":1}],"operation":{"Given":1}}
+        let json = r#"{"n":2,"slots":[
+            {"Cage":{"polyomino":[{"row":0,"column":0}],"operation":{"Given":1},"n":2}},
+            {"Cage":{"polyomino":[{"row":0,"column":1}],"operation":{"Given":1},"n":2}}
         ]}"#;
         assert!(serde_json::from_str::<Puzzle>(json).is_err());
     }
 
     #[test]
     fn puzzle_deserialize_invalid_n_returns_err() {
-        let json = r#"{"n":99,"cages":[]}"#;
+        let json = r#"{"n":99,"slots":[]}"#;
+        assert!(serde_json::from_str::<Puzzle>(json).is_err());
+    }
+
+    #[test]
+    fn puzzle_deserialize_out_of_grid_slot_returns_err() {
+        // A region whose cell sits outside a 2×2 grid must be rejected.
+        let json = r#"{"n":2,"slots":[{"Region":[{"row":5,"column":0}]}]}"#;
+        assert!(serde_json::from_str::<Puzzle>(json).is_err());
+    }
+
+    #[test]
+    fn puzzle_deserialize_duplicate_polyomino_slots_returns_err() {
+        // Two slots over the same polyomino would silently collide in the BTreeSet
+        // because CageSlot::Ord compares polyominos only — the deserializer must reject.
+        let json = r#"{"n":2,"slots":[
+            {"Region":[{"row":0,"column":0}]},
+            {"Cage":{"polyomino":[{"row":0,"column":0}],"operation":{"Given":1},"n":2}}
+        ]}"#;
         assert!(serde_json::from_str::<Puzzle>(json).is_err());
     }
 }

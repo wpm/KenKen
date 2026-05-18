@@ -237,4 +237,20 @@ mod tests {
             assert!(Cage::new(4, p, op).tuples().is_empty());
         }
     }
+
+    // --- serde ---
+
+    // Cage's standalone Serialize impl emits only {polyomino, operation}; `n` is
+    // owned by the surrounding Puzzle (in slot context, CageSlot::Cage carries it).
+    #[test]
+    fn cage_serializes_to_polyomino_and_operation_without_n() {
+        let cage = Cage::new(4, singleton(), Operation::Given(3));
+        assert_eq!(
+            serde_json::to_value(&cage).unwrap(),
+            serde_json::json!({
+                "polyomino": [{"row": 0, "column": 0}],
+                "operation": {"Given": 3},
+            }),
+        );
+    }
 }
