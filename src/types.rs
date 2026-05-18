@@ -13,7 +13,9 @@ pub type M = u16;
 
 /// A cell in a KenKen grid, identified by 0-based row and column `Index` values
 /// in row-major order.
-#[derive(Ord, Eq, PartialEq, PartialOrd, Debug, Copy, Clone, Hash)]
+#[derive(
+    Ord, Eq, PartialEq, PartialOrd, Debug, Copy, Clone, Hash, serde::Serialize, serde::Deserialize,
+)]
 pub struct Cell {
     /// 0-based row index.
     pub row: Index,
@@ -109,6 +111,18 @@ impl BitOr for Fill {
     /// Returns the union of two sets of values.
     fn bitor(self, rhs: Self) -> Self {
         Self(self.0 | rhs.0)
+    }
+}
+
+impl serde::Serialize for Fill {
+    fn serialize<S: serde::Serializer>(&self, s: S) -> Result<S::Ok, S::Error> {
+        s.collect_seq(self.iter())
+    }
+}
+
+impl<'de> serde::Deserialize<'de> for Fill {
+    fn deserialize<D: serde::Deserializer<'de>>(d: D) -> Result<Self, D::Error> {
+        Vec::<N>::deserialize(d).map(Self::new)
     }
 }
 

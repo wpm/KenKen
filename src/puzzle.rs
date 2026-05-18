@@ -225,6 +225,30 @@ impl Puzzle {
     }
 }
 
+impl serde::Serialize for Puzzle {
+    fn serialize<S: serde::Serializer>(&self, s: S) -> Result<S::Ok, S::Error> {
+        use serde::ser::SerializeStruct;
+        let mut st = s.serialize_struct("Puzzle", 2)?;
+        st.serialize_field("n", &self.grid.n())?;
+        st.serialize_field("cages", &self.cages.iter().collect::<Vec<_>>())?;
+        st.end()
+    }
+}
+
+impl<'de> serde::Deserialize<'de> for Puzzle {
+    fn deserialize<D: serde::Deserializer<'de>>(d: D) -> Result<Self, D::Error> {
+        #[derive(serde::Deserialize)]
+        struct PuzzleData {
+            n: usize,
+            cages: Vec<Cage>,
+        }
+        let PuzzleData { n, cages } = PuzzleData::deserialize(d)?;
+        Self::with_cages(n, &cages)
+            .map_err(serde::de::Error::custom)?
+            .ok_or_else(|| serde::de::Error::custom("puzzle cages produce a contradiction"))
+    }
+}
+
 impl State for Puzzle {
     /// Applies all constraints repeatedly until the grid stabilizes or a
     /// contradiction is found.
@@ -622,5 +646,32 @@ mod tests {
         let once = puzzle.propagate().unwrap().unwrap();
         let twice = once.propagate().unwrap().unwrap();
         assert_eq!(once.grid(), twice.grid());
+    }
+
+    // --- serde ---
+
+    #[test]
+    fn puzzle_serializes_to_json_with_n_and_cages() {
+        let puzzle = puzzle_4().insert(singleton_cage()).unwrap().unwrap();
+        let json = serde_json::to_string(&puzzle).unwrap();
+        assert!(json.contains("\"n\":4"));
+        assert!(json.contains("\"cages\""));
+    }
+
+    #[test]
+    fn puzzle_round_trips_through_json() {
+        let original = puzzle_4().insert(singleton_cage()).unwrap().unwrap();
+        let json = serde_json::to_string(&original).unwrap();
+        let restored: Puzzle = serde_json::from_str(&json).unwrap();
+        assert_eq!(original.grid(), restored.grid());
+        itertools::assert_equal(original.cages(), restored.cages());
+    }
+
+    #[test]
+    fn puzzle_round_trips_with_no_cages() {
+        let original = puzzle_4();
+        let json = serde_json::to_string(&original).unwrap();
+        let restored: Puzzle = serde_json::from_str(&json).unwrap();
+        assert_eq!(original.grid(), restored.grid());
     }
 }

@@ -3,7 +3,9 @@ use strum::EnumIter;
 use crate::types::M;
 
 /// An arithmetic operation required by a [`crate::constraints::cage::Cage`].
-#[derive(Debug, Clone, Copy, Eq, PartialEq, Hash, PartialOrd, Ord)]
+#[derive(
+    Debug, Clone, Copy, Eq, PartialEq, Hash, PartialOrd, Ord, serde::Serialize, serde::Deserialize,
+)]
 pub enum Operation {
     /// Cells sum to the target.
     Add(M),
