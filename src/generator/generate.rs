@@ -7,10 +7,7 @@ use rand::{Rng, RngExt};
 
 use crate::{
     Cell, Polyomino,
-    constraints::{
-        Cover,
-        cage::{Cage, operation::Operation},
-    },
+    constraints::cage::{Cage, operation::Operation},
     generator::latin_square::generate_latin_square,
     puzzle::Puzzle,
     types::{Error, Index, M, N},
@@ -234,6 +231,7 @@ mod tests {
     use rand::SeedableRng;
 
     use super::*;
+    use crate::constraints::Cover;
 
     #[test]
     fn default_op_policy_one_cell_is_given() {

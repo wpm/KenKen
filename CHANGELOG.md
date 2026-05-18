@@ -7,6 +7,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- `Polyomino::cells()` — iterates the polyomino's cells in row-major order.
+- `Polyomino::len()` — number of cells (O(1)).
+- `Polyomino::contains(Cell)` — membership test (O(log n)).
+- `Polyomino::is_edge_connected_component(&[Cell])` — associated function
+  exposing the edge-connectivity check used during polyomino construction.
+- `Cage::cells()` and `Cage::len()` — accessors that delegate to the underlying
+  polyomino.
+
 ## [0.3.0] - 2026-05-17
 
 ### Added
