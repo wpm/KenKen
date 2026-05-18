@@ -51,7 +51,10 @@ impl Cover for CageSlot {
 
 // `Ord` and `Eq` deliberately disagree: `Region(p)` and `Cage(c)` with the
 // same polyomino compare as `Ordering::Equal` under `cmp` but are NOT `==`.
-// This keeps the Designer's tab order stable across promote/demote.
+// This keeps the Designer's tab order stable across promote/demote. Do not
+// store `CageSlot` in a `BTreeSet`/`BTreeMap` keyed on `Self`: a `Region`
+// and `Cage` over the same polyomino would collide and only one would
+// survive.
 impl Ord for CageSlot {
     fn cmp(&self, other: &Self) -> Ordering {
         self.polyomino().cmp(other.polyomino())
@@ -64,6 +67,10 @@ impl PartialOrd for CageSlot {
     }
 }
 
+// Externally-tagged enum wire format. The two variant bodies are
+// asymmetric: `Region` is a sequence (`Polyomino`'s own serde shape) while
+// `Cage` is a struct that carries `n` so standalone deserialize can
+// recompute `tuples` via `Cage::new`.
 impl serde::Serialize for CageSlot {
     fn serialize<S: serde::Serializer>(&self, s: S) -> Result<S::Ok, S::Error> {
         use serde::ser::SerializeStructVariant;
@@ -108,30 +115,21 @@ mod tests {
     use super::*;
     use crate::constraints::test_utils::{pair, singleton};
 
-    fn region_singleton() -> CageSlot {
-        CageSlot::Region(singleton())
-    }
-
-    fn cage_singleton() -> CageSlot {
-        CageSlot::Cage(Cage::new(4, singleton(), Operation::Given(1)))
-    }
-
     // --- Accessors ---
 
     #[test]
     fn as_cage_returns_some_for_cage_variant_and_none_for_region() {
         let cage = Cage::new(4, singleton(), Operation::Given(3));
-        let slot = CageSlot::Cage(cage.clone());
-        assert_eq!(slot.as_cage(), Some(&cage));
-        assert_eq!(region_singleton().as_cage(), None);
+        assert_eq!(CageSlot::Cage(cage.clone()).as_cage(), Some(&cage));
+        assert_eq!(CageSlot::Region(singleton()).as_cage(), None);
     }
 
     #[test]
     fn as_region_returns_some_for_region_variant_and_none_for_cage() {
         let p = singleton();
-        let slot = CageSlot::Region(p.clone());
-        assert_eq!(slot.as_region(), Some(&p));
-        assert_eq!(cage_singleton().as_region(), None);
+        assert_eq!(CageSlot::Region(p.clone()).as_region(), Some(&p));
+        let cage = Cage::new(4, singleton(), Operation::Given(1));
+        assert_eq!(CageSlot::Cage(cage).as_region(), None);
     }
 
     #[test]
@@ -180,7 +178,7 @@ mod tests {
 
     #[test]
     fn partial_cmp_consistent_with_cmp() {
-        let a = region_singleton();
+        let a = CageSlot::Region(singleton());
         let b = CageSlot::Region(pair());
         assert_eq!(a.partial_cmp(&b), Some(a.cmp(&b)));
     }
@@ -213,5 +211,28 @@ mod tests {
         // `n` is mandatory on the wire for the Cage variant.
         let json = r#"{"Cage":{"polyomino":[{"row":0,"column":0}],"operation":{"Given":3}}}"#;
         assert!(serde_json::from_str::<CageSlot>(json).is_err());
+    }
+
+    // Locks in the wire-format contract: future changes that drift the
+    // shape (variant tags, field names, sequence vs struct for Region) will
+    // break this test.
+    #[test]
+    fn serializes_to_externally_tagged_shape() {
+        let region = CageSlot::Region(singleton());
+        assert_eq!(
+            serde_json::to_value(&region).unwrap(),
+            serde_json::json!({"Region": [{"row": 0, "column": 0}]}),
+        );
+        let cage = CageSlot::Cage(Cage::new(4, singleton(), Operation::Given(3)));
+        assert_eq!(
+            serde_json::to_value(&cage).unwrap(),
+            serde_json::json!({
+                "Cage": {
+                    "polyomino": [{"row": 0, "column": 0}],
+                    "operation": {"Given": 3},
+                    "n": 4,
+                }
+            }),
+        );
     }
 }
