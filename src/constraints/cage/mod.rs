@@ -223,4 +223,18 @@ mod tests {
             assert!(Cage::new(4, p, op).tuples().is_empty());
         }
     }
+
+    #[test]
+    fn cage_new_with_mismatched_operator_arity_yields_no_tuples() {
+        for (p, op) in [
+            (pair(), Operation::Given(1)),
+            (l_shape(), Operation::Given(1)),
+            (singleton(), Operation::Subtract(1)),
+            (l_shape(), Operation::Subtract(1)),
+            (singleton(), Operation::Divide(2)),
+            (l_shape(), Operation::Divide(2)),
+        ] {
+            assert!(Cage::new(4, p, op).tuples().is_empty());
+        }
+    }
 }

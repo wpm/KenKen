@@ -205,6 +205,14 @@ impl Polyomino {
     /// polyomino on an `n`×`n` grid.
     pub(crate) fn valid_tuples(&self, n: N, operation: Operation) -> Vec<Tuple> {
         let k = self.len();
+        let arity_ok = match operation {
+            Operation::Given(_) => k == 1,
+            Operation::Subtract(_) | Operation::Divide(_) => k == 2,
+            Operation::Add(_) | Operation::Multiply(_) => true,
+        };
+        if !arity_ok {
+            return vec![];
+        }
         let pairs = self.collinear_pairs();
         match operation {
             Operation::Given(v) => N::try_from(v)
