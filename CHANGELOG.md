@@ -15,6 +15,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   exposing the edge-connectivity check used during polyomino construction.
 - `Cage::cells()` and `Cage::len()` — accessors that delegate to the underlying
   polyomino.
+- `Puzzle::with_slots(n, &[CageSlot])` — bulk constructor accepting mixed
+  `Region` and `Cage` slots, the generalization of `with_cages`. Validates
+  slot bounds and rejects duplicate polyominoes, then propagates to fixpoint.
+- `Error::DuplicateSlotPolyomino(Polyomino)` — raised by `with_slots` (and the
+  `Puzzle` deserializer) when two slots share the same polyomino.
+
+### Changed
+- `Puzzle::with_cages` is now a thin wrapper around `Puzzle::with_slots`.
+- `Error::CageNotInPuzzle(Cage)` renamed to `Error::SlotNotInPuzzle(CageSlot)`
+  to cover both cage and region out-of-bounds cases.
 
 ## [0.3.0] - 2026-05-17
 

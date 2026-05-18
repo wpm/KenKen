@@ -5,6 +5,7 @@ use std::{
 
 use crate::constraints::{
     cage::{Cage, operation::Operation},
+    cage_slot::CageSlot,
     polyomino::Polyomino,
 };
 
@@ -146,8 +147,14 @@ pub enum Error {
     InvalidCell(Cell),
     /// A new [`Cage`] conflicts with an existing cage.
     CageConflict(Cage),
-    /// A [`Cage`] passed to a `Puzzle` method is not present in that puzzle.
-    CageNotInPuzzle(Cage),
+    /// A [`CageSlot`] passed to a `Puzzle` constructor covers cells outside the
+    /// grid, so it cannot belong to that puzzle.
+    SlotNotInPuzzle(CageSlot),
+    /// Two slots passed to a `Puzzle` constructor share the same
+    /// [`Polyomino`]. Allowed shapes must be distinct: storing both would
+    /// silently collide in the puzzle's slot set ([`CageSlot::cmp`] keys on the
+    /// polyomino).
+    DuplicateSlotPolyomino(Polyomino),
     /// A new region [`Polyomino`] conflicts with an existing slot in the puzzle.
     RegionConflict(Polyomino),
     /// A [`Polyomino`] cannot support the requested [`Operation`]: either the
@@ -193,7 +200,13 @@ impl fmt::Display for Error {
                     "cage {new:?} conflicts with an existing cage in the puzzle"
                 )
             }
-            Self::CageNotInPuzzle(cage) => write!(f, "cage {cage:?} is not in this puzzle"),
+            Self::SlotNotInPuzzle(slot) => match slot {
+                CageSlot::Cage(c) => write!(f, "cage {c:?} is not in this puzzle"),
+                CageSlot::Region(p) => write!(f, "region {p:?} is not in this puzzle"),
+            },
+            Self::DuplicateSlotPolyomino(p) => {
+                write!(f, "duplicate polyomino {p:?} across puzzle slots")
+            }
             Self::RegionConflict(p) => write!(
                 f,
                 "region {p:?} conflicts with an existing slot in the puzzle"
@@ -419,7 +432,7 @@ mod tests {
 
     #[test]
     fn error_display_cage_and_region_variants() {
-        use crate::{Cage, Error, Operation, constraints::polyomino::Polyomino};
+        use crate::{Cage, CageSlot, Error, Operation, constraints::polyomino::Polyomino};
         let p = Polyomino::from_cells(&[Cell::new(0, 0)]).unwrap();
         let cage = Cage::new(4, p.clone(), Operation::Given(1));
         assert!(
@@ -427,10 +440,16 @@ mod tests {
                 .to_string()
                 .contains("conflicts")
         );
+        let cage_msg = Error::SlotNotInPuzzle(CageSlot::Cage(cage)).to_string();
+        assert!(cage_msg.starts_with("cage "));
+        assert!(cage_msg.contains("not in this puzzle"));
+        let region_msg = Error::SlotNotInPuzzle(CageSlot::Region(p.clone())).to_string();
+        assert!(region_msg.starts_with("region "));
+        assert!(region_msg.contains("not in this puzzle"));
         assert!(
-            Error::CageNotInPuzzle(cage)
+            Error::DuplicateSlotPolyomino(p.clone())
                 .to_string()
-                .contains("not in this puzzle")
+                .contains("duplicate polyomino")
         );
         assert!(
             Error::RegionConflict(p.clone())
