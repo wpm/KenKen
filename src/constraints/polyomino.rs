@@ -29,6 +29,31 @@ impl Polyomino {
         Self::new(cells.iter().copied().collect())
     }
 
+    /// Iterates this polyomino's cells in row-major (sorted) order.
+    pub fn cells(&self) -> impl Iterator<Item = Cell> + '_ {
+        self.0.iter().copied()
+    }
+
+    /// Returns the number of cells in this polyomino.
+    ///
+    /// Always at least 1: a polyomino cannot be empty by construction.
+    #[allow(clippy::len_without_is_empty)]
+    pub fn len(&self) -> usize {
+        self.0.len()
+    }
+
+    /// Returns `true` if this polyomino contains `cell`.
+    pub fn contains(&self, cell: Cell) -> bool {
+        self.0.contains(&cell)
+    }
+
+    /// Returns `true` if `cells` form a single edge-connected component, or are
+    /// empty. Two cells are edge-connected when they share a side.
+    pub fn is_edge_connected_component(cells: &[Cell]) -> bool {
+        let set: BTreeSet<Cell> = cells.iter().copied().collect();
+        is_edge_connected_component(&set)
+    }
+
     /// Constructs a polyomino from a set of cells, storing them in sorted order.
     ///
     /// # Errors
@@ -393,7 +418,7 @@ fn next_permutation(perm: &mut [N]) -> bool {
 
 /// Do `cells` form a contiguous edge-connected component?
 /// Two `cell`s are edge-connected if they share a common edge.
-pub fn is_edge_connected_component(cells: &BTreeSet<Cell>) -> bool {
+fn is_edge_connected_component(cells: &BTreeSet<Cell>) -> bool {
     let Some(&start) = cells.first() else {
         return true;
     };
@@ -428,9 +453,8 @@ impl<'de> serde::Deserialize<'de> for Polyomino {
 #[allow(clippy::unwrap_used)]
 mod tests {
     use super::*;
-    use crate::constraints::{
-        Cover,
-        test_utils::{c00, c01, c02, c10, c11, cells, col_pair, l_shape, pair, row3, singleton},
+    use crate::constraints::test_utils::{
+        c00, c01, c02, c10, c11, cells, col_pair, l_shape, pair, row3, singleton,
     };
 
     fn btree(positions: &[(usize, usize)]) -> BTreeSet<Cell> {

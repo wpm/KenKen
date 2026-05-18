@@ -122,4 +122,63 @@ mod test {
         fn assert_send_sync<T: Send + Sync>() {}
         assert_send_sync::<Puzzle>();
     }
+
+    #[test]
+    fn polyomino_cells_iterates_in_row_major_order() {
+        let p = Polyomino::from_cells(&[Cell::new(1, 0), Cell::new(0, 0), Cell::new(0, 1)])
+            .unwrap();
+        let got: Vec<Cell> = p.cells().collect();
+        assert_eq!(
+            got,
+            vec![Cell::new(0, 0), Cell::new(0, 1), Cell::new(1, 0)]
+        );
+    }
+
+    #[test]
+    fn polyomino_len_matches_construction_count() {
+        let p =
+            Polyomino::from_cells(&[Cell::new(0, 0), Cell::new(0, 1), Cell::new(0, 2)]).unwrap();
+        assert_eq!(p.len(), 3);
+    }
+
+    #[test]
+    fn polyomino_contains_known_and_unknown_cells() {
+        let p = Polyomino::from_cells(&[Cell::new(0, 0), Cell::new(0, 1)]).unwrap();
+        assert!(p.contains(Cell::new(0, 0)));
+        assert!(p.contains(Cell::new(0, 1)));
+        assert!(!p.contains(Cell::new(1, 0)));
+    }
+
+    #[test]
+    fn polyomino_is_edge_connected_component_accepts_connected_and_rejects_disconnected_and_empty()
+    {
+        assert!(Polyomino::is_edge_connected_component(&[]));
+        assert!(Polyomino::is_edge_connected_component(&[Cell::new(0, 0)]));
+        assert!(Polyomino::is_edge_connected_component(&[
+            Cell::new(0, 0),
+            Cell::new(0, 1)
+        ]));
+        assert!(!Polyomino::is_edge_connected_component(&[
+            Cell::new(0, 0),
+            Cell::new(1, 1)
+        ]));
+    }
+
+    #[test]
+    fn cage_cells_matches_underlying_polyomino() {
+        let cells = [Cell::new(0, 0), Cell::new(0, 1)];
+        let p = Polyomino::from_cells(&cells).unwrap();
+        let cage = Cage::new(4, p.clone(), Operation::Add(3));
+        let cage_cells: Vec<Cell> = cage.cells().collect();
+        let poly_cells: Vec<Cell> = p.cells().collect();
+        assert_eq!(cage_cells, poly_cells);
+    }
+
+    #[test]
+    fn cage_len_matches_polyomino_len() {
+        let p =
+            Polyomino::from_cells(&[Cell::new(0, 0), Cell::new(0, 1), Cell::new(1, 0)]).unwrap();
+        let cage = Cage::new(4, p, Operation::Add(6));
+        assert_eq!(cage.len(), 3);
+    }
 }

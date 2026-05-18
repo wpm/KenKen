@@ -40,6 +40,19 @@ impl Cage {
         &self.polyomino
     }
 
+    /// Iterates this cage's cells in row-major order.
+    pub fn cells(&self) -> impl Iterator<Item = Cell> + '_ {
+        self.polyomino.cells()
+    }
+
+    /// Returns the number of cells in this cage.
+    ///
+    /// Always at least 1: a cage's polyomino cannot be empty by construction.
+    #[allow(clippy::len_without_is_empty)]
+    pub fn len(&self) -> usize {
+        self.polyomino.len()
+    }
+
     /// Returns this cage's operation.
     pub const fn operation(&self) -> Operation {
         self.operation
