@@ -92,7 +92,6 @@ mod test {
         assert_eq!(puzzle.solve().count(), 1);
     }
 
-    #[cfg(feature = "generate")]
     mod generator {
         use kenken::{Puzzle, SizeDistribution};
         use rand::SeedableRng;
