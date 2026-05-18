@@ -10,7 +10,9 @@ use rand::Rng;
 use crate::generator::generate::{SizeDistribution, default_op_policy, generate, generate_with};
 use crate::{
     Cage, CageSlot, Cell, Cover, Error,
-    Error::{CageConflict, CageNotInPuzzle, InfeasibleOperation, RegionConflict},
+    Error::{
+        CageConflict, DuplicateSlotPolyomino, InfeasibleOperation, RegionConflict, SlotNotInPuzzle,
+    },
     Fill, Grid, Polyomino,
     constraints::{Constraint, all_different::AllDifferent, cage::operation::Operation},
     solver::solve::{Solver, State},
@@ -56,20 +58,45 @@ impl Puzzle {
     /// Creates an `n`×`n` puzzle from a set of cages, then propagates
     /// all constraints. Returns `None` if propagation finds a contradiction.
     ///
+    /// Thin wrapper around [`Puzzle::with_slots`] for the common case of a
+    /// fully-operated puzzle (no draft regions).
+    ///
     /// # Errors
     /// Returns [`Error::InvalidGridSize`] if `n` is not in `1..=9`.
-    /// Returns [`CageNotInPuzzle`] if any cage contains a cell outside the grid.
+    /// Returns [`SlotNotInPuzzle`] if any cage contains a cell outside the grid.
+    /// Returns [`DuplicateSlotPolyomino`] if two cages share a polyomino.
     pub fn with_cages(n: usize, cages: &[Cage]) -> Result<Option<Self>, Error> {
+        let slots: Vec<CageSlot> = cages.iter().cloned().map(CageSlot::Cage).collect();
+        Self::with_slots(n, &slots)
+    }
+
+    /// Creates an `n`×`n` puzzle from a set of [`CageSlot`]s (mixed
+    /// [`CageSlot::Region`]s and [`CageSlot::Cage`]s), then propagates all
+    /// constraints. Returns `None` if propagation finds a contradiction.
+    ///
+    /// # Errors
+    /// Returns [`Error::InvalidGridSize`] if `n` is not in `1..=9`.
+    /// Returns [`SlotNotInPuzzle`] if any slot covers a cell outside the grid.
+    /// Returns [`DuplicateSlotPolyomino`] if two slots share the same polyomino:
+    /// [`CageSlot::cmp`] keys on the polyomino alone, so distinct slots over the
+    /// same polyomino would silently collide in the puzzle's slot set.
+    pub fn with_slots(n: usize, slots: &[CageSlot]) -> Result<Option<Self>, Error> {
         let grid = Grid::new(n)?;
-        for cage in cages {
-            if cage.cells().any(|c| c.row >= n || c.column >= n) {
-                return Err(CageNotInPuzzle(cage.clone()));
+        for slot in slots {
+            if slot.cells().any(|c| c.row >= n || c.column >= n) {
+                return Err(SlotNotInPuzzle(slot.clone()));
+            }
+        }
+        let mut seen = BTreeSet::new();
+        for slot in slots {
+            if !seen.insert(slot.polyomino()) {
+                return Err(DuplicateSlotPolyomino(slot.polyomino().clone()));
             }
         }
         Self {
             grid: grid.clone(),
             all_different: grid.all_different_constraints()?,
-            slots: cages.iter().cloned().map(CageSlot::Cage).collect(),
+            slots: slots.iter().cloned().collect(),
         }
         .propagate()
     }
@@ -388,36 +415,9 @@ impl<'de> serde::Deserialize<'de> for Puzzle {
             slots: Vec<CageSlot>,
         }
         let PuzzleData { n, slots } = PuzzleData::deserialize(d)?;
-        let grid = Grid::new(n).map_err(serde::de::Error::custom)?;
-        for slot in &slots {
-            if slot.cells().any(|c| c.row >= n || c.column >= n) {
-                return Err(serde::de::Error::custom(
-                    "slot covers a cell outside the grid",
-                ));
-            }
-        }
-        // Reject same-polyomino duplicates at the wire-format boundary. Two slots over
-        // the same polyomino would violate the Puzzle invariant; relying on BTreeSet to
-        // dedupe is unsafe because CageSlot's Ord and PartialEq deliberately disagree.
-        let mut seen_polys = BTreeSet::new();
-        for slot in &slots {
-            if !seen_polys.insert(slot.polyomino()) {
-                return Err(serde::de::Error::custom(
-                    "puzzle slots contain duplicate polyominoes",
-                ));
-            }
-        }
-        let all_different = grid
-            .all_different_constraints()
-            .map_err(serde::de::Error::custom)?;
-        Self {
-            grid,
-            all_different,
-            slots: slots.into_iter().collect(),
-        }
-        .propagate()
-        .map_err(serde::de::Error::custom)?
-        .ok_or_else(|| serde::de::Error::custom("puzzle slots produce a contradiction"))
+        Self::with_slots(n, &slots)
+            .map_err(serde::de::Error::custom)?
+            .ok_or_else(|| serde::de::Error::custom("puzzle slots produce a contradiction"))
     }
 }
 
@@ -513,8 +513,88 @@ mod tests {
         );
         assert!(matches!(
             Puzzle::with_cages(1, &[out_of_bounds]),
-            Err(Error::CageNotInPuzzle(_))
+            Err(Error::SlotNotInPuzzle(CageSlot::Cage(_)))
         ));
+    }
+
+    // --- Puzzle::with_slots ---
+
+    #[test]
+    fn with_slots_no_slots_returns_some() {
+        let puzzle = Puzzle::with_slots(4, &[]).unwrap().unwrap();
+        assert_eq!(puzzle.slots().count(), 0);
+    }
+
+    #[test]
+    fn with_slots_mixed_regions_and_cages_succeeds() {
+        // Region at (0,0), Cage with Given(2) at (1,1) — distinct polyominoes.
+        let region = Polyomino::from_cells(&cells(&[(0, 0)])).unwrap();
+        let cage = Cage::new(
+            4,
+            Polyomino::from_cells(&cells(&[(1, 1)])).unwrap(),
+            Operation::Given(2),
+        );
+        let puzzle =
+            Puzzle::with_slots(4, &[CageSlot::Region(region), CageSlot::Cage(cage.clone())])
+                .unwrap()
+                .unwrap();
+        assert_eq!(puzzle.regions().count(), 1);
+        itertools::assert_equal(puzzle.cages(), &[cage]);
+        // The cage's Given(2) propagates and pins (1,1) to {2}.
+        assert_eq!(puzzle.grid().get(&Cell::new(1, 1)).unwrap(), Fill::new([2]));
+    }
+
+    #[test]
+    fn with_slots_region_outside_grid_returns_err() {
+        // A region whose only cell sits outside a 2×2 grid.
+        let region = Polyomino::from_cells(&cells(&[(5, 0)])).unwrap();
+        assert!(matches!(
+            Puzzle::with_slots(2, &[CageSlot::Region(region)]),
+            Err(Error::SlotNotInPuzzle(CageSlot::Region(_)))
+        ));
+    }
+
+    #[test]
+    fn with_slots_cage_outside_grid_returns_err() {
+        let cage = Cage::new(
+            4,
+            Polyomino::from_cells(&cells(&[(0, 0), (0, 1)])).unwrap(),
+            Operation::Add(3),
+        );
+        assert!(matches!(
+            Puzzle::with_slots(1, &[CageSlot::Cage(cage)]),
+            Err(Error::SlotNotInPuzzle(CageSlot::Cage(_)))
+        ));
+    }
+
+    #[test]
+    fn with_slots_duplicate_polyomino_returns_err() {
+        // A Region and a Cage over the same polyomino: CageSlot::Ord matches by
+        // polyomino, so the BTreeSet would silently drop one. The constructor
+        // must reject upfront.
+        let cage = Cage::new(4, singleton(), Operation::Given(3));
+        let slots = [CageSlot::Region(singleton()), CageSlot::Cage(cage)];
+        assert!(matches!(
+            Puzzle::with_slots(4, &slots),
+            Err(Error::DuplicateSlotPolyomino(_))
+        ));
+    }
+
+    #[test]
+    fn with_slots_contradicting_cages_returns_none() {
+        // Two Given(1) cages in the same row of a 2×2 grid is a contradiction.
+        let c1 = Cage::new(
+            2,
+            Polyomino::from_cells(&cells(&[(0, 0)])).unwrap(),
+            Operation::Given(1),
+        );
+        let c2 = Cage::new(
+            2,
+            Polyomino::from_cells(&cells(&[(0, 1)])).unwrap(),
+            Operation::Given(1),
+        );
+        let slots = [CageSlot::Cage(c1), CageSlot::Cage(c2)];
+        assert!(Puzzle::with_slots(2, &slots).unwrap().is_none());
     }
 
     #[test]
@@ -565,6 +645,19 @@ mod tests {
             Operation::Given(1),
         );
         assert!(Puzzle::with_cages(2, &[c1, c2]).unwrap().is_none());
+    }
+
+    #[test]
+    fn with_cages_duplicate_polyomino_returns_err() {
+        // Two cages over the same polyomino used to silently collapse in the
+        // slot set (CageSlot::Ord matches by polyomino only); via with_slots
+        // the constructor now rejects them.
+        let c1 = Cage::new(4, singleton(), Operation::Given(3));
+        let c2 = Cage::new(4, singleton(), Operation::Given(2));
+        assert!(matches!(
+            Puzzle::with_cages(4, &[c1, c2]),
+            Err(Error::DuplicateSlotPolyomino(_))
+        ));
     }
 
     #[test]
