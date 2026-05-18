@@ -206,7 +206,9 @@ impl Puzzle {
     /// - [`InfeasibleOperation`] if `op` admits no valid tuples for `polyomino` (operator invalid
     ///   for the cell count, or target unreachable).
     pub fn promote(&self, polyomino: &Polyomino, op: Operation) -> Result<Option<Self>, Error> {
-        let n = u8::try_from(self.grid.n()).expect("Puzzle invariant: n is in 1..=9");
+        // Grid::new validates 1..=9, so the conversion is total for any Puzzle.
+        let n = u8::try_from(self.grid.n())
+            .unwrap_or_else(|_| unreachable!("Puzzle invariant: n is in 1..=9"));
         // CageSlot::Ord matches by polyomino only, so the Region probe key
         // returns whatever slot variant lives at this polyomino.
         match self.slots.get(&CageSlot::Region(polyomino.clone())) {
@@ -799,8 +801,7 @@ mod tests {
 
     #[test]
     fn demote_then_promote_round_trips() {
-        let cage = singleton_cage();
-        let p = puzzle_4().insert(cage.clone()).unwrap().unwrap();
+        let p = puzzle_4().insert(singleton_cage()).unwrap().unwrap();
         let p2 = p
             .demote(&singleton())
             .unwrap()
@@ -833,9 +834,8 @@ mod tests {
 
     #[test]
     fn slots_interleaves_regions_and_cages_by_polyomino_order() {
-        let region_at_11 = Polyomino::from_cells(&cells(&[(1, 1)])).unwrap();
         let p = puzzle_4()
-            .insert_region(region_at_11.clone())
+            .insert_region(Polyomino::from_cells(&cells(&[(1, 1)])).unwrap())
             .unwrap()
             .insert(singleton_cage())
             .unwrap()
@@ -849,11 +849,10 @@ mod tests {
 
     #[test]
     fn slots_after_promote_preserves_order() {
-        let region_at_11 = Polyomino::from_cells(&cells(&[(1, 1)])).unwrap();
         let before = puzzle_4()
             .insert_region(singleton())
             .unwrap()
-            .insert_region(region_at_11.clone())
+            .insert_region(Polyomino::from_cells(&cells(&[(1, 1)])).unwrap())
             .unwrap();
         let after = before
             .promote(&singleton(), Operation::Given(3))
