@@ -238,11 +238,21 @@ impl serde::Serialize for Puzzle {
 impl<'de> serde::Deserialize<'de> for Puzzle {
     fn deserialize<D: serde::Deserializer<'de>>(d: D) -> Result<Self, D::Error> {
         #[derive(serde::Deserialize)]
+        struct CageData {
+            polyomino: crate::Polyomino,
+            operation: crate::constraints::cage::operation::Operation,
+        }
+        #[derive(serde::Deserialize)]
         struct PuzzleData {
             n: usize,
-            cages: Vec<Cage>,
+            cages: Vec<CageData>,
         }
         let PuzzleData { n, cages } = PuzzleData::deserialize(d)?;
+        let n_u8 = u8::try_from(n).map_err(serde::de::Error::custom)?;
+        let cages: Vec<Cage> = cages
+            .into_iter()
+            .map(|c| Cage::new(n_u8, c.polyomino, c.operation))
+            .collect();
         Self::with_cages(n, &cages)
             .map_err(serde::de::Error::custom)?
             .ok_or_else(|| serde::de::Error::custom("puzzle cages produce a contradiction"))
@@ -673,5 +683,34 @@ mod tests {
         let json = serde_json::to_string(&original).unwrap();
         let restored: Puzzle = serde_json::from_str(&json).unwrap();
         assert_eq!(original.grid(), restored.grid());
+        itertools::assert_equal(original.cages(), restored.cages());
+    }
+
+    #[test]
+    fn puzzle_cage_serialized_without_n() {
+        // Cage wire format should be {polyomino, operation} — no "n" field.
+        let puzzle = puzzle_4().insert(singleton_cage()).unwrap().unwrap();
+        let json = serde_json::to_string(&puzzle).unwrap();
+        let v: serde_json::Value = serde_json::from_str(&json).unwrap();
+        let cage = &v["cages"][0];
+        assert!(cage.get("polyomino").is_some());
+        assert!(cage.get("operation").is_some());
+        assert!(cage.get("n").is_none(), "n should not appear in cage JSON");
+    }
+
+    #[test]
+    fn puzzle_deserialize_contradicting_json_returns_err() {
+        // Two Given(1) cages in the same row of a 2×2 grid is a contradiction.
+        let json = r#"{"n":2,"cages":[
+            {"polyomino":[{"row":0,"column":0}],"operation":{"Given":1}},
+            {"polyomino":[{"row":0,"column":1}],"operation":{"Given":1}}
+        ]}"#;
+        assert!(serde_json::from_str::<Puzzle>(json).is_err());
+    }
+
+    #[test]
+    fn puzzle_deserialize_invalid_n_returns_err() {
+        let json = r#"{"n":99,"cages":[]}"#;
+        assert!(serde_json::from_str::<Puzzle>(json).is_err());
     }
 }

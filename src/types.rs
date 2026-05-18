@@ -413,4 +413,21 @@ mod tests {
                 .contains("not in this puzzle")
         );
     }
+
+    #[test]
+    fn fill_round_trips_through_json() {
+        let fill = Fill::new([1, 3, 5]);
+        let json = serde_json::to_string(&fill).unwrap();
+        assert_eq!(json, "[1,3,5]");
+        let restored: Fill = serde_json::from_str(&json).unwrap();
+        assert_eq!(fill, restored);
+    }
+
+    #[test]
+    fn fill_empty_round_trips_through_json() {
+        let fill = Fill::default();
+        let json = serde_json::to_string(&fill).unwrap();
+        let restored: Fill = serde_json::from_str(&json).unwrap();
+        assert_eq!(fill, restored);
+    }
 }
