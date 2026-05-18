@@ -18,6 +18,7 @@ pub struct Cage {
     polyomino: Polyomino,
     operation: Operation,
     tuples: Vec<Tuple>,
+    n: N,
 }
 
 impl Cage {
@@ -30,12 +31,18 @@ impl Cage {
             polyomino,
             operation,
             tuples,
+            n,
         }
     }
 
     /// Returns the polyomino covered by this cage.
     pub const fn polyomino(&self) -> &Polyomino {
         &self.polyomino
+    }
+
+    /// Returns the grid size this cage was constructed for.
+    pub const fn n(&self) -> N {
+        self.n
     }
 
     /// Iterates this cage's cells in row-major order.
