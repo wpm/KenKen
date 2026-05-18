@@ -24,7 +24,9 @@ pub enum Operation {
 /// Used by `Cage::valid_operators` to enumerate the operators legal for a cage
 /// shape, and by `Cage::valid_targets` to select an operator for which to
 /// enumerate legal targets.
-#[derive(Debug, Clone, Copy, Eq, PartialEq, Hash, EnumIter)]
+#[derive(
+    Debug, Clone, Copy, Eq, PartialEq, Hash, EnumIter, serde::Serialize, serde::Deserialize,
+)]
 pub enum Operator {
     Add,
     Subtract,
@@ -42,6 +44,23 @@ impl Operator {
             Operation::Multiply(_) => Self::Multiply,
             Operation::Divide(_) => Self::Divide,
             Operation::Given(_) => Self::Given,
+        }
+    }
+}
+
+#[cfg(test)]
+#[allow(clippy::unwrap_used)]
+mod tests {
+    use strum::IntoEnumIterator;
+
+    use super::*;
+
+    #[test]
+    fn operator_round_trips_through_json() {
+        for op in Operator::iter() {
+            let json = serde_json::to_string(&op).unwrap();
+            let restored: Operator = serde_json::from_str(&json).unwrap();
+            assert_eq!(op, restored);
         }
     }
 }
