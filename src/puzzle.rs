@@ -70,6 +70,10 @@ impl Puzzle {
         .propagate()
     }
 
+    pub const fn n(&self) -> usize {
+        self.grid.n()
+    }
+
     /// Returns a new puzzle with `grid` substituted in place of the current grid,
     /// then propagates all constraints. Returns `None` if propagation finds a
     /// contradiction. Cages and all-different constraints are carried over unchanged.
@@ -149,8 +153,8 @@ impl Puzzle {
 
     /// Enumerates the puzzle's solutions via depth-first backtracking search.
     ///
-    /// Each item is a fully-solved [`Puzzle`] (every cell pinned to one value).
-    /// The iterator is lazy: stop after the first item for uniqueness checks,
+    /// Each item is a fully solved [`Puzzle`] (every cell pinned to one value).
+    /// The iterator is lazy: stop after the first item for uniqueness checks
     /// or drain it to count all solutions.
     pub fn solve(&self) -> impl Iterator<Item = Self> {
         Solver::new(self.clone())
@@ -247,10 +251,6 @@ impl State for Puzzle {
         Ok(Some(puzzle))
     }
 
-    fn is_solved(&self) -> bool {
-        self.grid.is_solved()
-    }
-
     /// Returns one child puzzle per candidate value of the most-constrained
     /// *unsolved* cell — the cell with the fewest remaining candidates among
     /// those with more than one candidate, breaking ties by cell order. Each
@@ -274,6 +274,10 @@ impl State for Puzzle {
                     .flatten()
             })
         })
+    }
+
+    fn is_solved(&self) -> bool {
+        self.grid.is_solved()
     }
 }
 
@@ -365,6 +369,11 @@ mod tests {
             Operation::Given(1),
         );
         assert!(Puzzle::with_cages(2, &[c1, c2]).unwrap().is_none());
+    }
+
+    #[test]
+    fn n() {
+        assert_eq!(puzzle_4().n(), 4);
     }
 
     // --- Puzzle::insert ---
@@ -500,7 +509,7 @@ mod tests {
     fn branch_solved_puzzle_yields_no_children() {
         // A 2×2 puzzle pinned by two non-overlapping Givens propagates to a
         // fully-singleton grid. branch() must yield no children so the solver
-        // recognises the state as a solution.
+        // recognizes the state as a solution.
         let c1 = Cage::new(
             2,
             Polyomino::from_cells(&cells(&[(0, 0)])).unwrap(),
