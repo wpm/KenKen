@@ -3,7 +3,10 @@ use std::{
     ops::{BitAnd, BitOr},
 };
 
-use crate::constraints::cage::Cage;
+use crate::constraints::{
+    cage::{Cage, operation::Operation},
+    polyomino::Polyomino,
+};
 
 /// Possible cell value: a number in the range `1..=9`.
 pub type N = u8;
@@ -145,6 +148,11 @@ pub enum Error {
     CageConflict(Cage),
     /// A [`Cage`] passed to a `Puzzle` method is not present in that puzzle.
     CageNotInPuzzle(Cage),
+    /// A new region [`Polyomino`] conflicts with an existing slot in the puzzle.
+    RegionConflict(Polyomino),
+    /// A [`Polyomino`] cannot support the requested [`Operation`]: either the
+    /// operator is invalid for the cell count, or the target is unreachable.
+    InfeasibleOperation(Polyomino, Operation),
     /// A tiling operation referenced a [`Cell`] that no polyomino covers.
     CellNotCovered(Cell),
     /// Removing a [`Cell`] from a [`crate::Polyomino`] would leave the remaining cells
@@ -186,6 +194,13 @@ impl fmt::Display for Error {
                 )
             }
             Self::CageNotInPuzzle(cage) => write!(f, "cage {cage:?} is not in this puzzle"),
+            Self::RegionConflict(p) => write!(
+                f,
+                "region {p:?} conflicts with an existing slot in the puzzle"
+            ),
+            Self::InfeasibleOperation(p, op) => {
+                write!(f, "operation {op:?} is infeasible for polyomino {p:?}")
+            }
             Self::CellNotCovered(c) => write!(
                 f,
                 "cell ({}, {}) is not covered by any polyomino",
@@ -403,13 +418,10 @@ mod tests {
     }
 
     #[test]
-    fn error_display_cage_variants() {
+    fn error_display_cage_and_region_variants() {
         use crate::{Cage, Error, Operation, constraints::polyomino::Polyomino};
-        let cage = Cage::new(
-            4,
-            Polyomino::from_cells(&[Cell::new(0, 0)]).unwrap(),
-            Operation::Given(1),
-        );
+        let p = Polyomino::from_cells(&[Cell::new(0, 0)]).unwrap();
+        let cage = Cage::new(4, p.clone(), Operation::Given(1));
         assert!(
             Error::CageConflict(cage.clone())
                 .to_string()
@@ -419,6 +431,16 @@ mod tests {
             Error::CageNotInPuzzle(cage)
                 .to_string()
                 .contains("not in this puzzle")
+        );
+        assert!(
+            Error::RegionConflict(p.clone())
+                .to_string()
+                .contains("conflicts")
+        );
+        assert!(
+            Error::InfeasibleOperation(p, Operation::Given(1))
+                .to_string()
+                .contains("infeasible")
         );
     }
 
