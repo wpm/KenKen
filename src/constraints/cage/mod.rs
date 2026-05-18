@@ -1,8 +1,6 @@
 use std::collections::HashMap;
 
-use crate::{
-    Cell, Cover, Error, Fill, Grid, Operation, Polyomino, constraints::Constraint, types::N,
-};
+use crate::{Cell, Error, Fill, Grid, Operation, Polyomino, constraints::Constraint, types::N};
 
 pub mod arithmetic;
 pub mod operation;
@@ -92,12 +90,6 @@ impl Constraint for Cage {
             });
         let fill_constraints: HashMap<Cell, Fill> = self.cells().zip(slots).collect();
         grid.apply(fill_constraints)
-    }
-}
-
-impl Cover for Cage {
-    fn cells(&self) -> impl Iterator<Item = Cell> {
-        self.polyomino.cells()
     }
 }
 
