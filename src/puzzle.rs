@@ -3,14 +3,16 @@
 
 use std::collections::BTreeSet;
 
+#[cfg(feature = "generate")]
 use rand::Rng;
 
+#[cfg(feature = "generate")]
+use crate::generator::generate::{SizeDistribution, default_op_policy, generate, generate_with};
 use crate::{
     Cage, Cell, Cover, Error,
     Error::{CageConflict, CageNotInPuzzle},
     Fill, Grid,
     constraints::{Constraint, all_different::AllDifferent, cage::operation::Operation},
-    generator::generate::{SizeDistribution, default_op_policy, generate, generate_with},
     solver::solve::{Solver, State},
 };
 
@@ -174,6 +176,7 @@ impl Puzzle {
     ///
     /// # Errors
     /// Returns [`Error::InvalidGridSize`] if `n` is not in `1..=9`.
+    #[cfg(feature = "generate")]
     pub fn generate<R: Rng>(n: usize, rng: &mut R) -> Result<Self, Error> {
         generate(n, rng)
     }
@@ -188,6 +191,7 @@ impl Puzzle {
     /// # Errors
     /// Returns [`Error::InvalidGridSize`] if `n` is not in `1..=9`, or any
     /// error returned by `op`.
+    #[cfg(feature = "generate")]
     pub fn generate_with<R: Rng, F>(
         n: usize,
         rng: &mut R,
@@ -209,6 +213,7 @@ impl Puzzle {
     ///
     /// # Errors
     /// Returns [`Error::EmptyOpPolicyValues`] if `values` is empty.
+    #[cfg(feature = "generate")]
     pub fn default_op_policy(values: &[u8], n: usize) -> Result<Operation, Error> {
         default_op_policy(values, n)
     }

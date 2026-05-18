@@ -4,13 +4,7 @@
 #![allow(clippy::unwrap_used)]
 mod test {
 
-    use kenken::{Cage, Cell, Fill, Operation, Polyomino, Puzzle, SizeDistribution};
-    use rand::SeedableRng;
-    use rand_chacha::ChaCha8Rng;
-
-    fn rng(seed: u64) -> ChaCha8Rng {
-        ChaCha8Rng::seed_from_u64(seed)
-    }
+    use kenken::{Cage, Cell, Fill, Operation, Polyomino, Puzzle};
 
     const fn cell(row: usize, column: usize) -> Cell {
         Cell::new(row, column)
@@ -92,33 +86,44 @@ mod test {
         assert_eq!(puzzle.solve().count(), 1);
     }
 
-    #[test]
-    fn generate_validates_n_too_small() {
-        let mut r = rng(0);
-        assert!(Puzzle::generate(0, &mut r).is_err());
-    }
+    #[cfg(feature = "generate")]
+    mod generator {
+        use kenken::{Puzzle, SizeDistribution};
+        use rand::SeedableRng;
+        use rand_chacha::ChaCha8Rng;
 
-    #[test]
-    fn generate_validates_n_too_large() {
-        let mut r = rng(0);
-        assert!(Puzzle::generate(10, &mut r).is_err());
-    }
+        fn rng(seed: u64) -> ChaCha8Rng {
+            ChaCha8Rng::seed_from_u64(seed)
+        }
 
-    #[test]
-    fn generate_with_routes_through_the_supplied_op_policy() {
-        // A custom op policy that counts how many times it's called and delegates
-        // to default_op_policy. The generated puzzle must have at least one cage,
-        // so the policy must run at least once.
-        let mut r = rng(42);
-        let calls = std::cell::Cell::new(0_u32);
-        let op = |values: &[u8], n: usize| {
-            calls.set(calls.get() + 1);
-            Puzzle::default_op_policy(values, n)
-        };
-        let puzzle =
-            Puzzle::generate_with(4, &mut r, op, SizeDistribution::new(1.0).unwrap()).unwrap();
-        assert!(calls.get() > 0);
-        assert!(puzzle.cages().count() > 0);
+        #[test]
+        fn generate_validates_n_too_small() {
+            let mut r = rng(0);
+            assert!(Puzzle::generate(0, &mut r).is_err());
+        }
+
+        #[test]
+        fn generate_validates_n_too_large() {
+            let mut r = rng(0);
+            assert!(Puzzle::generate(10, &mut r).is_err());
+        }
+
+        #[test]
+        fn generate_with_routes_through_the_supplied_op_policy() {
+            // A custom op policy that counts how many times it's called and delegates
+            // to default_op_policy. The generated puzzle must have at least one cage,
+            // so the policy must run at least once.
+            let mut r = rng(42);
+            let calls = std::cell::Cell::new(0_u32);
+            let op = |values: &[u8], n: usize| {
+                calls.set(calls.get() + 1);
+                Puzzle::default_op_policy(values, n)
+            };
+            let puzzle =
+                Puzzle::generate_with(4, &mut r, op, SizeDistribution::new(1.0).unwrap()).unwrap();
+            assert!(calls.get() > 0);
+            assert!(puzzle.cages().count() > 0);
+        }
     }
 
     #[test]

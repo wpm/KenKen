@@ -10,8 +10,12 @@ categories = ["games"]
 readme = "README.md"
 exclude = [".githooks", ".github"]
 
+[features]
+default = ["generate"]
+generate = ["dep:rand"]
+
 [dependencies]
-rand = "0.10.1"
+rand = { version = "0.10.1", optional = true }
 serde = { version = "1", features = ["derive"] }
 strum = { version = "0.28", features = ["derive"] }
 
