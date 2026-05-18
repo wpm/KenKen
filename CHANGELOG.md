@@ -23,6 +23,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 - `Puzzle::with_cages` is now a thin wrapper around `Puzzle::with_slots`.
+- `Puzzle::with_cages` now returns `Error::DuplicateSlotPolyomino` when two
+  cages share a polyomino. Previously these silently collapsed in the
+  puzzle's slot set.
 - `Error::CageNotInPuzzle(Cage)` renamed to `Error::SlotNotInPuzzle(CageSlot)`
   to cover both cage and region out-of-bounds cases.
 

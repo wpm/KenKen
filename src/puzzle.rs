@@ -648,6 +648,19 @@ mod tests {
     }
 
     #[test]
+    fn with_cages_duplicate_polyomino_returns_err() {
+        // Two cages over the same polyomino used to silently collapse in the
+        // slot set (CageSlot::Ord matches by polyomino only); via with_slots
+        // the constructor now rejects them.
+        let c1 = Cage::new(4, singleton(), Operation::Given(3));
+        let c2 = Cage::new(4, singleton(), Operation::Given(2));
+        assert!(matches!(
+            Puzzle::with_cages(4, &[c1, c2]),
+            Err(Error::DuplicateSlotPolyomino(_))
+        ));
+    }
+
+    #[test]
     fn n() {
         assert_eq!(puzzle_4().n(), 4);
     }
