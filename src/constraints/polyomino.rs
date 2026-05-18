@@ -87,10 +87,9 @@ impl Polyomino {
     /// # Errors
     /// Returns [`Error::DisconnectedPolyomino`] if adding `cell` would make the
     /// polyomino disconnected.
-    #[allow(unused_results)]
     pub fn insert(&self, cell: Cell) -> Result<Self, Error> {
         let mut cells = self.0.clone();
-        cells.insert(cell);
+        let _ = cells.insert(cell);
         Self::new(cells)
     }
 

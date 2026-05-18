@@ -168,7 +168,6 @@ where
 /// edge-connected uncovered cells until the target size sampled from
 /// `dist` is reached or no candidates remain, then starts a new
 /// polyomino.
-#[allow(unused_results)]
 pub fn greedy<R: Rng>(
     n: usize,
     dist: SizeDistribution,
@@ -186,7 +185,7 @@ pub fn greedy<R: Rng>(
         let target_size = dist.sample(n, rng);
 
         let mut cells: HashSet<Cell> = HashSet::new();
-        cells.insert(seed);
+        let _ = cells.insert(seed);
         // Frontier may contain duplicates; dedup happens on pop via the cells/covered
         // checks.
         let mut frontier: Vec<Cell> = grid_neighbors(seed, n)
@@ -207,7 +206,7 @@ pub fn greedy<R: Rng>(
         }
 
         for c in &cells {
-            covered.insert(*c);
+            let _ = covered.insert(*c);
         }
         let cells: Vec<Cell> = cells.into_iter().collect();
         // `cells` is non-empty (the seed is always inserted) and

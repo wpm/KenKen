@@ -29,7 +29,7 @@ use std::collections::HashMap;
 
 use crate::types::{Fill, N};
 
-#[allow(clippy::similar_names, unused_results)]
+#[allow(clippy::similar_names)]
 pub fn regin(domains: &[Fill]) -> Vec<Fill> {
     let n = domains.len();
     if n == 0 {
@@ -64,6 +64,7 @@ pub fn regin(domains: &[Fill]) -> Vec<Fill> {
     let mut val_match: Vec<Option<usize>> = vec![None; num_values];
     let mut visited = vec![false; num_values];
 
+    #[allow(unused_results)]
     for var in 0..n {
         visited.fill(false);
         augment(
@@ -115,6 +116,11 @@ pub fn regin(domains: &[Fill]) -> Vec<Fill> {
 
 /// Tries to find an augmenting path from `var` using DFS.
 /// Returns true if the matching was extended.
+///
+/// Impure: mutates `var_match`, `val_match`, and `visited` in place. Making
+/// this pure would require cloning the matching vectors on every recursive
+/// call, since each frame reads and writes `val_match` to reassign values
+/// along the augmenting path.
 #[allow(clippy::similar_names)]
 fn augment(
     var: usize,
@@ -146,7 +152,7 @@ fn kosaraju_scc(adj: &[Vec<usize>], n: usize) -> Vec<usize> {
     let mut finish_order: Vec<usize> = Vec::with_capacity(n);
     for start in 0..n {
         if !visited[start] {
-            dfs_finish(start, adj, &mut visited, &mut finish_order);
+            finish_order.extend(dfs_finish(start, adj, &mut visited));
         }
     }
 
@@ -169,10 +175,10 @@ fn kosaraju_scc(adj: &[Vec<usize>], n: usize) -> Vec<usize> {
     comp
 }
 
-#[allow(unused_results)]
-fn dfs_finish(start: usize, adj: &[Vec<usize>], visited: &mut [bool], order: &mut Vec<usize>) {
+fn dfs_finish(start: usize, adj: &[Vec<usize>], visited: &mut [bool]) -> Vec<usize> {
     // Iterative to avoid stack overflow on large graphs.
     let mut stack: Vec<(usize, usize)> = vec![(start, 0)];
+    let mut order: Vec<usize> = vec![];
     visited[start] = true;
     while let Some((u, idx)) = stack.last_mut() {
         let u = *u;
@@ -185,11 +191,14 @@ fn dfs_finish(start: usize, adj: &[Vec<usize>], visited: &mut [bool], order: &mu
             }
         } else {
             order.push(u);
-            stack.pop();
+            let _ = stack.pop();
         }
     }
+    order
 }
 
+/// Impure: writes component labels into `comp` in place. The caller owns
+/// `comp` and passes it mutably so all SCC passes share one allocation.
 fn dfs_assign(start: usize, label: usize, radj: &[Vec<usize>], comp: &mut [usize]) {
     let mut stack = vec![start];
     comp[start] = label;
