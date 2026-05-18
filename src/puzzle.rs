@@ -150,6 +150,16 @@ impl Puzzle {
         self.cages.iter()
     }
 
+    /// Returns each cell paired with its current candidate [`Fill`], in
+    /// row-major order. Every `Puzzle` is propagated to a fixpoint, so each
+    /// `Fill` is as narrow as the constraints require; for a solved puzzle,
+    /// every `Fill` is a singleton.
+    pub fn candidates(&self) -> impl Iterator<Item = (Cell, Fill)> {
+        self.grid
+            .cells()
+            .map(|cell| (cell, self.grid.get(&cell).unwrap_or_default()))
+    }
+
     /// Enumerates the puzzle's solutions via depth-first backtracking search.
     ///
     /// Each item is a fully solved [`Puzzle`] (every cell pinned to one value).
@@ -499,6 +509,35 @@ mod tests {
             .unwrap()
             .unwrap();
         itertools::assert_equal(puzzle.cages(), &[a, b]);
+    }
+
+    // --- Puzzle::candidates ---
+
+    #[test]
+    fn candidates_fresh_puzzle_yields_n_squared_pairs_with_full_fills() {
+        let puzzle = puzzle_4();
+        let pairs: Vec<(Cell, Fill)> = puzzle.candidates().collect();
+        assert_eq!(pairs.len(), 16);
+        assert!(pairs.iter().all(|(_, f)| *f == Fill::full(4)));
+    }
+
+    #[test]
+    fn candidates_iterates_in_row_major_order() {
+        let cells: Vec<Cell> = puzzle_4().candidates().map(|(c, _)| c).collect();
+        let expected: Vec<Cell> = (0..4)
+            .flat_map(|r| (0..4).map(move |c| Cell::new(r, c)))
+            .collect();
+        assert_eq!(cells, expected);
+    }
+
+    #[test]
+    fn candidates_reflects_pinned_cell_after_given_cage() {
+        let puzzle = puzzle_4().insert(singleton_cage()).unwrap().unwrap();
+        let (_, fill) = puzzle
+            .candidates()
+            .find(|(c, _)| *c == Cell::new(0, 0))
+            .unwrap();
+        assert_eq!(fill, Fill::new([3]));
     }
 
     // --- Puzzle::branch ---

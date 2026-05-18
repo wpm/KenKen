@@ -27,5 +27,4 @@ pub use constraints::{
 pub use generator::generate::SizeDistribution;
 pub(crate) use grid::Grid;
 pub use puzzle::Puzzle;
-pub(crate) use types::Fill;
-pub use types::{Cell, Error};
+pub use types::{Cell, Error, Fill};

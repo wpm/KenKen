@@ -4,7 +4,7 @@
 #![allow(clippy::unwrap_used)]
 mod test {
 
-    use kenken::{Cage, Cell, Operation, Polyomino, Puzzle, SizeDistribution};
+    use kenken::{Cage, Cell, Fill, Operation, Polyomino, Puzzle, SizeDistribution};
     use rand::SeedableRng;
     use rand_chacha::ChaCha8Rng;
 
@@ -190,5 +190,22 @@ mod test {
         let p = Polyomino::from_cells(&[cell(0, 0), cell(0, 1), cell(1, 0)]).unwrap();
         let cage = Cage::new(4, p, Operation::Add(6));
         assert_eq!(cage.len(), 3);
+    }
+
+    #[test]
+    fn candidates_exposes_cell_fill_pairs_via_public_api() {
+        // Given(2) at (0,0) pins that cell to {2}; the remaining cells in row 0
+        // and column 0 narrow to {1, 3, 4} via AllDifferent.
+        let puzzle = Puzzle::with_cages(4, &[cage(4, &[(0, 0)], Operation::Given(2))])
+            .unwrap()
+            .unwrap();
+        let pairs: Vec<(Cell, Fill)> = puzzle.candidates().collect();
+        assert_eq!(pairs.len(), 16);
+        let pinned = pairs
+            .iter()
+            .find(|(c, _)| *c == cell(0, 0))
+            .map(|(_, f)| *f)
+            .unwrap();
+        assert_eq!(pinned, Fill::new([2]));
     }
 }
