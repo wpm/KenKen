@@ -956,4 +956,24 @@ mod tests {
             Err(Error::EmptyPolyomino)
         ));
     }
+
+    #[test]
+    fn polyomino_round_trips_through_json() {
+        let p = pair();
+        let json = serde_json::to_string(&p).unwrap();
+        let restored: Polyomino = serde_json::from_str(&json).unwrap();
+        assert_eq!(p, restored);
+    }
+
+    #[test]
+    fn polyomino_deserialize_disconnected_returns_err() {
+        let json = r#"[{"row":0,"column":0},{"row":1,"column":1}]"#;
+        assert!(serde_json::from_str::<Polyomino>(json).is_err());
+    }
+
+    #[test]
+    fn polyomino_deserialize_empty_returns_err() {
+        let json = "[]";
+        assert!(serde_json::from_str::<Polyomino>(json).is_err());
+    }
 }
