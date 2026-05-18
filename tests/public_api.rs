@@ -12,10 +12,14 @@ mod test {
         ChaCha8Rng::seed_from_u64(seed)
     }
 
+    const fn cell(row: usize, column: usize) -> Cell {
+        Cell::new(row, column)
+    }
+
     /// Builds a [`Cage`] over `cells` (given as `(row, column)` pairs) for an
     /// `n`-sized grid.
     fn cage(n: u8, cells: &[(usize, usize)], op: Operation) -> Cage {
-        let cells: Vec<Cell> = cells.iter().map(|&(r, c)| Cell::new(r, c)).collect();
+        let cells: Vec<Cell> = cells.iter().map(|&(r, c)| cell(r, c)).collect();
         Cage::new(n, Polyomino::from_cells(&cells).unwrap(), op)
     }
 
@@ -123,47 +127,57 @@ mod test {
         assert_send_sync::<Puzzle>();
     }
 
+    // The tests below mirror in-crate unit tests for the same methods. The
+    // duplication is intentional: this file runs as an external consumer would,
+    // so it catches accidental visibility regressions that internal tests
+    // cannot. Do not consolidate.
+
     #[test]
     fn polyomino_cells_iterates_in_row_major_order() {
-        let p =
-            Polyomino::from_cells(&[Cell::new(1, 0), Cell::new(0, 0), Cell::new(0, 1)]).unwrap();
+        let p = Polyomino::from_cells(&[cell(1, 0), cell(0, 0), cell(0, 1)]).unwrap();
         let got: Vec<Cell> = p.cells().collect();
-        assert_eq!(got, vec![Cell::new(0, 0), Cell::new(0, 1), Cell::new(1, 0)]);
+        assert_eq!(got, vec![cell(0, 0), cell(0, 1), cell(1, 0)]);
     }
 
     #[test]
     fn polyomino_len_matches_construction_count() {
-        let p =
-            Polyomino::from_cells(&[Cell::new(0, 0), Cell::new(0, 1), Cell::new(0, 2)]).unwrap();
+        let p = Polyomino::from_cells(&[cell(0, 0), cell(0, 1), cell(0, 2)]).unwrap();
         assert_eq!(p.len(), 3);
     }
 
     #[test]
     fn polyomino_contains_known_and_unknown_cells() {
-        let p = Polyomino::from_cells(&[Cell::new(0, 0), Cell::new(0, 1)]).unwrap();
-        assert!(p.contains(Cell::new(0, 0)));
-        assert!(p.contains(Cell::new(0, 1)));
-        assert!(!p.contains(Cell::new(1, 0)));
+        let p = Polyomino::from_cells(&[cell(0, 0), cell(0, 1)]).unwrap();
+        assert!(p.contains(cell(0, 0)));
+        assert!(p.contains(cell(0, 1)));
+        assert!(!p.contains(cell(1, 0)));
     }
 
     #[test]
-    fn polyomino_is_edge_connected_component_accepts_connected_and_rejects_disconnected_and_empty()
-    {
-        assert!(Polyomino::is_edge_connected_component(&[]));
-        assert!(Polyomino::is_edge_connected_component(&[Cell::new(0, 0)]));
+    fn is_edge_connected_component_accepts_connected_inputs() {
+        assert!(Polyomino::is_edge_connected_component(&[cell(0, 0)]));
         assert!(Polyomino::is_edge_connected_component(&[
-            Cell::new(0, 0),
-            Cell::new(0, 1)
+            cell(0, 0),
+            cell(0, 1)
         ]));
+    }
+
+    #[test]
+    fn is_edge_connected_component_rejects_disconnected_inputs() {
         assert!(!Polyomino::is_edge_connected_component(&[
-            Cell::new(0, 0),
-            Cell::new(1, 1)
+            cell(0, 0),
+            cell(1, 1)
         ]));
+    }
+
+    #[test]
+    fn is_edge_connected_component_treats_empty_input_as_connected() {
+        assert!(Polyomino::is_edge_connected_component(&[]));
     }
 
     #[test]
     fn cage_cells_matches_underlying_polyomino() {
-        let cells = [Cell::new(0, 0), Cell::new(0, 1)];
+        let cells = [cell(0, 0), cell(0, 1)];
         let p = Polyomino::from_cells(&cells).unwrap();
         let cage = Cage::new(4, p.clone(), Operation::Add(3));
         let cage_cells: Vec<Cell> = cage.cells().collect();
@@ -173,8 +187,7 @@ mod test {
 
     #[test]
     fn cage_len_matches_polyomino_len() {
-        let p =
-            Polyomino::from_cells(&[Cell::new(0, 0), Cell::new(0, 1), Cell::new(1, 0)]).unwrap();
+        let p = Polyomino::from_cells(&[cell(0, 0), cell(0, 1), cell(1, 0)]).unwrap();
         let cage = Cage::new(4, p, Operation::Add(6));
         assert_eq!(cage.len(), 3);
     }
