@@ -240,7 +240,7 @@ impl<'de> serde::Deserialize<'de> for Puzzle {
         #[derive(serde::Deserialize)]
         struct CageData {
             polyomino: crate::Polyomino,
-            operation: crate::constraints::cage::operation::Operation,
+            operation: Operation,
         }
         #[derive(serde::Deserialize)]
         struct PuzzleData {
