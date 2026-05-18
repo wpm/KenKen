@@ -812,6 +812,7 @@ mod tests {
         );
         let grid = Grid::new(2).unwrap();
         let all_different = grid.all_different_constraints().unwrap();
+        // Skip propagate(): we only inspect the serialized shape (n + slots), not the grid.
         let puzzle = Puzzle {
             grid,
             all_different,
