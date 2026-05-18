@@ -125,13 +125,10 @@ mod test {
 
     #[test]
     fn polyomino_cells_iterates_in_row_major_order() {
-        let p = Polyomino::from_cells(&[Cell::new(1, 0), Cell::new(0, 0), Cell::new(0, 1)])
-            .unwrap();
+        let p =
+            Polyomino::from_cells(&[Cell::new(1, 0), Cell::new(0, 0), Cell::new(0, 1)]).unwrap();
         let got: Vec<Cell> = p.cells().collect();
-        assert_eq!(
-            got,
-            vec![Cell::new(0, 0), Cell::new(0, 1), Cell::new(1, 0)]
-        );
+        assert_eq!(got, vec![Cell::new(0, 0), Cell::new(0, 1), Cell::new(1, 0)]);
     }
 
     #[test]
