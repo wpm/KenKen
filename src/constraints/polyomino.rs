@@ -10,6 +10,7 @@ use crate::{
                 addition_multisets, division_multisets, multiplication_multisets,
                 subtraction_multisets,
             },
+            operation::CageOption,
         },
     },
     types::{Index, M, N},
@@ -171,6 +172,28 @@ impl Polyomino {
                 }))
             }
         })
+    }
+
+    /// Returns the operator/target combinations that produce non-empty tuple
+    /// sets when applied to this polyomino on an `n`×`n` grid.
+    ///
+    /// Each [`CageOption`] aggregates one operator with all targets it
+    /// admits after collinearity filtering. Operators with no admissible
+    /// targets are omitted. Operators appear in the order returned by
+    /// [`Self::valid_operators`]; targets within each entry are in
+    /// ascending order.
+    pub fn feasible_options(&self, n: N) -> Vec<CageOption> {
+        let cells: Vec<Cell> = self.cells().collect();
+        Self::valid_operators(&cells)
+            .into_iter()
+            .filter_map(|op| {
+                let targets: Vec<M> = Self::valid_operations(&cells, op, n)
+                    .ok()?
+                    .map(|operation| operation.target())
+                    .collect();
+                (!targets.is_empty()).then_some(CageOption { op, targets })
+            })
+            .collect()
     }
 
     /// Returns true if `operation` is legal for a cage of the given cells on an
@@ -797,6 +820,59 @@ mod tests {
             .collect();
         assert!(!got.contains(&Operation::Multiply(1)));
         assert!(got.contains(&Operation::Multiply(2)));
+    }
+
+    // --- feasible_options ---
+
+    #[test]
+    fn feasible_options_singleton_returns_only_given() {
+        let got = singleton().feasible_options(4);
+        assert_eq!(got.len(), 1);
+        assert_eq!(got[0].op, Operator::Given);
+        assert_eq!(got[0].targets, vec![1, 2, 3, 4]);
+    }
+
+    #[test]
+    fn feasible_options_pair_same_row_returns_four_operators() {
+        let got = pair().feasible_options(4);
+        let ops: Vec<Operator> = got.iter().map(|o| o.op).collect();
+        assert_eq!(
+            ops,
+            vec![
+                Operator::Add,
+                Operator::Subtract,
+                Operator::Multiply,
+                Operator::Divide,
+            ]
+        );
+        let by_op = |op: Operator| {
+            got.iter()
+                .find(|o| o.op == op)
+                .map(|o| o.targets.clone())
+                .unwrap_or_default()
+        };
+        // n=4 same row: Add(2) requires [1,1] (filtered); Multiply(1) requires [1,1] (filtered).
+        assert!(!by_op(Operator::Add).contains(&2));
+        assert!(by_op(Operator::Add).contains(&3));
+        assert!(!by_op(Operator::Multiply).contains(&1));
+        assert_eq!(by_op(Operator::Subtract), vec![1, 2, 3]);
+        assert_eq!(by_op(Operator::Divide), vec![2, 3, 4]);
+    }
+
+    #[test]
+    fn feasible_options_three_cells_returns_add_and_multiply_only() {
+        let got = row3().feasible_options(4);
+        let ops: Vec<Operator> = got.iter().map(|o| o.op).collect();
+        assert_eq!(ops, vec![Operator::Add, Operator::Multiply]);
+    }
+
+    #[test]
+    fn feasible_options_never_returns_empty_targets() {
+        for poly in [singleton(), pair(), col_pair(), row3(), l_shape()] {
+            for opt in poly.feasible_options(4) {
+                assert!(!opt.targets.is_empty(), "empty targets for {:?}", opt.op);
+            }
+        }
     }
 
     // --- collinear_pairs ---

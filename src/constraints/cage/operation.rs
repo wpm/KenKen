@@ -61,6 +61,16 @@ impl Operator {
     }
 }
 
+/// A feasible operator paired with every target that produces a non-empty
+/// tuple set for a given polyomino on a given grid size.
+///
+/// Returned by [`crate::Polyomino::feasible_options`].
+#[derive(Debug, Clone, Eq, PartialEq, Hash, serde::Serialize, serde::Deserialize)]
+pub struct CageOption {
+    pub op: Operator,
+    pub targets: Vec<M>,
+}
+
 #[cfg(test)]
 #[allow(clippy::unwrap_used)]
 mod tests {
@@ -84,5 +94,16 @@ mod tests {
         assert_eq!(Operation::Multiply(12).target(), 12);
         assert_eq!(Operation::Divide(4).target(), 4);
         assert_eq!(Operation::Given(9).target(), 9);
+    }
+
+    #[test]
+    fn cage_option_round_trips_through_json() {
+        let opt = CageOption {
+            op: Operator::Add,
+            targets: vec![3, 4, 5],
+        };
+        let json = serde_json::to_string(&opt).unwrap();
+        let restored: CageOption = serde_json::from_str(&json).unwrap();
+        assert_eq!(opt, restored);
     }
 }

@@ -20,7 +20,7 @@ pub(crate) use constraints::Cover;
 pub use constraints::{
     cage::{
         Cage, Tuple,
-        operation::{Operation, Operator},
+        operation::{CageOption, Operation, Operator},
     },
     cage_slot::CageSlot,
     polyomino::Polyomino,
