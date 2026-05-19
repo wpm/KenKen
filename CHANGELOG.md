@@ -18,6 +18,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `Puzzle::with_slots(n, &[CageSlot])` — bulk constructor accepting mixed
   `Region` and `Cage` slots, the generalization of `with_cages`. Validates
   slot bounds and rejects duplicate polyominoes, then propagates to fixpoint.
+- `Puzzle::remove_region(&Polyomino)` — symmetric inverse of
+  `insert_region`. Idempotent on absent polyomino; variant-strict, so a
+  cage on the same polyomino stays put.
 - `Error::DuplicateSlotPolyomino(Polyomino)` — raised by `with_slots` (and the
   `Puzzle` deserializer) when two slots share the same polyomino.
 

@@ -220,6 +220,34 @@ impl Puzzle {
         })
     }
 
+    /// Returns a new [`Puzzle`] with the region at `polyomino` removed.
+    /// Regions contribute no propagation, so the grid is unchanged.
+    ///
+    /// This is idempotent. Attempting to remove a region that is not present
+    /// returns the puzzle unchanged. If a *cage* (not a region) exists at
+    /// `polyomino`, this is also a no-op — callers must
+    /// [`demote`](Self::demote) first.
+    ///
+    /// # Errors
+    /// None today — region removal cannot widen domains into a contradiction.
+    /// Returns `Result<Self, Error>` for signature symmetry with
+    /// [`remove`](Self::remove) and to leave room for future propagation work.
+    pub fn remove_region(&self, polyomino: &Polyomino) -> Result<Self, Error> {
+        // CageSlot::Ord matches on polyomino alone; require Region-variant
+        // value equality so a cage on the same polyomino stays a no-op.
+        let key = CageSlot::Region(polyomino.clone());
+        if self.slots.get(&key) != Some(&key) {
+            return Ok(self.clone());
+        }
+        let mut slots = self.slots.clone();
+        let _ = slots.remove(&key);
+        Ok(Self {
+            grid: self.grid.clone(),
+            all_different: self.all_different.clone(),
+            slots,
+        })
+    }
+
     /// Returns a new [`Puzzle`] with the region at `polyomino` replaced by a
     /// cage carrying `op`, then re-propagated.
     ///
