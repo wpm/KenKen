@@ -19,6 +19,19 @@ pub enum Operation {
     Given(M),
 }
 
+impl Operation {
+    /// Returns the operation's target value.
+    pub const fn target(&self) -> M {
+        match *self {
+            Self::Add(t)
+            | Self::Subtract(t)
+            | Self::Multiply(t)
+            | Self::Divide(t)
+            | Self::Given(t) => t,
+        }
+    }
+}
+
 /// The operator portion of an [`Operation`], without an associated target.
 ///
 /// Used by `Cage::valid_operators` to enumerate the operators legal for a cage
@@ -62,5 +75,14 @@ mod tests {
             let restored: Operator = serde_json::from_str(&json).unwrap();
             assert_eq!(op, restored);
         }
+    }
+
+    #[test]
+    fn operation_target_returns_associated_value() {
+        assert_eq!(Operation::Add(7).target(), 7);
+        assert_eq!(Operation::Subtract(3).target(), 3);
+        assert_eq!(Operation::Multiply(12).target(), 12);
+        assert_eq!(Operation::Divide(4).target(), 4);
+        assert_eq!(Operation::Given(9).target(), 9);
     }
 }

@@ -8,6 +8,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- `Operation::target()` — returns the operation's target value, symmetric
+  with `Operator::of(Operation)`.
 - `Polyomino::cells()` — iterates the polyomino's cells in row-major order.
 - `Polyomino::len()` — number of cells (O(1)).
 - `Polyomino::contains(Cell)` — membership test (O(log n)).
