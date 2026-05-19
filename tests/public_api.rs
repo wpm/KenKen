@@ -289,4 +289,66 @@ mod test {
         assert_eq!(slots.len(), 1);
         assert!(matches!(slots[0], CageSlot::Region(_)));
     }
+
+    #[test]
+    fn remove_region_removes_present_region() {
+        let p = region(&[(0, 0)]);
+        let puzzle = Puzzle::new(4)
+            .unwrap()
+            .insert_region(p.clone())
+            .unwrap()
+            .remove_region(&p)
+            .unwrap();
+        assert_eq!(puzzle.regions().count(), 0);
+        assert_eq!(puzzle.slots().count(), 0);
+    }
+
+    #[test]
+    fn remove_region_absent_is_noop() {
+        let puzzle = Puzzle::new(4).unwrap();
+        let after = puzzle.remove_region(&region(&[(0, 0)])).unwrap();
+        assert_eq!(after.slots().count(), 0);
+    }
+
+    #[test]
+    fn remove_region_on_cage_polyomino_is_noop() {
+        let c = cage(4, &[(0, 0)], Operation::Given(3));
+        let puzzle = Puzzle::new(4).unwrap().insert(c).unwrap().unwrap();
+        let after = puzzle.remove_region(&region(&[(0, 0)])).unwrap();
+        assert_eq!(after.cages().count(), 1);
+        assert_eq!(after.regions().count(), 0);
+    }
+
+    #[test]
+    fn remove_region_preserves_grid_candidates() {
+        let p = region(&[(0, 0)]);
+        let puzzle = Puzzle::new(4)
+            .unwrap()
+            .insert_region(p.clone())
+            .unwrap()
+            .remove_region(&p)
+            .unwrap();
+        assert_eq!(
+            puzzle
+                .candidates()
+                .find(|(c, _)| *c == cell(0, 0))
+                .unwrap()
+                .1,
+            Fill::full(4)
+        );
+    }
+
+    #[test]
+    fn remove_region_then_insert_region_round_trips() {
+        let p = region(&[(0, 0)]);
+        let base = Puzzle::new(4).unwrap().insert_region(p.clone()).unwrap();
+        let round_tripped = base
+            .remove_region(&p)
+            .unwrap()
+            .insert_region(p.clone())
+            .unwrap();
+        let base_regions: Vec<&Polyomino> = base.regions().collect();
+        let round_tripped_regions: Vec<&Polyomino> = round_tripped.regions().collect();
+        assert_eq!(base_regions, round_tripped_regions);
+    }
 }
