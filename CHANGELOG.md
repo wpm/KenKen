@@ -15,6 +15,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `Polyomino::contains(Cell)` — membership test (O(log n)).
 - `Polyomino::is_edge_connected_component(&[Cell])` — associated function
   exposing the edge-connectivity check used during polyomino construction.
+- `CageOption { op: Operator, targets: Vec<u16> }` — aggregated operator and
+  feasible targets for a cage shape. Derives `Debug, Clone, Eq, PartialEq,
+  Hash, Serialize, Deserialize`.
+- `Polyomino::feasible_options(n)` — returns the `CageOption`s legal for
+  this polyomino on an `n`×`n` grid. Composes `valid_operators` and
+  `valid_operations`, so it skips the tuple materialization that
+  `operator_tuples` performs.
 - `Cage::cells()` and `Cage::len()` — accessors that delegate to the underlying
   polyomino.
 - `Puzzle::with_slots(n, &[CageSlot])` — bulk constructor accepting mixed

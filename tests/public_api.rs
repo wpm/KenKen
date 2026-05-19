@@ -4,7 +4,7 @@
 #![allow(clippy::unwrap_used)]
 mod test {
 
-    use kenken::{Cage, CageSlot, Cell, Fill, Operation, Polyomino, Puzzle};
+    use kenken::{Cage, CageOption, CageSlot, Cell, Fill, Operation, Operator, Polyomino, Puzzle};
 
     const fn cell(row: usize, column: usize) -> Cell {
         Cell::new(row, column)
@@ -183,6 +183,17 @@ mod test {
     #[test]
     fn is_edge_connected_component_treats_empty_input_as_connected() {
         assert!(Polyomino::is_edge_connected_component(&[]));
+    }
+
+    #[test]
+    fn polyomino_feasible_options_is_publicly_callable() {
+        let p = region(&[(0, 0), (0, 1)]);
+        let opts = p.feasible_options(4);
+        assert!(opts.iter().any(|o| matches!(o.op, Operator::Add)));
+        assert!(opts.iter().all(|o| !o.targets.is_empty()));
+        let json = serde_json::to_string(&opts).unwrap();
+        let restored: Vec<CageOption> = serde_json::from_str(&json).unwrap();
+        assert_eq!(opts, restored);
     }
 
     #[test]
