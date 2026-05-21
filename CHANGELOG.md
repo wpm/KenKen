@@ -63,6 +63,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   variable per cell and runs a constraint-free solve, confirming a puzzle's
   domains round-trip through Pumpkin. Pumpkin is not re-exported; the public
   API is unchanged.
+  - Step 2 models the full puzzle: a built-in `all_different` per row and
+    column (pairwise for now; the Régin propagator replaces it in step 3) and
+    a custom STR cage `Propagator` per cage. `Engine::solve` and
+    `Engine::enumerate(limit)` agree with the bespoke solver on solvable and
+    uniquely-solvable puzzles.
 
 ## [0.3.0] - 2026-05-17
 
