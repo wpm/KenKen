@@ -542,6 +542,7 @@ name = "kenken"
 version = "0.3.0"
 dependencies = [
  "itertools 0.14.0",
+ "pumpkin-conflict-resolvers",
  "pumpkin-solver",
  "rand 0.10.1",
  "rand_chacha 0.10.0",

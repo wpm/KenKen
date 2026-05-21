@@ -45,6 +45,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `generate` Cargo feature — generation is now unconditional and `rand`
   is a required dependency.
 
+### Internal
+- Began the Pumpkin migration (#98). Added `pumpkin-solver` and
+  `pumpkin-conflict-resolvers` (both pinned `=0.3.0`) and a new internal
+  `engine` module wrapping a Pumpkin `Solver`. Step 1 registers one decision
+  variable per cell and runs a constraint-free solve, confirming a puzzle's
+  domains round-trip through Pumpkin. Pumpkin is not re-exported; the public
+  API is unchanged.
+
 ## [0.3.0] - 2026-05-17
 
 ### Added

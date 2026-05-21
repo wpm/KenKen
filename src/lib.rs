@@ -10,6 +10,7 @@
 #![allow(clippy::must_use_candidate, clippy::return_self_not_must_use)]
 
 mod constraints;
+mod engine;
 mod generator;
 mod grid;
 mod puzzle;
