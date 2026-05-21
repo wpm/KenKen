@@ -15,9 +15,11 @@
 #![allow(dead_code, unused_imports)]
 
 mod cage_propagator;
+mod observer_propagator;
 mod regin_propagator;
 mod wrapper;
 
+pub use observer_propagator::DomainMap;
 pub use wrapper::{Engine, Solution};
 
 use crate::types::N;

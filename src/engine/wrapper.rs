@@ -1,4 +1,4 @@
-use std::{collections::BTreeMap, rc::Rc};
+use std::{cell::RefCell, collections::BTreeMap, rc::Rc};
 
 use pumpkin_solver::{
     Solver,
@@ -12,7 +12,12 @@ use pumpkin_solver::{
 
 use crate::{
     Cell, Puzzle,
-    engine::{cage_propagator::CageArgs, regin_propagator::ReginArgs, value_of},
+    engine::{
+        cage_propagator::CageArgs,
+        observer_propagator::{DomainMap, DomainSink, ObserverArgs},
+        regin_propagator::ReginArgs,
+        value_of,
+    },
     types::N,
 };
 
@@ -33,6 +38,9 @@ pub struct Engine {
     cells: Vec<Cell>,
     /// Decision variable per cell, indexed in row-major order.
     vars: Vec<DomainId>,
+    /// Per-cell domains at the root fixpoint, captured by the observer when the
+    /// engine is built (before any search node could overwrite them).
+    root_domains: DomainMap,
 }
 
 impl Engine {
@@ -80,11 +88,30 @@ impl Engine {
             });
         }
 
+        // The observer is added last so its add-time fire — driven by
+        // `add_propagator`'s propagate-to-fixpoint — sees the fully narrowed root
+        // domains. Copy them out immediately; later `solve`/`enumerate` calls
+        // re-fire the observer at search nodes and overwrite the shared sink.
+        let sink: DomainSink = Rc::new(RefCell::new(DomainMap::new()));
+        let _ = solver.add_propagator(ObserverArgs {
+            cells: cells.iter().copied().collect(),
+            vars: vars.iter().copied().collect(),
+            sink: Rc::clone(&sink),
+        });
+        let root_domains = sink.borrow().clone();
+
         Self {
             solver,
             cells,
             vars,
+            root_domains,
         }
+    }
+
+    /// Returns each cell's candidate domain at the root propagation fixpoint —
+    /// the per-cell display the Designer needs without running a full solve.
+    pub fn propagate_to_fixpoint(&self) -> DomainMap {
+        self.root_domains.clone()
     }
 
     /// Finds one solution to the puzzle, or `None` if it is unsatisfiable.
@@ -268,5 +295,72 @@ mod tests {
     fn enumerate_zero_limit_is_empty() {
         let puzzle = Puzzle::new(4).unwrap();
         assert!(Engine::new(&puzzle).enumerate(0).is_empty());
+    }
+
+    /// The bespoke solver's fixpoint domains as a `Cell -> Fill` map.
+    fn reference_domains(puzzle: &Puzzle) -> DomainMap {
+        puzzle.candidates().collect()
+    }
+
+    #[test]
+    fn fixpoint_domains_match_bespoke_solver_on_empty_grid() {
+        let puzzle = Puzzle::new(4).unwrap();
+        assert_eq!(
+            Engine::new(&puzzle).propagate_to_fixpoint(),
+            reference_domains(&puzzle)
+        );
+    }
+
+    #[test]
+    fn fixpoint_domains_match_bespoke_solver_with_given_cage() {
+        // Given(3) at (0,0) pins that cell and narrows its row and column.
+        let puzzle = Puzzle::with_cages(4, &[cage(4, &[(0, 0)], Operation::Given(3))])
+            .unwrap()
+            .unwrap();
+        let domains = Engine::new(&puzzle).propagate_to_fixpoint();
+        assert_eq!(domains, reference_domains(&puzzle));
+        assert_eq!(domains[&Cell::new(0, 0)], crate::Fill::new([3]));
+    }
+
+    #[test]
+    fn fixpoint_domains_match_bespoke_solver_on_partially_filled_puzzles() {
+        // A battery of partially-filled puzzles: the engine's fixpoint per-cell
+        // domains must match the bespoke solver's exactly.
+        let puzzles = [
+            Puzzle::with_cages(
+                4,
+                &[
+                    cage(4, &[(0, 0), (0, 1)], Operation::Subtract(1)),
+                    cage(4, &[(1, 0)], Operation::Given(2)),
+                ],
+            )
+            .unwrap()
+            .unwrap(),
+            Puzzle::with_cages(
+                4,
+                &[
+                    cage(4, &[(0, 0), (1, 0)], Operation::Divide(2)),
+                    cage(4, &[(0, 3)], Operation::Given(4)),
+                ],
+            )
+            .unwrap()
+            .unwrap(),
+            Puzzle::with_cages(
+                3,
+                &[
+                    cage(3, &[(0, 0), (0, 1), (0, 2)], Operation::Add(6)),
+                    cage(3, &[(1, 0)], Operation::Given(1)),
+                ],
+            )
+            .unwrap()
+            .unwrap(),
+        ];
+        for puzzle in &puzzles {
+            assert_eq!(
+                Engine::new(puzzle).propagate_to_fixpoint(),
+                reference_domains(puzzle),
+                "fixpoint mismatch for puzzle {puzzle:?}"
+            );
+        }
     }
 }
