@@ -72,6 +72,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
     and uses it for every row and column in place of the built-in pairwise
     `all_different`, giving the engine full GAC all-different. Confirmed
     Hall-set pruning on the 4×4 line and pigeonhole conflict detection.
+  - Step 4 adds a read-only observer `Propagator` and
+    `Engine::propagate_to_fixpoint() -> DomainMap`, exposing each cell's
+    candidate domain at the root fixpoint without a full solve (the Designer's
+    per-cell display). Matches the bespoke solver's domains on empty, given,
+    and partially-filled puzzles.
 
 ## [0.3.0] - 2026-05-17
 
