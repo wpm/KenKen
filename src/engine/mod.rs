@@ -15,6 +15,7 @@
 #![allow(dead_code, unused_imports)]
 
 mod cage_propagator;
+mod regin_propagator;
 mod wrapper;
 
 pub use wrapper::{Engine, Solution};

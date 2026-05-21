@@ -68,6 +68,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
     a custom STR cage `Propagator` per cage. `Engine::solve` and
     `Engine::enumerate(limit)` agree with the bespoke solver on solvable and
     uniquely-solvable puzzles.
+  - Step 3 wraps the generalized `regin` (from #97) as a custom `Propagator`
+    and uses it for every row and column in place of the built-in pairwise
+    `all_different`, giving the engine full GAC all-different. Confirmed
+    Hall-set pruning on the 4×4 line and pigeonhole conflict detection.
 
 ## [0.3.0] - 2026-05-17
 
