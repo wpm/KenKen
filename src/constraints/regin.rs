@@ -6,25 +6,18 @@
 ///
 /// Algorithm (Régin 1994):
 /// 1. Find a maximum bipartite matching between variables and values.
-/// 2. Build the residual graph of the matching.
+/// 2. Build the residual graph of the matching, augmented with a sink node that turns
+///    alternating paths from free (unmatched) values into cycles.
 /// 3. Compute SCCs of the residual graph.
 /// 4. An edge (variable → value) is arc-consistent iff it is in the matching OR both endpoints
 ///    lie in the same SCC. Remove all other edges.
 ///
-/// # Precondition
-///
-/// The union of the domains must contain at most `domains.len()` values
-/// (equivalently, every feasible assignment is a perfect matching that uses
-/// every value). When there are more values than variables, some values are
-/// "free" (unmatched) and the SCC-only residual graph used here isolates them
-/// in their own component, causing edges to those values to be pruned even when
-/// they participate in valid assignments. The full Régin construction fixes
-/// this by adding a sink node connected to free values; this implementation
-/// omits that step. See issue #30.
-///
-/// The only current caller (`AllDifferent::value_filter`) always passes
-/// a full row or column of an `n`×`n` grid with values `{1..=n}`, so the
-/// precondition holds. New callers must ensure it before using `regin`.
+/// Works for any number of values relative to variables (`#values ≤ #variables`
+/// or `>`). When there are more values than variables some values are "free"
+/// (unmatched); the sink node links every free value back to the variables, so
+/// edges to free values survive whenever they take part in a valid assignment.
+/// Without that node a free value would sit in its own SCC and its edges would
+/// be wrongly pruned (see issue #30).
 use std::collections::HashMap;
 
 use crate::types::{Fill, N};
@@ -78,9 +71,11 @@ pub fn regin(domains: &[Fill]) -> Vec<Fill> {
 
     // Build the directed residual graph.
     //
-    // Node layout: variables occupy 0..n, values occupy n..n+num_values.
-    // Unmatched edges go var → n+val; matched edges are reversed: n+val → var.
-    let total_nodes = n + num_values;
+    // Node layout: variables occupy 0..n, values occupy n..n+num_values, and a
+    // single sink node occupies n+num_values. Unmatched edges go var → n+val;
+    // matched edges are reversed: n+val → var.
+    let sink = n + num_values;
+    let total_nodes = sink + 1;
     let mut adj: Vec<Vec<usize>> = vec![vec![]; total_nodes];
 
     for var in 0..n {
@@ -93,6 +88,17 @@ pub fn regin(domains: &[Fill]) -> Vec<Fill> {
             }
         }
     }
+
+    // Sink node: every free (unmatched) value points to the sink, and the sink
+    // points back to every variable. This closes the alternating paths that
+    // start at a free value into directed cycles, so the SCC test below keeps
+    // edges to free values that participate in a valid assignment.
+    for (vi, matched) in val_match.iter().enumerate() {
+        if matched.is_none() {
+            adj[n + vi].push(sink);
+        }
+    }
+    adj[sink] = (0..n).collect();
 
     let scc = kosaraju_scc(&adj, total_nodes);
 
@@ -268,5 +274,34 @@ mod tests {
         let domains = vec![Fill::new([1, 3]), Fill::new([2, 3]), Fill::new([1, 2])];
         let result = regin(&domains);
         assert_eq!(result, domains);
+    }
+
+    #[test]
+    fn unmatched_free_values_are_kept() {
+        // #30: two variables sharing {2,3,4}. With more values than variables,
+        // value 4 is "free" under any maximum matching but still participates in
+        // valid assignments (e.g. var0=4, var1=2), so nothing may be pruned.
+        let domains = vec![Fill::new([2, 3, 4]), Fill::new([2, 3, 4])];
+        let result = regin(&domains);
+        assert_eq!(result, domains);
+    }
+
+    #[test]
+    fn more_values_than_variables_still_prunes() {
+        // Var1 is fixed to 2, so 2 cannot appear in Var0 even though there are
+        // more values (1,2,3) than variables. The free value 3 must survive.
+        let domains = vec![Fill::new([1, 2, 3]), Fill::new([2])];
+        let result = regin(&domains);
+        assert_eq!(result[0], Fill::new([1, 3]));
+        assert_eq!(result[1], Fill::new([2]));
+    }
+
+    #[test]
+    fn singleton_forces_pruning_with_free_value() {
+        // Var0 fixed to 1 forces 1 out of Var1; the surplus value 3 stays.
+        let domains = vec![Fill::new([1]), Fill::new([1, 2, 3])];
+        let result = regin(&domains);
+        assert_eq!(result[0], Fill::new([1]));
+        assert_eq!(result[1], Fill::new([2, 3]));
     }
 }
