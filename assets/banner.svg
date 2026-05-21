@@ -1,0 +1,53 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1280 640" role="img" aria-label="KenKen banner">
+  <rect width="1280" height="640" fill="#f4efe6"/>
+
+  <!-- Mark, positioned left, ~440px square (offset 100,100) -->
+  <g transform="translate(100,100) scale(0.859375)">
+    <rect x="0" y="0" width="512" height="512" fill="#f4efe6"/>
+    <rect x="56"  y="56"  width="133.333" height="133.333" fill="#cfe4f2"/>
+    <rect x="189.333" y="56" width="133.333" height="133.333" fill="#cfe4f2"/>
+    <rect x="322.667" y="56"  width="133.333" height="133.333" fill="#d7ecd5"/>
+    <rect x="189.333" y="189.333" width="133.333" height="133.333" fill="#d7ecd5"/>
+    <rect x="322.667" y="189.333" width="133.333" height="133.333" fill="#d7ecd5"/>
+    <rect x="56"  y="189.333" width="133.333" height="133.333" fill="#f7ecc6"/>
+    <rect x="56"  y="322.667" width="133.333" height="133.333" fill="#f7ecc6"/>
+    <rect x="189.333" y="322.667" width="133.333" height="133.333" fill="#f7ecc6"/>
+    <rect x="322.667" y="322.667" width="133.333" height="133.333" fill="#f6d9d3"/>
+    <g stroke="#b9ad93" stroke-width="1.5" stroke-linecap="round">
+      <line x1="189.333" y1="56" x2="189.333" y2="189.333"/>
+      <line x1="322.667" y1="189.333" x2="456" y2="189.333"/>
+      <line x1="322.667" y1="189.333" x2="322.667" y2="322.667"/>
+      <line x1="56" y1="322.667" x2="189.333" y2="322.667"/>
+      <line x1="189.333" y1="322.667" x2="189.333" y2="456"/>
+    </g>
+    <g fill="none" stroke="#26221b" stroke-width="6" stroke-linejoin="miter">
+      <rect x="56" y="56" width="400" height="400"/>
+      <line x1="56" y1="189.333" x2="322.667" y2="189.333"/>
+      <line x1="322.667" y1="56" x2="322.667" y2="189.333"/>
+      <line x1="189.333" y1="189.333" x2="189.333" y2="322.667"/>
+      <line x1="189.333" y1="322.667" x2="322.667" y2="322.667"/>
+      <line x1="322.667" y1="322.667" x2="322.667" y2="456"/>
+    </g>
+    <g font-family="'IBM Plex Mono', ui-monospace, monospace" font-weight="500" fill="#26221b">
+      <text x="68"  y="84"  font-size="26">3÷</text>
+      <text x="334.667" y="84"  font-size="26">5+</text>
+      <text x="68"  y="217.333" font-size="26">6×</text>
+    </g>
+    <text x="389.333" y="416"
+          font-family="'Fraunces', Georgia, serif"
+          font-size="96"
+          font-weight="600"
+          fill="#26221b"
+          text-anchor="middle">2</text>
+  </g>
+
+  <!-- Wordmark — single line, vertically centered against the logo -->
+  <text x="600" y="380"
+        font-family="'Fraunces', Georgia, serif"
+        font-size="140"
+        font-weight="600"
+        fill="#26221b">KenKen</text>
+
+  <!-- Tan accent line -->
+  <line x1="600" y1="420" x2="1100" y2="420" stroke="#b9ad93" stroke-width="3"/>
+</svg>
