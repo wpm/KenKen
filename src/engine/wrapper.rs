@@ -1,7 +1,7 @@
 use std::{collections::BTreeMap, rc::Rc};
 
 use pumpkin_solver::{
-    Solver, all_different,
+    Solver,
     conflict_resolvers::resolvers::ResolutionResolver,
     core::{
         results::{ProblemSolution, SatisfactionResult, solution_iterator::IteratedSolution},
@@ -12,7 +12,7 @@ use pumpkin_solver::{
 
 use crate::{
     Cell, Puzzle,
-    engine::{cage_propagator::CageArgs, value_of},
+    engine::{cage_propagator::CageArgs, regin_propagator::ReginArgs, value_of},
     types::N,
 };
 
@@ -23,10 +23,10 @@ pub type Solution = BTreeMap<Cell, N>;
 /// A Pumpkin-backed CSP view of a [`Puzzle`].
 ///
 /// Construction registers one integer decision variable per cell over `1..=n`,
-/// posts a built-in `all_different` for every row and column, and adds a
+/// posts a generalized-Régin all-different
+/// ([`ReginPropagator`](super::regin_propagator::ReginPropagator)) for every row
+/// and column, and adds a
 /// [`CagePropagator`](super::cage_propagator::CagePropagator) for each cage.
-/// The row/column `all_different` is Pumpkin's pairwise decomposition for now;
-/// #98 step 3 replaces it with the generalized Régin propagator.
 pub struct Engine {
     solver: Solver,
     /// Cells in row-major order; `vars[i]` is the variable for `cells[i]`.
@@ -50,16 +50,22 @@ impl Engine {
             .map(|_| solver.new_bounded_integer(1, upper))
             .collect();
         let var_at = |cell: Cell| vars[cell.row * n + cell.column];
+        let grid_size =
+            N::try_from(n).unwrap_or_else(|_| unreachable!("grid size n lies in 1..=9"));
 
-        // Posting cannot fail at the root for a valid puzzle: distinct-variable
-        // all-different is always root-consistent, and a stored cage always has
-        // at least one tuple (an empty one would have failed puzzle
-        // construction), so its propagator empties no domain from full domains.
+        // Posting cannot fail at the root for a valid puzzle: all-different over
+        // distinct variables is root-consistent, and a stored cage always has at
+        // least one tuple (an empty one would have failed puzzle construction),
+        // so its propagator empties no domain from full domains.
         for index in 0..n {
             for line in [row_cells(n, index), column_cells(n, index)] {
-                let line_vars: Vec<DomainId> = line.into_iter().map(var_at).collect();
+                let line_vars: Rc<[DomainId]> = line.into_iter().map(var_at).collect();
                 let tag = solver.new_constraint_tag();
-                let _ = solver.add_constraint(all_different(line_vars, tag)).post();
+                let _ = solver.add_propagator(ReginArgs {
+                    vars: line_vars,
+                    n: grid_size,
+                    tag,
+                });
             }
         }
 
