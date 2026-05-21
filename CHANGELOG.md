@@ -77,6 +77,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
     candidate domain at the root fixpoint without a full solve (the Designer's
     per-cell display). Matches the bespoke solver's domains on empty, given,
     and partially-filled puzzles.
+  - Step 5 retires the bespoke solver. `Puzzle` now delegates propagation
+    (construction caches the engine's fixpoint grid) and search
+    (`Puzzle::solve` enumerates lazily through the engine) to Pumpkin. Removed
+    the depth-first `Solver`/`State`, the naive `AllDifferent` constraint, the
+    `Constraint` trait and its propagation queue, and the now-unused `Grid`
+    helpers. The public API is unchanged.
 
 ## [0.3.0] - 2026-05-17
 

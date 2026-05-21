@@ -1,39 +1,14 @@
-use crate::{Cell, Error, Grid};
+use crate::Cell;
 
-pub mod all_different;
 pub mod cage;
 pub mod cage_slot;
 pub mod polyomino;
 pub mod regin;
 
-pub trait Constraint {
-    /// Applies this constraint to `grid` and returns the narrowed grid.
-    ///
-    /// # Errors
-    /// Returns [`Error`] if a constraint references a cell outside the grid.
-    fn apply_to(&self, grid: &Grid) -> Result<Grid, Error>;
-}
-
 /// A set of [`Cell`]s.
 pub trait Cover {
     /// The covering [`Cell`]s in row-major order.
-    ///
-    /// Implementations must be cheap to call repeatedly; the default `len` and
-    /// `is_empty` methods each invoke `cells()` independently.
     fn cells(&self) -> impl Iterator<Item = Cell>;
-
-    // Concrete types provide faster inherent `len`s that shadow this default;
-    // the trait method remains for generic `<T: Cover>` callers and is exercised
-    // through `AllDifferent` in tests.
-    #[allow(dead_code)]
-    fn len(&self) -> usize {
-        self.cells().count()
-    }
-
-    #[cfg(test)]
-    fn is_empty(&self) -> bool {
-        self.cells().next().is_none()
-    }
 }
 
 #[cfg(test)]

@@ -4,7 +4,9 @@ use pumpkin_solver::{
     Solver,
     conflict_resolvers::resolvers::ResolutionResolver,
     core::{
-        results::{ProblemSolution, SatisfactionResult, solution_iterator::IteratedSolution},
+        predicate,
+        predicates::Predicate,
+        results::{ProblemSolution, SatisfactionResult},
         termination::Indefinite,
         variables::DomainId,
     },
@@ -41,6 +43,11 @@ pub struct Engine {
     /// Per-cell domains at the root fixpoint, captured by the observer when the
     /// engine is built (before any search node could overwrite them).
     root_domains: DomainMap,
+    /// Clause excluding the most recent solution, applied before the next
+    /// search so [`Engine::next_solution`] enumerates without repeats.
+    next_block: Option<Vec<Predicate>>,
+    /// Set once the search space is exhausted, so further calls return `None`.
+    exhausted: bool,
 }
 
 impl Engine {
@@ -105,6 +112,8 @@ impl Engine {
             cells,
             vars,
             root_domains,
+            next_block: None,
+            exhausted: false,
         }
     }
 
@@ -114,59 +123,66 @@ impl Engine {
         self.root_domains.clone()
     }
 
-    /// Finds one solution to the puzzle, or `None` if it is unsatisfiable.
-    pub fn solve(&mut self) -> Option<Solution> {
+    /// Lazily returns the next distinct solution, or `None` once the search is
+    /// exhausted (or proven unsatisfiable).
+    ///
+    /// Each call first excludes the previous solution with a blocking clause —
+    /// the same scheme Pumpkin's solution iterator uses — so repeated calls
+    /// enumerate without repeats. Driving it call-by-call keeps `Puzzle::solve`
+    /// lazy: a uniqueness check can stop after two solutions without computing
+    /// the rest.
+    pub fn next_solution(&mut self) -> Option<Solution> {
+        if self.exhausted {
+            return None;
+        }
+        if let Some(block) = self.next_block.take() {
+            let tag = self.solver.new_constraint_tag();
+            if self.solver.add_clause(block, tag).is_err() {
+                self.exhausted = true;
+                return None;
+            }
+        }
         let mut brancher = self.solver.default_brancher();
         let mut termination = Indefinite;
         let mut resolver = ResolutionResolver::default();
-        match self
+        let found = match self
             .solver
             .satisfy(&mut brancher, &mut termination, &mut resolver)
         {
             SatisfactionResult::Satisfiable(satisfiable) => {
-                Some(read(&self.cells, &self.vars, &satisfiable.solution()))
+                let solution = satisfiable.solution();
+                let assignment = read(&self.cells, &self.vars, &solution);
+                let block = self
+                    .vars
+                    .iter()
+                    .map(|&var| {
+                        let value = solution.get_integer_value(var);
+                        predicate![var != value]
+                    })
+                    .collect();
+                Some((assignment, block))
             }
             SatisfactionResult::Unsatisfiable(..) | SatisfactionResult::Unknown(..) => None,
+        };
+        if let Some((assignment, block)) = found {
+            self.next_block = Some(block);
+            Some(assignment)
+        } else {
+            self.exhausted = true;
+            None
         }
     }
 
     /// Enumerates up to `limit` distinct solutions.
     ///
     /// Used for uniqueness checks: stopping after two solutions distinguishes a
-    /// uniquely-solvable puzzle from an ambiguous one. Enumeration adds blocking
-    /// clauses to the solver, so an `Engine` should be enumerated only once.
+    /// uniquely-solvable puzzle from an ambiguous one.
     pub fn enumerate(&mut self, limit: usize) -> Vec<Solution> {
-        if limit == 0 {
-            return vec![];
-        }
-        // Snapshot the cell/variable pairing so the read loop borrows neither
-        // `self` nor the solver that the solution iterator holds mutably.
-        let pairs: Vec<(Cell, DomainId)> = self
-            .cells
-            .iter()
-            .copied()
-            .zip(self.vars.iter().copied())
-            .collect();
-        let mut brancher = self.solver.default_brancher();
-        let mut termination = Indefinite;
-        let mut resolver = ResolutionResolver::default();
-        let mut iterator =
-            self.solver
-                .get_solution_iterator(&mut brancher, &mut termination, &mut resolver);
         let mut solutions = Vec::new();
         while solutions.len() < limit {
-            match iterator.next_solution() {
-                IteratedSolution::Solution(solution, ..) => {
-                    solutions.push(
-                        pairs
-                            .iter()
-                            .map(|&(cell, var)| (cell, value_of(solution.get_integer_value(var))))
-                            .collect(),
-                    );
-                }
-                IteratedSolution::Finished
-                | IteratedSolution::Unknown
-                | IteratedSolution::Unsatisfiable => break,
+            match self.next_solution() {
+                Some(solution) => solutions.push(solution),
+                None => break,
             }
         }
         solutions
@@ -219,7 +235,7 @@ mod tests {
     #[test]
     fn solve_satisfies_row_and_column_all_different() {
         let puzzle = Puzzle::new(4).unwrap();
-        let solution = Engine::new(&puzzle).solve().unwrap();
+        let solution = Engine::new(&puzzle).next_solution().unwrap();
         for index in 0..4 {
             let row: Vec<N> = (0..4).map(|c| solution[&Cell::new(index, c)]).collect();
             let col: Vec<N> = (0..4).map(|r| solution[&Cell::new(r, index)]).collect();
@@ -237,7 +253,7 @@ mod tests {
         let puzzle = Puzzle::with_cages(4, &[cage(4, &[(0, 0)], Operation::Given(3))])
             .unwrap()
             .unwrap();
-        let solution = Engine::new(&puzzle).solve().unwrap();
+        let solution = Engine::new(&puzzle).next_solution().unwrap();
         assert_eq!(solution[&Cell::new(0, 0)], 3);
     }
 
@@ -247,7 +263,7 @@ mod tests {
         let puzzle = Puzzle::with_cages(4, &[cage(4, &[(0, 0), (1, 0)], Operation::Subtract(1))])
             .unwrap()
             .unwrap();
-        let solution = Engine::new(&puzzle).solve().unwrap();
+        let solution = Engine::new(&puzzle).next_solution().unwrap();
         let a = i32::from(solution[&Cell::new(0, 0)]);
         let b = i32::from(solution[&Cell::new(1, 0)]);
         assert_eq!((a - b).abs(), 1);
