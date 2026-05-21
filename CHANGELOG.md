@@ -34,6 +34,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `Puzzle` deserializer) when two slots share the same polyomino.
 
 ### Changed
+- `regin` (the all-different arc-consistency filter) now handles domains with
+  more values than variables. A sink node links free (unmatched) values back
+  into the residual graph so their edges survive when they participate in a
+  valid assignment, fixing the over-pruning described in #30. The previous
+  `#values ≤ #variables` precondition is gone.
+- `Polyomino::valid_tuples` and `Polyomino::operator_tuples` now enforce
+  collinear all-different via `regin` per row/column group instead of the
+  pairwise `collinear_pairs` filter.
 - `Puzzle::with_cages` is now a thin wrapper around `Puzzle::with_slots`.
 - `Puzzle::with_cages` now returns `Error::DuplicateSlotPolyomino` when two
   cages share a polyomino. Previously these silently collapsed in the
@@ -42,6 +50,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   to cover both cage and region out-of-bounds cases.
 
 ### Removed
+- `Polyomino::collinear_pairs` and the free function `ordered_tuples` —
+  superseded by `regin`-backed group all-different in `valid_tuples` /
+  `operator_tuples`.
 - `generate` Cargo feature — generation is now unconditional and `rand`
   is a required dependency.
 

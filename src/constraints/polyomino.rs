@@ -1,7 +1,7 @@
 use std::collections::{BTreeSet, HashMap};
 
 use crate::{
-    Cell, Error, Operation, Operator,
+    Cell, Error, Fill, Operation, Operator,
     constraints::{
         Cover,
         cage::{
@@ -12,6 +12,7 @@ use crate::{
             },
             operation::CageOption,
         },
+        regin::regin,
     },
     types::{Index, M, N},
 };
@@ -236,15 +237,16 @@ impl Polyomino {
         if !arity_ok {
             return vec![];
         }
-        let pairs = self.collinear_pairs();
+        let groups = self.collinear_groups();
         match operation {
-            Operation::Given(v) => N::try_from(v)
-                .map_or_else(|_| vec![], |v_n| ordered_tuples(&[v_n], &pairs).collect()),
+            Operation::Given(v) => {
+                N::try_from(v).map_or_else(|_| vec![], |v_n| arrangements(&[v_n], &groups))
+            }
             Operation::Subtract(d) => N::try_from(d).map_or_else(
                 |_| vec![],
                 |d_n| {
                     subtraction_multisets(n, d_n)
-                        .flat_map(|ms| ordered_tuples(&ms, &pairs).collect::<Vec<_>>())
+                        .flat_map(|ms| arrangements(&ms, &groups))
                         .collect()
                 },
             ),
@@ -252,7 +254,7 @@ impl Polyomino {
                 |_| vec![],
                 |q_n| {
                     division_multisets(n, q_n)
-                        .flat_map(|ms| ordered_tuples(&ms, &pairs).collect::<Vec<_>>())
+                        .flat_map(|ms| arrangements(&ms, &groups))
                         .collect()
                 },
             ),
@@ -260,36 +262,35 @@ impl Polyomino {
                 |_| vec![],
                 |s_n| {
                     addition_multisets(n, k, s_n)
-                        .flat_map(|ms| ordered_tuples(&ms, &pairs).collect::<Vec<_>>())
+                        .flat_map(|ms| arrangements(&ms, &groups))
                         .collect()
                 },
             ),
             Operation::Multiply(s) => multiplication_multisets(n, k, s)
-                .flat_map(|ms| ordered_tuples(&ms, &pairs).collect::<Vec<_>>())
+                .flat_map(|ms| arrangements(&ms, &groups))
                 .collect(),
         }
     }
 
-    /// Returns pairs of cell indices that share a row or column.
+    /// Returns the groups of cell indices that share a row or column, keeping
+    /// only groups of two or more cells.
     ///
-    /// Each pair `(i, j)` with `i < j` means `cells[i]` and `cells[j]` must
-    /// hold distinct values.
-    pub fn collinear_pairs(&self) -> Vec<(usize, usize)> {
+    /// Each returned group is a set of positions whose cells must hold
+    /// all-different values (an all-different constraint, enforced via
+    /// [`regin`]). Singleton groups are omitted because they impose no
+    /// constraint.
+    fn collinear_groups(&self) -> Vec<Vec<usize>> {
         let mut by_row: HashMap<Index, Vec<usize>> = HashMap::new();
         let mut by_col: HashMap<Index, Vec<usize>> = HashMap::new();
         for (i, cell) in self.cells().enumerate() {
             by_row.entry(cell.row).or_default().push(i);
             by_col.entry(cell.column).or_default().push(i);
         }
-        let mut pairs = Vec::new();
-        for group in by_row.into_values().chain(by_col.into_values()) {
-            for a in 0..group.len() {
-                for b in (a + 1)..group.len() {
-                    pairs.push((group[a], group[b]));
-                }
-            }
-        }
-        pairs
+        by_row
+            .into_values()
+            .chain(by_col.into_values())
+            .filter(|group| group.len() >= 2)
+            .collect()
     }
 
     /// Returns a map from each valid [`Operation`] to the ordered tuples that
@@ -304,7 +305,7 @@ impl Polyomino {
     /// size yields an empty map.
     pub fn operator_tuples(&self, n: N, operator: Operator) -> HashMap<Operation, Vec<Tuple>> {
         let k = self.len();
-        let pairs = self.collinear_pairs();
+        let groups = self.collinear_groups();
 
         match operator {
             Operator::Given => {
@@ -324,9 +325,7 @@ impl Polyomino {
                         let op = Operation::Subtract(M::from(d));
                         subtraction_multisets(n, d)
                             .flat_map(|ms| {
-                                ordered_tuples(&ms, &pairs)
-                                    .map(move |t| (op, t))
-                                    .collect::<Vec<_>>()
+                                arrangements(&ms, &groups).into_iter().map(move |t| (op, t))
                             })
                             .collect::<Vec<_>>()
                     })
@@ -344,9 +343,7 @@ impl Polyomino {
                         let op = Operation::Divide(M::from(q));
                         division_multisets(n, q)
                             .flat_map(|ms| {
-                                ordered_tuples(&ms, &pairs)
-                                    .map(move |t| (op, t))
-                                    .collect::<Vec<_>>()
+                                arrangements(&ms, &groups).into_iter().map(move |t| (op, t))
                             })
                             .collect::<Vec<_>>()
                     })
@@ -365,7 +362,7 @@ impl Polyomino {
                     .filter_map(|s| {
                         N::try_from(s).map_or(None, |s_n| {
                             let tuples: Vec<Tuple> = addition_multisets(n, k, s_n)
-                                .flat_map(|ms| ordered_tuples(&ms, &pairs).collect::<Vec<_>>())
+                                .flat_map(|ms| arrangements(&ms, &groups))
                                 .collect();
                             if tuples.is_empty() {
                                 None
@@ -385,7 +382,7 @@ impl Polyomino {
                 (1..=max_target)
                     .filter_map(|s| {
                         let tuples: Vec<Tuple> = multiplication_multisets(n, k, s)
-                            .flat_map(|ms| ordered_tuples(&ms, &pairs).collect::<Vec<_>>())
+                            .flat_map(|ms| arrangements(&ms, &groups))
                             .collect();
                         if tuples.is_empty() {
                             None
@@ -405,14 +402,26 @@ impl Cover for Polyomino {
     }
 }
 
-/// Returns an iterator over all ordered permutations of `multiset` that satisfy
-/// the collinearity constraint: for every `(i, j)` in `pairs`, positions `i`
-/// and `j` must differ.
-pub fn ordered_tuples<'a>(
-    multiset: &'a [N],
-    pairs: &'a [(usize, usize)],
-) -> impl Iterator<Item = Tuple> + 'a {
-    permutations(multiset).filter(move |t| pairs.iter().all(|&(i, j)| t[i] != t[j]))
+/// Returns every ordered permutation of `multiset` in which each collinear
+/// `group` holds all-different values.
+///
+/// Distinctness within a group is decided by [`regin`]: the group's positions
+/// become single-value domains, and the arrangement is kept only when `regin`
+/// finds a complete matching (no domain emptied). This is the all-different
+/// check the cage constraints rely on.
+fn arrangements(multiset: &[N], groups: &[Vec<usize>]) -> Vec<Tuple> {
+    permutations(multiset)
+        .filter(|tuple| groups.iter().all(|group| group_all_different(group, tuple)))
+        .collect()
+}
+
+/// Returns `true` if the values at `group`'s positions in `tuple` are pairwise
+/// distinct, decided by running [`regin`] on the corresponding single-value
+/// domains: a repeated value leaves no complete matching, so `regin` empties a
+/// domain.
+fn group_all_different(group: &[usize], tuple: &[N]) -> bool {
+    let domains: Vec<Fill> = group.iter().map(|&i| Fill::new([tuple[i]])).collect();
+    regin(&domains).iter().all(|domain| !domain.is_empty())
 }
 
 /// Returns an iterator over all distinct permutations of `values` in
@@ -632,17 +641,31 @@ mod tests {
         assert_eq!(permutations(&[1, 1, 2]).count(), 3);
     }
 
-    // --- ordered_tuples ---
+    // --- arrangements / group_all_different ---
 
     #[test]
-    fn ordered_tuples_no_pairs_returns_all_permutations() {
-        let result: Vec<Tuple> = ordered_tuples(&[1, 2], &[]).collect();
-        assert_eq!(result, vec![vec![1, 2], vec![2, 1]]);
+    fn arrangements_no_groups_returns_all_permutations() {
+        assert_eq!(arrangements(&[1, 2], &[]), vec![vec![1, 2], vec![2, 1]]);
     }
 
     #[test]
-    fn ordered_tuples_same_row_filters_equal_values() {
-        assert!(ordered_tuples(&[2, 2], &[(0, 1)]).next().is_none());
+    fn arrangements_collinear_group_filters_equal_values() {
+        assert!(arrangements(&[2, 2], &[vec![0, 1]]).is_empty());
+    }
+
+    #[test]
+    fn arrangements_three_cell_group_requires_all_distinct() {
+        // A 3-cell collinear group keeps only the permutations with no repeat.
+        let result = arrangements(&[1, 1, 2], &[vec![0, 1, 2]]);
+        assert!(result.is_empty());
+        assert_eq!(arrangements(&[1, 2, 3], &[vec![0, 1, 2]]).len(), 6);
+    }
+
+    #[test]
+    fn group_all_different_detects_repeat() {
+        assert!(group_all_different(&[0, 1], &[1, 2]));
+        assert!(!group_all_different(&[0, 1], &[2, 2]));
+        assert!(!group_all_different(&[0, 2], &[3, 9, 3]));
     }
 
     // --- valid Polyomino operators ---
@@ -875,33 +898,37 @@ mod tests {
         }
     }
 
-    // --- collinear_pairs ---
+    // --- collinear_groups ---
 
-    #[test]
-    fn collinear_pairs_single_cell_is_empty() {
-        assert!(singleton().collinear_pairs().is_empty());
+    fn sorted_groups(poly: &Polyomino) -> Vec<Vec<usize>> {
+        let mut groups = poly.collinear_groups();
+        for group in &mut groups {
+            group.sort_unstable();
+        }
+        groups.sort_unstable();
+        groups
     }
 
     #[test]
-    fn collinear_pairs_same_row() {
-        let mut pairs = row3().collinear_pairs();
-        pairs.sort_unstable();
-        assert_eq!(pairs, vec![(0, 1), (0, 2), (1, 2)]);
+    fn collinear_groups_single_cell_is_empty() {
+        assert!(singleton().collinear_groups().is_empty());
     }
 
     #[test]
-    fn collinear_pairs_same_column() {
-        let mut pairs = col_pair().collinear_pairs();
-        pairs.sort_unstable();
-        assert_eq!(pairs, vec![(0, 1)]);
+    fn collinear_groups_same_row() {
+        // All three cells share one row: a single group of three positions.
+        assert_eq!(sorted_groups(&row3()), vec![vec![0, 1, 2]]);
     }
 
     #[test]
-    fn collinear_pairs_l_shape() {
-        // (0,0), (1,0), (1,1): col-0 gives (0,1); row-1 gives (1,2).
-        let mut pairs = l_shape().collinear_pairs();
-        pairs.sort_unstable();
-        assert_eq!(pairs, vec![(0, 1), (1, 2)]);
+    fn collinear_groups_same_column() {
+        assert_eq!(sorted_groups(&col_pair()), vec![vec![0, 1]]);
+    }
+
+    #[test]
+    fn collinear_groups_l_shape() {
+        // (0,0), (1,0), (1,1): col-0 group {0,1}; row-1 group {1,2}.
+        assert_eq!(sorted_groups(&l_shape()), vec![vec![0, 1], vec![1, 2]]);
     }
 
     // --- operator_tuples ---
