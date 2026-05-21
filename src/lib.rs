@@ -14,7 +14,6 @@ mod engine;
 mod generator;
 mod grid;
 mod puzzle;
-mod solver;
 mod types;
 
 pub(crate) use constraints::Cover;

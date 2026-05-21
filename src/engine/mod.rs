@@ -4,14 +4,16 @@
 //! the crate's domain types ([`Cell`](crate::Cell), [`Fill`](crate::Fill)).
 //! Pumpkin is an implementation detail and is never re-exported.
 //!
-//! This module is built incrementally over the migration described in #98:
-//! per-cell decision variables, row/column all-different, and a custom
-//! [`cage_propagator`] for each cage. The Régin and observer propagators (and
-//! the eventual removal of the bespoke solver) arrive in later steps, at which
-//! point these entry points become load-bearing for `Puzzle`.
+//! The engine models a puzzle with one decision variable per cell, a custom
+//! [`regin_propagator`] enforcing GAC all-different on each row and column, a
+//! custom [`cage_propagator`] per cage, and an [`observer_propagator`] that
+//! reads back fixpoint domains. [`Puzzle`](crate::Puzzle) routes its
+//! propagation (construction) and search ([`solve`](crate::Puzzle::solve))
+//! through it; the bespoke solver has been removed (#98 step 5).
 //!
-//! Until the bespoke solver is retired (#98 step 5), nothing in the crate's
-//! product path consumes the engine, so its surface is allowed to sit unused.
+//! A few entry points — `Engine::enumerate` and the `DomainMap` re-export — are
+//! part of the Designer-facing surface and are not yet consumed within this
+//! crate, so the module tolerates an unused surface.
 #![allow(dead_code, unused_imports)]
 
 mod cage_propagator;
