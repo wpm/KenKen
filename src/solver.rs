@@ -7,7 +7,7 @@
 //! enumerate all. The viable-tuple [`Cache`] is shared across the whole search.
 
 use crate::{
-    Cell, Fill,
+    Cell, Domain,
     cache::Cache,
     constraint::{Constraint, Outcome, PropagationCtx, propagate_to_fixpoint},
     store::Store,
@@ -51,7 +51,7 @@ impl<C: Constraint<Cell>> Iterator for Search<C> {
                 Some(cell) => {
                     for value in store.get(cell.id()).iter() {
                         let mut child = store.clone();
-                        child.set(cell.id(), Fill::new([value]));
+                        child.set(cell.id(), Domain::new([value]));
                         self.stack.push(child);
                     }
                 }
@@ -82,7 +82,7 @@ mod tests {
         let mut store = Store::full(2);
         for row in 0..2 {
             for column in 0..2 {
-                store.set(Cell::new(row, column).id(), Fill::new([1]));
+                store.set(Cell::new(row, column).id(), Domain::new([1]));
             }
         }
         assert!(most_constrained(&store).is_none());
@@ -91,8 +91,8 @@ mod tests {
     #[test]
     fn most_constrained_picks_fewest_candidates() {
         let mut store = Store::full(4);
-        store.set(Cell::new(0, 0).id(), Fill::new([1, 2, 3]));
-        store.set(Cell::new(2, 2).id(), Fill::new([1, 2]));
+        store.set(Cell::new(0, 0).id(), Domain::new([1, 2, 3]));
+        store.set(Cell::new(2, 2).id(), Domain::new([1, 2]));
         assert_eq!(most_constrained(&store), Some(Cell::new(2, 2)));
     }
 }

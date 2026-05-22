@@ -12,7 +12,7 @@
 
 use std::{collections::HashMap, rc::Rc};
 
-use crate::{Fill, Tuple, cage::Cage, store::Store, types::N, variable::Variable};
+use crate::{Domain, Tuple, cage::Cage, store::Store, types::N, variable::Variable};
 
 /// A set of viable ordered tuples for a cage.
 pub type TupleSet = Vec<Tuple>;
@@ -55,14 +55,14 @@ fn projection(cage: &Cage, store: &Store) -> Vec<Vec<N>> {
         .collect()
 }
 
-fn filter_viable(statics: &[Tuple], domains: &[Fill]) -> TupleSet {
+fn filter_viable(statics: &[Tuple], domains: &[Domain]) -> TupleSet {
     statics
         .iter()
         .filter(|tuple| {
             tuple
                 .iter()
                 .zip(domains)
-                .all(|(&value, domain)| !(*domain & Fill::new([value])).is_empty())
+                .all(|(&value, domain)| !(*domain & Domain::new([value])).is_empty())
         })
         .cloned()
         .collect()
@@ -79,7 +79,7 @@ pub fn viable_tuples<'c>(cage: &Cage, store: &Store, cache: &'c mut Cache) -> &'
     };
     if !cache.viable.contains_key(&key) {
         let statics = cache.static_tuples(cage);
-        let domains: Vec<Fill> = cage.cells().map(|cell| store.get(cell.id())).collect();
+        let domains: Vec<Domain> = cage.cells().map(|cell| store.get(cell.id())).collect();
         let filtered = filter_viable(&statics, &domains);
         let _ = cache.viable.insert(key.clone(), filtered);
     }
@@ -102,7 +102,7 @@ mod tests {
         let cage = cage();
         let mut store = Store::full(4);
         // Pin (0,0) to {1}: only [1,3] survives for Add(4) on a row pair.
-        store.set(Cell::new(0, 0).id(), Fill::new([1]));
+        store.set(Cell::new(0, 0).id(), Domain::new([1]));
         let mut cache = Cache::default();
         let viable = viable_tuples(&cage, &store, &mut cache).clone();
         assert_eq!(viable, vec![vec![1u8, 3]]);
@@ -126,7 +126,7 @@ mod tests {
         assert_eq!(first, *viable_tuples(&cage, &store, &mut fresh));
 
         // And both equal a fresh, uncached pure computation.
-        let domains: Vec<Fill> = cage.cells().map(|c| store.get(c.id())).collect();
+        let domains: Vec<Domain> = cage.cells().map(|c| store.get(c.id())).collect();
         assert_eq!(first, filter_viable(&cage.tuples(), &domains));
     }
 
@@ -139,7 +139,7 @@ mod tests {
         let _ = viable_tuples(&cage, &full, &mut cache);
 
         let mut narrowed = Store::full(4);
-        narrowed.set(Cell::new(0, 0).id(), Fill::new([1]));
+        narrowed.set(Cell::new(0, 0).id(), Domain::new([1]));
         let _ = viable_tuples(&cage, &narrowed, &mut cache);
 
         assert_eq!(cache.viable_entry_count(), 2);

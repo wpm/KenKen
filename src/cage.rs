@@ -1,5 +1,5 @@
 use crate::{
-    Cell, Fill, Operation, Polyomino,
+    Cell, Domain, Operation, Polyomino,
     cache::viable_tuples,
     constraint::{Constraint, Outcome, PropagationCtx},
     store::Narrowed,
@@ -79,10 +79,10 @@ impl Constraint<Cell> for Cage {
     fn propagate(&self, ctx: &mut PropagationCtx<Cell>) -> Outcome {
         let unions = {
             let viable = viable_tuples(self, ctx.store, ctx.cache);
-            let mut unions = vec![Fill::default(); self.len()];
+            let mut unions = vec![Domain::default(); self.len()];
             for tuple in viable {
                 for (slot, &value) in unions.iter_mut().zip(tuple) {
-                    *slot = *slot | Fill::new([value]);
+                    *slot = *slot | Domain::new([value]);
                 }
             }
             unions
@@ -179,8 +179,8 @@ mod tests {
             cage.propagate(&mut ctx)
         };
         assert_eq!(outcome, Outcome::Changed);
-        assert_eq!(store.get(Cell::new(0, 0).id()), Fill::new([1, 2]));
-        assert_eq!(store.get(Cell::new(0, 1).id()), Fill::new([1, 2]));
+        assert_eq!(store.get(Cell::new(0, 0).id()), Domain::new([1, 2]));
+        assert_eq!(store.get(Cell::new(0, 1).id()), Domain::new([1, 2]));
     }
 
     #[test]
@@ -198,8 +198,8 @@ mod tests {
     fn propagate_detects_contradiction() {
         let cage = Cage::new(4, pair(), Operation::Add(3));
         let mut store = Store::full(4);
-        store.set(Cell::new(0, 0).id(), Fill::new([4]));
-        store.set(Cell::new(0, 1).id(), Fill::new([4]));
+        store.set(Cell::new(0, 0).id(), Domain::new([4]));
+        store.set(Cell::new(0, 1).id(), Domain::new([4]));
         let mut cache = Cache::default();
         let mut ctx = PropagationCtx::new(&mut store, &mut cache);
         assert_eq!(cage.propagate(&mut ctx), Outcome::Contradiction);

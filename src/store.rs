@@ -6,12 +6,9 @@
 //! be recomputed from the store is *cache*, not store.
 
 use crate::{
-    Cell, Fill,
+    Cell, Domain,
     variable::{VarId, Variable},
 };
-
-/// A variable's domain: the set of values it can still take.
-pub type Domain = Fill;
 
 /// Intrinsic state: one [`Domain`] per cell of an `n`×`n` grid, in row-major
 /// order.
@@ -37,7 +34,7 @@ impl Store {
     pub fn full(n: usize) -> Self {
         Self {
             n,
-            domains: vec![Fill::full(n); n * n].into_boxed_slice(),
+            domains: vec![Domain::full(n); n * n].into_boxed_slice(),
         }
     }
 
@@ -52,7 +49,7 @@ impl Store {
     /// The current domain of `id`. An out-of-range id yields the empty domain.
     pub fn get(&self, id: VarId) -> Domain {
         self.index(id.0)
-            .map_or_else(Fill::default, |i| self.domains[i])
+            .map_or_else(Domain::default, |i| self.domains[i])
     }
 
     /// Replaces the domain of `id`. An out-of-range id is a no-op.
@@ -116,7 +113,7 @@ mod tests {
     fn full_store_has_full_domains() {
         let store = Store::full(4);
         assert_eq!(store.n(), 4);
-        assert_eq!(store.get(vid(0, 0)), Fill::full(4));
+        assert_eq!(store.get(vid(0, 0)), Domain::full(4));
         assert_eq!(store.cells().count(), 16);
         assert_eq!(store.candidates().count(), 16);
     }
@@ -124,15 +121,15 @@ mod tests {
     #[test]
     fn set_replaces_domain() {
         let mut store = Store::full(4);
-        store.set(vid(1, 2), Fill::new([3]));
-        assert_eq!(store.get(vid(1, 2)), Fill::new([3]));
+        store.set(vid(1, 2), Domain::new([3]));
+        assert_eq!(store.get(vid(1, 2)), Domain::new([3]));
     }
 
     #[test]
     fn intersect_reports_unchanged_when_superset() {
         let mut store = Store::full(4);
         assert_eq!(
-            store.intersect(vid(0, 0), Fill::full(4)),
+            store.intersect(vid(0, 0), Domain::full(4)),
             Narrowed::Unchanged
         );
     }
@@ -141,17 +138,20 @@ mod tests {
     fn intersect_reports_changed_when_narrowed() {
         let mut store = Store::full(4);
         assert_eq!(
-            store.intersect(vid(0, 0), Fill::new([1, 2])),
+            store.intersect(vid(0, 0), Domain::new([1, 2])),
             Narrowed::Changed
         );
-        assert_eq!(store.get(vid(0, 0)), Fill::new([1, 2]));
+        assert_eq!(store.get(vid(0, 0)), Domain::new([1, 2]));
     }
 
     #[test]
     fn intersect_reports_empty_on_disjoint() {
         let mut store = Store::full(4);
-        store.set(vid(0, 0), Fill::new([1]));
-        assert_eq!(store.intersect(vid(0, 0), Fill::new([2])), Narrowed::Empty);
+        store.set(vid(0, 0), Domain::new([1]));
+        assert_eq!(
+            store.intersect(vid(0, 0), Domain::new([2])),
+            Narrowed::Empty
+        );
         assert!(store.is_invalid());
     }
 
@@ -159,11 +159,11 @@ mod tests {
     fn out_of_range_access_is_inert() {
         let mut store = Store::full(2);
         let outside = vid(5, 5);
-        assert_eq!(store.get(outside), Fill::default());
-        store.set(outside, Fill::new([1]));
-        assert_eq!(store.get(outside), Fill::default());
+        assert_eq!(store.get(outside), Domain::default());
+        store.set(outside, Domain::new([1]));
+        assert_eq!(store.get(outside), Domain::default());
         assert_eq!(
-            store.intersect(outside, Fill::new([1])),
+            store.intersect(outside, Domain::new([1])),
             Narrowed::Unchanged
         );
     }
@@ -172,7 +172,7 @@ mod tests {
     fn is_invalid_detects_empty_domain() {
         let mut store = Store::full(2);
         assert!(!store.is_invalid());
-        store.set(Cell::new(0, 0).id(), Fill::default());
+        store.set(Cell::new(0, 0).id(), Domain::default());
         assert!(store.is_invalid());
     }
 }

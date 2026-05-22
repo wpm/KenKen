@@ -39,4 +39,4 @@ pub use generator::generate::SizeDistribution;
 pub use operation::{CageOption, Operation, Operator};
 pub use polyomino::Polyomino;
 pub use puzzle::Puzzle;
-pub use types::{Cell, Error, Fill};
+pub use types::{Cell, Domain, Error};

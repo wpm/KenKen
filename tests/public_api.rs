@@ -4,7 +4,9 @@
 #![allow(clippy::unwrap_used)]
 mod test {
 
-    use kenken::{Cage, CageOption, CageSlot, Cell, Fill, Operation, Operator, Polyomino, Puzzle};
+    use kenken::{
+        Cage, CageOption, CageSlot, Cell, Domain, Operation, Operator, Polyomino, Puzzle,
+    };
 
     const fn cell(row: usize, column: usize) -> Cell {
         Cell::new(row, column)
@@ -220,14 +222,14 @@ mod test {
         let puzzle = Puzzle::with_cages(4, &[cage(4, &[(0, 0)], Operation::Given(2))])
             .unwrap()
             .unwrap();
-        let pairs: Vec<(Cell, Fill)> = puzzle.candidates().collect();
+        let pairs: Vec<(Cell, Domain)> = puzzle.candidates().collect();
         assert_eq!(pairs.len(), 16);
         let pinned = pairs
             .iter()
             .find(|(c, _)| *c == cell(0, 0))
             .map(|(_, f)| *f)
             .unwrap();
-        assert_eq!(pinned, Fill::new([2]));
+        assert_eq!(pinned, Domain::new([2]));
     }
 
     #[test]
@@ -259,7 +261,7 @@ mod test {
                 .find(|(c, _)| *c == cell(0, 0))
                 .unwrap()
                 .1,
-            Fill::full(4)
+            Domain::full(4)
         );
     }
 
@@ -345,7 +347,7 @@ mod test {
                 .find(|(c, _)| *c == cell(0, 0))
                 .unwrap()
                 .1,
-            Fill::full(4)
+            Domain::full(4)
         );
     }
 

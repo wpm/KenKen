@@ -8,12 +8,12 @@ use rand::Rng;
 #[cfg(test)]
 use crate::variable::Variable;
 use crate::{
-    Cage, CageSlot, Cell, Error,
+    Cage, CageSlot, Cell, Domain, Error,
     Error::{
         CageConflict, DuplicateSlotPolyomino, InfeasibleOperation, InvalidGridSize, RegionConflict,
         SlotNotInPuzzle,
     },
-    Fill, Operation, Polyomino,
+    Operation, Polyomino,
     all_different::AllDifferent,
     cache::Cache,
     constraint::{Constraint, Outcome, PropagationCtx, propagate_to_fixpoint},
@@ -318,8 +318,8 @@ impl Puzzle {
         self.slots.iter()
     }
 
-    /// Each cell paired with its current candidate [`Fill`], in row-major order.
-    pub fn candidates(&self) -> impl Iterator<Item = (Cell, Fill)> + '_ {
+    /// Each cell paired with its current candidate [`Domain`], in row-major order.
+    pub fn candidates(&self) -> impl Iterator<Item = (Cell, Domain)> + '_ {
         self.store.candidates()
     }
 
@@ -404,7 +404,7 @@ impl Puzzle {
     }
 
     #[cfg(test)]
-    fn domain(&self, cell: Cell) -> Fill {
+    fn domain(&self, cell: Cell) -> Domain {
         self.store.get(cell.id())
     }
 
@@ -478,7 +478,7 @@ mod tests {
     fn new_valid_size_succeeds_with_full_cells() {
         let puzzle = Puzzle::new(3).unwrap();
         assert_eq!(puzzle.n(), 3);
-        assert!(puzzle.candidates().all(|(_, f)| f == Fill::full(3)));
+        assert!(puzzle.candidates().all(|(_, f)| f == Domain::full(3)));
         assert_eq!(puzzle.cells().count(), 9);
     }
 
@@ -494,7 +494,7 @@ mod tests {
         let puzzle = Puzzle::with_cages(4, &[cage(4, &[(0, 0)], Operation::Given(2))])
             .unwrap()
             .unwrap();
-        assert_eq!(puzzle.domain(Cell::new(0, 0)), Fill::new([2]));
+        assert_eq!(puzzle.domain(Cell::new(0, 0)), Domain::new([2]));
     }
 
     #[test]
@@ -535,7 +535,7 @@ mod tests {
         let puzzle = Puzzle::with_slots(4, &[region, c]).unwrap().unwrap();
         assert_eq!(puzzle.regions().count(), 1);
         assert_eq!(puzzle.cages().count(), 1);
-        assert_eq!(puzzle.domain(Cell::new(1, 1)), Fill::new([2]));
+        assert_eq!(puzzle.domain(Cell::new(1, 1)), Domain::new([2]));
     }
 
     #[test]
@@ -607,9 +607,9 @@ mod tests {
     fn remove_present_widens() {
         let c = singleton_cage();
         let p = puzzle_4().insert(c.clone()).unwrap().unwrap();
-        assert_eq!(p.domain(Cell::new(0, 0)), Fill::new([3]));
+        assert_eq!(p.domain(Cell::new(0, 0)), Domain::new([3]));
         let p2 = p.remove(&c).unwrap();
-        assert_eq!(p2.domain(Cell::new(0, 0)), Fill::full(4));
+        assert_eq!(p2.domain(Cell::new(0, 0)), Domain::full(4));
     }
 
     #[test]
@@ -624,7 +624,7 @@ mod tests {
         let p = puzzle_4().insert(original).unwrap().unwrap();
         let other = cage(4, &[(0, 0)], Operation::Given(2));
         let p2 = p.remove(&other).unwrap();
-        assert_eq!(p2.domain(Cell::new(0, 0)), Fill::new([3]));
+        assert_eq!(p2.domain(Cell::new(0, 0)), Domain::new([3]));
     }
 
     // --- insert_region / remove_region ---
@@ -633,7 +633,7 @@ mod tests {
     fn insert_region_does_not_narrow() {
         let p = puzzle_4().insert_region(singleton()).unwrap();
         assert_eq!(p.regions().count(), 1);
-        assert_eq!(p.domain(Cell::new(0, 0)), Fill::full(4));
+        assert_eq!(p.domain(Cell::new(0, 0)), Domain::full(4));
     }
 
     #[test]
@@ -689,7 +689,7 @@ mod tests {
             .unwrap()
             .unwrap();
         assert_eq!(promoted.cages().count(), 1);
-        assert_eq!(promoted.domain(Cell::new(0, 0)), Fill::new([3]));
+        assert_eq!(promoted.domain(Cell::new(0, 0)), Domain::new([3]));
     }
 
     #[test]
@@ -744,7 +744,7 @@ mod tests {
         let p2 = p.demote(&singleton()).unwrap();
         assert_eq!(p2.cages().count(), 0);
         assert_eq!(p2.regions().count(), 1);
-        assert_eq!(p2.domain(Cell::new(0, 0)), Fill::full(4));
+        assert_eq!(p2.domain(Cell::new(0, 0)), Domain::full(4));
     }
 
     #[test]
@@ -806,7 +806,7 @@ mod tests {
             .find(|(c, _)| *c == Cell::new(0, 0))
             .unwrap()
             .1;
-        assert_eq!(pinned, Fill::new([3]));
+        assert_eq!(pinned, Domain::new([3]));
     }
 
     // --- internal engine ---
@@ -829,7 +829,7 @@ mod tests {
         let puzzle = Puzzle::with_cages(2, &cages).unwrap().unwrap();
         let solutions: Vec<Puzzle> = puzzle.solve().collect();
         assert_eq!(solutions.len(), 1);
-        assert_eq!(solutions[0].domain(Cell::new(1, 1)), Fill::new([1]));
+        assert_eq!(solutions[0].domain(Cell::new(1, 1)), Domain::new([1]));
     }
 
     #[test]

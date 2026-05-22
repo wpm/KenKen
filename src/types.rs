@@ -48,10 +48,10 @@ pub type Index = usize;
 
 /// A set of candidate values in `1..=9` for a cell stored as a bitmap.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
-pub struct Fill(u16);
+pub struct Domain(u16);
 
-impl Fill {
-    /// Creates `Fill` from any iterable of numbers in the range `1..=9`.
+impl Domain {
+    /// Creates `Domain` from any iterable of numbers in the range `1..=9`.
     pub fn new(ns: impl IntoIterator<Item = N>) -> Self {
         Self(
             ns.into_iter()
@@ -90,7 +90,7 @@ impl Fill {
     }
 }
 
-impl BitAnd for Fill {
+impl BitAnd for Domain {
     type Output = Self;
 
     /// Returns the intersection of two sets of values.
@@ -99,13 +99,13 @@ impl BitAnd for Fill {
     }
 }
 
-impl FromIterator<N> for Fill {
+impl FromIterator<N> for Domain {
     fn from_iter<I: IntoIterator<Item = N>>(iter: I) -> Self {
         Self::new(iter)
     }
 }
 
-impl BitOr for Fill {
+impl BitOr for Domain {
     type Output = Self;
 
     /// Returns the union of two sets of values.
@@ -114,19 +114,19 @@ impl BitOr for Fill {
     }
 }
 
-impl serde::Serialize for Fill {
+impl serde::Serialize for Domain {
     fn serialize<S: serde::Serializer>(&self, s: S) -> Result<S::Ok, S::Error> {
         s.collect_seq(self.iter())
     }
 }
 
-impl<'de> serde::Deserialize<'de> for Fill {
+impl<'de> serde::Deserialize<'de> for Domain {
     fn deserialize<D: serde::Deserializer<'de>>(d: D) -> Result<Self, D::Error> {
         let values = Vec::<N>::deserialize(d)?;
         for &v in &values {
             if !(1..=9).contains(&v) {
                 return Err(serde::de::Error::custom(format!(
-                    "Fill value {v} is out of range 1..=9"
+                    "Domain value {v} is out of range 1..=9"
                 )));
             }
         }
@@ -260,40 +260,40 @@ mod tests {
 
     #[test]
     fn default_values_is_empty() {
-        assert_eq!(Fill::default(), Fill::new([]));
+        assert_eq!(Domain::default(), Domain::new([]));
     }
 
     #[test]
     fn new_contains_one_through_four() {
-        assert_eq!(Fill::new(1..=4), Fill::new([1, 2, 3, 4]));
+        assert_eq!(Domain::new(1..=4), Domain::new([1, 2, 3, 4]));
     }
 
     #[test]
     fn new_single_value() {
-        assert_eq!(Fill::new([1]), Fill::new([1]));
+        assert_eq!(Domain::new([1]), Domain::new([1]));
     }
 
     #[test]
     fn new_one_through_nine() {
-        assert_eq!(Fill::new(1..=9), Fill::full(9));
+        assert_eq!(Domain::new(1..=9), Domain::full(9));
     }
 
     #[test]
     fn full_contains_one_through_n() {
-        assert_eq!(Fill::full(4), Fill::new([1, 2, 3, 4]));
+        assert_eq!(Domain::full(4), Domain::new([1, 2, 3, 4]));
     }
 
     #[test]
     fn bitand_intersection() {
         assert_eq!(
-            Fill::new([1, 2, 3]) & Fill::new([2, 3, 4]),
-            Fill::new([2, 3])
+            Domain::new([1, 2, 3]) & Domain::new([2, 3, 4]),
+            Domain::new([2, 3])
         );
     }
 
     #[test]
     fn bitand_disjoint_is_empty() {
-        assert_eq!(Fill::new([1, 2]) & Fill::new([3, 4]), Fill::default());
+        assert_eq!(Domain::new([1, 2]) & Domain::new([3, 4]), Domain::default());
     }
 
     #[test]
@@ -303,58 +303,61 @@ mod tests {
 
     #[test]
     fn is_singleton_true_for_single_value() {
-        assert!(Fill::new([1]).is_singleton());
-        assert!(Fill::new([5]).is_singleton());
-        assert!(Fill::new([9]).is_singleton());
+        assert!(Domain::new([1]).is_singleton());
+        assert!(Domain::new([5]).is_singleton());
+        assert!(Domain::new([9]).is_singleton());
     }
 
     #[test]
     fn is_singleton_false_for_empty() {
-        assert!(!Fill::default().is_singleton());
+        assert!(!Domain::default().is_singleton());
     }
 
     #[test]
     fn is_singleton_false_for_multiple_values() {
-        assert!(!Fill::new([1, 2]).is_singleton());
-        assert!(!Fill::full(4).is_singleton());
+        assert!(!Domain::new([1, 2]).is_singleton());
+        assert!(!Domain::full(4).is_singleton());
     }
 
     #[test]
     fn is_empty_true_for_default() {
-        assert!(Fill::default().is_empty());
+        assert!(Domain::default().is_empty());
     }
 
     #[test]
     fn is_empty_false_for_non_empty() {
-        assert!(!Fill::new([1]).is_empty());
-        assert!(!Fill::full(9).is_empty());
+        assert!(!Domain::new([1]).is_empty());
+        assert!(!Domain::full(9).is_empty());
     }
 
     #[test]
     fn len_matches_number_of_values() {
-        assert_eq!(Fill::default().len(), 0);
-        assert_eq!(Fill::new([3]).len(), 1);
-        assert_eq!(Fill::new([1, 5, 9]).len(), 3);
-        assert_eq!(Fill::full(9).len(), 9);
+        assert_eq!(Domain::default().len(), 0);
+        assert_eq!(Domain::new([3]).len(), 1);
+        assert_eq!(Domain::new([1, 5, 9]).len(), 3);
+        assert_eq!(Domain::full(9).len(), 9);
     }
 
     #[test]
     fn bitor_union() {
-        assert_eq!(Fill::new([1, 2]) | Fill::new([2, 3]), Fill::new([1, 2, 3]));
+        assert_eq!(
+            Domain::new([1, 2]) | Domain::new([2, 3]),
+            Domain::new([1, 2, 3])
+        );
     }
 
     #[test]
     fn bitor_disjoint() {
         assert_eq!(
-            Fill::new([1, 2]) | Fill::new([3, 4]),
-            Fill::new([1, 2, 3, 4])
+            Domain::new([1, 2]) | Domain::new([3, 4]),
+            Domain::new([1, 2, 3, 4])
         );
     }
 
     #[test]
     fn from_iterator_collects_values() {
-        let v: Fill = [1u8, 2, 3].into_iter().collect();
-        assert_eq!(v, Fill::new([1, 2, 3]));
+        let v: Domain = [1u8, 2, 3].into_iter().collect();
+        assert_eq!(v, Domain::new([1, 2, 3]));
     }
 
     #[test]
@@ -461,24 +464,24 @@ mod tests {
 
     #[test]
     fn fill_round_trips_through_json() {
-        let fill = Fill::new([1, 3, 5]);
+        let fill = Domain::new([1, 3, 5]);
         let json = serde_json::to_string(&fill).unwrap();
         assert_eq!(json, "[1,3,5]");
-        let restored: Fill = serde_json::from_str(&json).unwrap();
+        let restored: Domain = serde_json::from_str(&json).unwrap();
         assert_eq!(fill, restored);
     }
 
     #[test]
     fn fill_empty_round_trips_through_json() {
-        let fill = Fill::default();
+        let fill = Domain::default();
         let json = serde_json::to_string(&fill).unwrap();
-        let restored: Fill = serde_json::from_str(&json).unwrap();
+        let restored: Domain = serde_json::from_str(&json).unwrap();
         assert_eq!(fill, restored);
     }
 
     #[test]
     fn fill_deserialize_rejects_out_of_range_values() {
-        assert!(serde_json::from_str::<Fill>("[0]").is_err());
-        assert!(serde_json::from_str::<Fill>("[10]").is_err());
+        assert!(serde_json::from_str::<Domain>("[0]").is_err());
+        assert!(serde_json::from_str::<Domain>("[10]").is_err());
     }
 }
