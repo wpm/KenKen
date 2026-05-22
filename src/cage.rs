@@ -209,6 +209,20 @@ mod tests {
     }
 
     #[test]
+    fn cage_with_target_above_value_max_yields_no_tuples() {
+        // A target above the per-cell value range makes the value conversion
+        // fail, so no tuples are produced.
+        for (p, op) in [
+            (singleton(), Operation::Given(300)),
+            (pair(), Operation::Subtract(300)),
+            (pair(), Operation::Divide(300)),
+            (pair(), Operation::Add(300)),
+        ] {
+            assert!(Cage::new(4, p, op).tuples().is_empty());
+        }
+    }
+
+    #[test]
     fn cage_serializes_to_polyomino_and_operation_without_n() {
         let cage = Cage::new(4, singleton(), Operation::Given(3));
         assert_eq!(
