@@ -2,7 +2,7 @@ use strum::EnumIter;
 
 use crate::types::M;
 
-/// An arithmetic operation required by a [`crate::constraints::cage::Cage`].
+/// An arithmetic operation required by a [`Cage`](crate::Cage).
 #[derive(
     Debug, Clone, Copy, Eq, PartialEq, Hash, PartialOrd, Ord, serde::Serialize, serde::Deserialize,
 )]

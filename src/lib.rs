@@ -6,31 +6,37 @@
 //! - Enumerate solutions with [`Puzzle::solve`].
 //! - Generate a random puzzle with [`Puzzle::generate`] (or [`Puzzle::generate_with`] for a custom
 //!   operation policy and cage-size distribution).
+//!
+//! Internally the solver is organized around standard constraint-satisfaction
+//! concepts: a `Variable` trait over grid cells, a `Store` of intrinsic domains,
+//! a derived viable-tuple `Cache`, `Constraint`s ([`Cage`] and `AllDifferent`)
+//! propagated to a fixed point, and a depth-first search.
 
 #![allow(clippy::must_use_candidate, clippy::return_self_not_must_use)]
 
-mod constraints;
+mod all_different;
+mod arithmetic;
+mod cache;
+mod cage;
+mod cage_slot;
+mod constraint;
+mod cover;
 mod generator;
-mod grid;
+mod operation;
+mod polyomino;
 mod puzzle;
 mod solver;
+mod store;
 mod types;
+mod variable;
 
-// Exploratory spike for issue #106 (CS-trait architecture). This branch
-// (`spike/cs-trait`) carries the spike as a reference artifact for comparison
-// against the parallel Pumpkin spike; it never merges to `main`.
-pub mod spike;
+#[cfg(test)]
+mod test_utils;
 
-pub(crate) use constraints::Cover;
-pub use constraints::{
-    cage::{
-        Cage, Tuple,
-        operation::{CageOption, Operation, Operator},
-    },
-    cage_slot::CageSlot,
-    polyomino::Polyomino,
-};
+pub use cage::{Cage, Tuple};
+pub use cage_slot::CageSlot;
 pub use generator::generate::SizeDistribution;
-pub(crate) use grid::Grid;
+pub use operation::{CageOption, Operation, Operator};
+pub use polyomino::Polyomino;
 pub use puzzle::Puzzle;
 pub use types::{Cell, Error, Fill};

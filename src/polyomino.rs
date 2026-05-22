@@ -2,17 +2,12 @@ use std::collections::{BTreeSet, HashMap};
 
 use crate::{
     Cell, Error, Operation, Operator,
-    constraints::{
-        Cover,
-        cage::{
-            Tuple,
-            arithmetic::{
-                addition_multisets, division_multisets, multiplication_multisets,
-                subtraction_multisets,
-            },
-            operation::CageOption,
-        },
+    arithmetic::{
+        addition_multisets, division_multisets, multiplication_multisets, subtraction_multisets,
     },
+    cage::Tuple,
+    cover::Cover,
+    operation::CageOption,
     types::{Index, M, N},
 };
 
@@ -488,7 +483,7 @@ impl<'de> serde::Deserialize<'de> for Polyomino {
 #[allow(clippy::unwrap_used)]
 mod tests {
     use super::*;
-    use crate::constraints::test_utils::{
+    use crate::test_utils::{
         c00, c01, c02, c10, c11, cells, col_pair, l_shape, pair, row3, singleton,
     };
 

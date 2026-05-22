@@ -1,5 +1,5 @@
 use crate::{
-    constraints::cage::Tuple,
+    cage::Tuple,
     types::{Error, M, N},
 };
 

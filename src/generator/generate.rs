@@ -6,8 +6,8 @@ use std::collections::HashSet;
 use rand::{Rng, RngExt};
 
 use crate::{
-    Cell, Polyomino,
-    constraints::cage::{Cage, operation::Operation},
+    Cell, Operation, Polyomino,
+    cage::Cage,
     generator::latin_square::generate_latin_square,
     puzzle::Puzzle,
     types::{Error, Index, M, N},
@@ -230,7 +230,7 @@ mod tests {
     use rand::SeedableRng;
 
     use super::*;
-    use crate::constraints::Cover;
+    use crate::cover::Cover;
 
     #[test]
     fn default_op_policy_one_cell_is_given() {

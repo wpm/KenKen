@@ -3,11 +3,7 @@ use std::{
     ops::{BitAnd, BitOr},
 };
 
-use crate::constraints::{
-    cage::{Cage, operation::Operation},
-    cage_slot::CageSlot,
-    polyomino::Polyomino,
-};
+use crate::{cage::Cage, cage_slot::CageSlot, operation::Operation, polyomino::Polyomino};
 
 /// Possible cell value: a number in the range `1..=9`.
 pub type N = u8;
@@ -432,7 +428,7 @@ mod tests {
 
     #[test]
     fn error_display_cage_and_region_variants() {
-        use crate::{Cage, CageSlot, Error, Operation, constraints::polyomino::Polyomino};
+        use crate::{Cage, CageSlot, Error, Operation, Polyomino};
         let p = Polyomino::from_cells(&[Cell::new(0, 0)]).unwrap();
         let cage = Cage::new(4, p.clone(), Operation::Given(1));
         assert!(

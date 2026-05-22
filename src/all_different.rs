@@ -1,82 +1,59 @@
-//! All-different constraints and their two interchangeable propagators.
+//! The all-different constraint, filtered to GAC by Régin's algorithm.
 //!
-//! The [`AllDifferentPropagator`] trait is the spike's most concrete
-//! demonstration that the trait layer does real work: it lets the production
-//! candidate ([`ReginAllDifferent`]) and the verification oracle
-//! ([`BruteForceAllDifferent`]) be swapped for property testing.
-//!
-//! Unlike the production `regin()` (which omits the free-value sink and so is
-//! only correct when values ≤ variables — see issue #30), [`ReginAllDifferent`]
-//! here implements **full Régin**: it additionally keeps every edge reachable
-//! from a free (unmatched) value, achieving true GAC even when values exceed
-//! variables. The property test below confirms parity with the brute-force
-//! oracle across that full regime.
+//! [`AllDifferent`] forces every cell in a row or column to take a distinct
+//! value. [`regin_gac`] is full Régin — maximum matching, SCC condensation, and
+//! free-value reachability — achieving generalized arc consistency even when the
+//! number of candidate values exceeds the number of variables. A property test
+//! cross-checks it against an exhaustive brute-force oracle.
 
 use std::collections::HashMap;
 
 use crate::{
-    Cell, Fill,
-    spike::{
-        constraint::{Constraint, Outcome, PropagationCtx},
-        store::Narrowed,
-        variable::Variable,
-    },
+    Cell, Error, Fill,
+    constraint::{Constraint, Outcome, PropagationCtx},
+    cover::Cover,
+    store::Narrowed,
     types::N,
+    variable::Variable,
 };
 
-/// A swappable all-different filtering algorithm: given one domain per variable,
-/// return the GAC-pruned domains in the same order.
-pub trait AllDifferentPropagator {
-    fn prune(&self, domains: &[Fill]) -> Vec<Fill>;
-}
-
-/// Full Régin (matching + SCC + free-value reachability). The production candidate.
-pub struct ReginAllDifferent;
-
-/// Enumerate-and-project oracle: GAC by definition, tractable only on small
-/// instances.
-pub struct BruteForceAllDifferent;
-
-impl AllDifferentPropagator for ReginAllDifferent {
-    fn prune(&self, domains: &[Fill]) -> Vec<Fill> {
-        regin_gac(domains)
-    }
-}
-
-impl AllDifferentPropagator for BruteForceAllDifferent {
-    fn prune(&self, domains: &[Fill]) -> Vec<Fill> {
-        brute_force_gac(domains)
-    }
-}
-
-/// An all-different constraint over a fixed set of cells (a row or a column).
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct AllDiffDef {
+/// A constraint that ensures every cell in a row or column contains a different
+/// value.
+#[derive(Debug, Clone, Eq, PartialEq)]
+pub struct AllDifferent {
     cells: Vec<Cell>,
 }
 
-impl AllDiffDef {
-    pub fn row(n: usize, row: usize) -> Self {
-        Self {
-            cells: (0..n).map(|column| Cell::new(row, column)).collect(),
+impl AllDifferent {
+    /// A row of cells on an `n`×`n` grid that must all differ.
+    ///
+    /// # Errors
+    /// Returns [`Error::IndexOutOfRange`] if `index` is not less than `n`.
+    pub fn row(n: usize, index: usize) -> Result<Self, Error> {
+        if index >= n {
+            return Err(Error::IndexOutOfRange(index, n));
         }
+        let cells = (0..n).map(|column| Cell::new(index, column)).collect();
+        Ok(Self { cells })
     }
 
-    pub fn column(n: usize, column: usize) -> Self {
-        Self {
-            cells: (0..n).map(|row| Cell::new(row, column)).collect(),
+    /// A column of cells on an `n`×`n` grid that must all differ.
+    ///
+    /// # Errors
+    /// Returns [`Error::IndexOutOfRange`] if `index` is not less than `n`.
+    pub fn column(n: usize, index: usize) -> Result<Self, Error> {
+        if index >= n {
+            return Err(Error::IndexOutOfRange(index, n));
         }
+        let cells = (0..n).map(|row| Cell::new(row, index)).collect();
+        Ok(Self { cells })
     }
 }
 
-impl Constraint<Cell> for AllDiffDef {
-    fn variables(&self) -> &[Cell] {
-        &self.cells
-    }
-
+impl Constraint<Cell> for AllDifferent {
     fn propagate(&self, ctx: &mut PropagationCtx<Cell>) -> Outcome {
         let domains: Vec<Fill> = self.cells.iter().map(|c| ctx.store.get(c.id())).collect();
-        let pruned = ReginAllDifferent.prune(&domains);
+        let pruned = regin_gac(&domains);
         let mut outcome = Outcome::Unchanged;
         for (cell, domain) in self.cells.iter().zip(pruned) {
             match ctx.store.intersect(cell.id(), domain) {
@@ -89,32 +66,16 @@ impl Constraint<Cell> for AllDiffDef {
     }
 }
 
-/// Brute-force GAC: a value is kept for a variable iff some complete assignment
-/// of distinct values (one per variable, each within its domain) uses it.
-fn brute_force_gac(domains: &[Fill]) -> Vec<Fill> {
-    let mut support = vec![Fill::default(); domains.len()];
-    let mut current = vec![0u8; domains.len()];
-    extend(0, domains, 0u16, &mut current, &mut support);
-    support
-}
-
-fn extend(i: usize, domains: &[Fill], used: u16, current: &mut [N], support: &mut [Fill]) {
-    if i == domains.len() {
-        for (slot, &value) in support.iter_mut().zip(current.iter()) {
-            *slot = *slot | Fill::new([value]);
-        }
-        return;
-    }
-    for value in domains[i].iter() {
-        let bit = 1u16 << value;
-        if used & bit == 0 {
-            current[i] = value;
-            extend(i + 1, domains, used | bit, current, support);
-        }
+impl Cover for AllDifferent {
+    fn cells(&self) -> impl Iterator<Item = Cell> {
+        self.cells.iter().copied()
     }
 }
 
-/// Full Régin GAC for all-different.
+/// Full Régin GAC for all-different: given one domain per variable, returns the
+/// pruned domains in the same order. A value survives for a variable iff some
+/// assignment of distinct values (one per variable, each within its domain) uses
+/// it; if no such complete assignment exists every domain empties.
 #[allow(clippy::similar_names)]
 fn regin_gac(domains: &[Fill]) -> Vec<Fill> {
     let n = domains.len();
@@ -160,9 +121,8 @@ fn regin_gac(domains: &[Fill]) -> Vec<Fill> {
     }
 
     // Residual digraph. Node layout: variables 0..n, values n..n+num_values.
-    // Orientation: matched edges var → val, unmatched edges val → var. (The full
-    // reverse of the production orientation, chosen so a directed walk from a
-    // free value is exactly an alternating path from it.)
+    // Orientation: matched edges var → val, unmatched edges val → var, so a
+    // directed walk from a free value is exactly an alternating path from it.
     let total = n + num_values;
     let mut adj: Vec<Vec<usize>> = vec![vec![]; total];
     for var in 0..n {
@@ -179,8 +139,8 @@ fn regin_gac(domains: &[Fill]) -> Vec<Fill> {
     let scc = kosaraju_scc(&adj, total);
 
     // Mark every node reachable from a free (unmatched) value. An unmatched edge
-    // (var, val) lies on an alternating path from a free value iff its value
-    // node is reachable here — this is the step the production regin() omits.
+    // (var, val) lies on an alternating path from a free value iff its value node
+    // is reachable here — the step an SCC-only filter omits.
     let mut reachable = vec![false; total];
     let mut stack: Vec<usize> = (0..num_values)
         .filter(|&vi| val_match[vi].is_none())
@@ -198,8 +158,8 @@ fn regin_gac(domains: &[Fill]) -> Vec<Fill> {
         }
     }
 
-    // Keep edge (var, val) iff it is matched, lies in an alternating cycle
-    // (same SCC), or lies on an alternating path from a free value.
+    // Keep edge (var, val) iff matched, in an alternating cycle (same SCC), or on
+    // an alternating path from a free value.
     let mut result = vec![Fill::default(); n];
     for var in 0..n {
         let matched = var_match[var];
@@ -212,7 +172,6 @@ fn regin_gac(domains: &[Fill]) -> Vec<Fill> {
     result
 }
 
-/// Tries to find an augmenting path from `var`; extends the matching if found.
 #[allow(clippy::similar_names)]
 fn augment(
     var: usize,
@@ -237,7 +196,6 @@ fn augment(
     false
 }
 
-/// Kosaraju's SCC labelling: two nodes share a label iff they are in the same SCC.
 fn kosaraju_scc(adj: &[Vec<usize>], n: usize) -> Vec<usize> {
     let mut visited = vec![false; n];
     let mut finish_order: Vec<usize> = Vec::with_capacity(n);
@@ -306,6 +264,114 @@ mod tests {
     use rand_chacha::ChaCha8Rng;
 
     use super::*;
+    use crate::{cache::Cache, store::Store};
+
+    fn row_4() -> AllDifferent {
+        AllDifferent::row(4, 2).unwrap()
+    }
+
+    fn column_3() -> AllDifferent {
+        AllDifferent::column(3, 1).unwrap()
+    }
+
+    fn assert_index_out_of_range(f: impl Fn(usize, usize) -> Result<AllDifferent, Error>) {
+        assert!(f(0, 0).is_err());
+        assert!(matches!(f(3, 3), Err(Error::IndexOutOfRange(3, 3))));
+        assert!(matches!(f(3, 5), Err(Error::IndexOutOfRange(5, 3))));
+    }
+
+    #[test]
+    fn row_contains_correct_cells() {
+        itertools::assert_equal(
+            row_4().cells(),
+            [
+                Cell::new(2, 0),
+                Cell::new(2, 1),
+                Cell::new(2, 2),
+                Cell::new(2, 3),
+            ],
+        );
+    }
+
+    #[test]
+    fn row_index_out_of_range_returns_err() {
+        assert_index_out_of_range(AllDifferent::row);
+    }
+
+    #[test]
+    fn column_contains_correct_cells() {
+        itertools::assert_equal(
+            column_3().cells(),
+            [Cell::new(0, 1), Cell::new(1, 1), Cell::new(2, 1)],
+        );
+    }
+
+    #[test]
+    fn column_index_out_of_range_returns_err() {
+        assert_index_out_of_range(AllDifferent::column);
+    }
+
+    #[test]
+    fn len_equals_n() {
+        assert_eq!(row_4().len(), 4);
+        assert_eq!(column_3().len(), 3);
+    }
+
+    #[test]
+    fn is_empty_is_false_for_nonempty_constraint() {
+        assert!(!row_4().is_empty());
+        assert!(!column_3().is_empty());
+    }
+
+    #[test]
+    fn propagate_prunes_and_can_contradict() {
+        let mut store = Store::full(2);
+        store.set(Cell::new(0, 0).id(), Fill::new([1]));
+        store.set(Cell::new(0, 1).id(), Fill::new([1]));
+        let mut cache = Cache::default();
+        let mut ctx = PropagationCtx::new(&mut store, &mut cache);
+        assert_eq!(
+            AllDifferent::row(2, 0).unwrap().propagate(&mut ctx),
+            Outcome::Contradiction
+        );
+    }
+
+    #[test]
+    fn propagate_unchanged_when_already_consistent() {
+        let mut store = Store::full(4);
+        let mut cache = Cache::default();
+        let mut ctx = PropagationCtx::new(&mut store, &mut cache);
+        assert_eq!(
+            AllDifferent::row(4, 0).unwrap().propagate(&mut ctx),
+            Outcome::Unchanged
+        );
+    }
+
+    // --- Régin vs the brute-force oracle ---
+
+    /// Exhaustive GAC oracle: a value is kept for a variable iff some complete
+    /// assignment of distinct in-domain values uses it.
+    fn brute_force_gac(domains: &[Fill]) -> Vec<Fill> {
+        fn extend(i: usize, domains: &[Fill], used: u16, current: &mut [N], support: &mut [Fill]) {
+            if i == domains.len() {
+                for (slot, &value) in support.iter_mut().zip(current.iter()) {
+                    *slot = *slot | Fill::new([value]);
+                }
+                return;
+            }
+            for value in domains[i].iter() {
+                let bit = 1u16 << value;
+                if used & bit == 0 {
+                    current[i] = value;
+                    extend(i + 1, domains, used | bit, current, support);
+                }
+            }
+        }
+        let mut support = vec![Fill::default(); domains.len()];
+        let mut current = vec![0u8; domains.len()];
+        extend(0, domains, 0u16, &mut current, &mut support);
+        support
+    }
 
     fn sorted(fills: &[Fill]) -> Vec<Vec<N>> {
         fills.iter().map(|f| f.iter().collect()).collect()
@@ -318,7 +384,6 @@ mod tests {
 
     #[test]
     fn regin_prunes_forced_chain() {
-        // Var0:{1,2}, Var1:{2}, Var2:{1,3} → 0=1, 1=2, 2=3.
         let domains = vec![Fill::new([1, 2]), Fill::new([2]), Fill::new([1, 3])];
         assert_eq!(
             sorted(&regin_gac(&domains)),
@@ -328,17 +393,14 @@ mod tests {
 
     #[test]
     fn regin_infeasible_empties_all() {
-        // Two variables, one shared value: no distinct assignment exists.
         let domains = vec![Fill::new([1]), Fill::new([1])];
         assert_eq!(regin_gac(&domains), vec![Fill::default(), Fill::default()]);
     }
 
     #[test]
-    fn regin_free_value_kept_full_regin() {
-        // One variable, two candidate values. Both belong to some assignment, so
-        // full Régin keeps both. The production regin() would wrongly prune one.
-        let domains = vec![Fill::new([1, 2])];
-        assert_eq!(sorted(&regin_gac(&domains)), vec![vec![1, 2]]);
+    fn regin_keeps_free_value() {
+        // One variable, two candidates: full Régin keeps both.
+        assert_eq!(sorted(&regin_gac(&[Fill::new([1, 2])])), vec![vec![1, 2]]);
     }
 
     #[test]
@@ -347,10 +409,6 @@ mod tests {
         assert_eq!(
             sorted(&brute_force_gac(&[Fill::new([1, 2]), Fill::new([2])])),
             vec![vec![1], vec![2]]
-        );
-        assert_eq!(
-            brute_force_gac(&[Fill::new([1]), Fill::new([1])]),
-            vec![Fill::default(), Fill::default()]
         );
     }
 
@@ -374,18 +432,13 @@ mod tests {
             .collect()
     }
 
-    /// The pre-registered correctness-parity property test (issue #106): across
-    /// a few thousand random small instances spanning the full ≤8-variable /
-    /// ≤8-value regime (including value > variable, where the production
-    /// `regin()` is wrong), full Régin must agree with the brute-force GAC oracle.
+    /// Across thousands of random instances spanning the full ≤8-variable /
+    /// ≤8-value regime (including value > variable), full Régin must agree with
+    /// the brute-force GAC oracle.
     #[test]
     fn regin_matches_brute_force_oracle() {
         let mut rng = ChaCha8Rng::seed_from_u64(0x5151_2026);
         let mut saw_free_value_case = false;
-        // Swap the two impls through the trait — the carve-out the trait layer
-        // exists to enable.
-        let regin = ReginAllDifferent;
-        let oracle = BruteForceAllDifferent;
         for _ in 0..5000 {
             let domains = random_domains(&mut rng, 8, 8);
             let values: Fill = domains.iter().fold(Fill::default(), |acc, d| acc | *d);
@@ -393,13 +446,11 @@ mod tests {
                 saw_free_value_case = true;
             }
             assert_eq!(
-                regin.prune(&domains),
-                oracle.prune(&domains),
+                regin_gac(&domains),
+                brute_force_gac(&domains),
                 "Régin and brute force disagree on {domains:?}"
             );
         }
-        // Confirm the distribution actually exercised the free-value regime that
-        // distinguishes full Régin from the production implementation.
         assert!(saw_free_value_case);
     }
 }

@@ -1,11 +1,14 @@
 //! The **store**: intrinsic variable domains, keyed by [`VarId`].
 //!
 //! This is the canonical state — "the puzzle at this moment." It is what gets
-//! snapshotted (cloning is a single boxed-slice copy, cheap enough for the
-//! eventual search-tree DAG) and what the cache's keys project over. Anything
-//! that can be recomputed from the store is *cache*, not store.
+//! snapshotted (cloning is a single boxed-slice copy, cheap enough for a
+//! search-tree node) and what the cache's keys project over. Anything that can
+//! be recomputed from the store is *cache*, not store.
 
-use crate::{Cell, Fill, spike::variable::VarId};
+use crate::{
+    Cell, Fill,
+    variable::{VarId, Variable},
+};
 
 /// A variable's domain: the set of values it can still take.
 pub type Domain = Fill;
@@ -59,8 +62,8 @@ impl Store {
         }
     }
 
-    /// Intersects the domain of `id` with `domain`, reporting whether it
-    /// changed or emptied. An out-of-range id is a no-op ([`Narrowed::Unchanged`]).
+    /// Intersects the domain of `id` with `domain`, reporting whether it changed
+    /// or emptied. An out-of-range id is a no-op ([`Narrowed::Unchanged`]).
     pub fn intersect(&mut self, id: VarId, domain: Domain) -> Narrowed {
         let Some(i) = self.index(id.0) else {
             return Narrowed::Unchanged;
@@ -89,9 +92,9 @@ impl Store {
         (0..n).flat_map(move |row| (0..n).map(move |column| Cell::new(row, column)))
     }
 
-    /// Every domain is a singleton — the store represents a full assignment.
-    pub fn is_solved(&self) -> bool {
-        self.domains.iter().all(|d| d.is_singleton())
+    /// Each cell paired with its current domain, in row-major order.
+    pub fn candidates(&self) -> impl Iterator<Item = (Cell, Domain)> + '_ {
+        self.cells().map(|cell| (cell, self.get(cell.id())))
     }
 
     /// Some domain is empty — the store is contradictory.
@@ -104,7 +107,6 @@ impl Store {
 #[allow(clippy::unwrap_used)]
 mod tests {
     use super::*;
-    use crate::spike::variable::Variable;
 
     fn vid(row: usize, column: usize) -> VarId {
         Cell::new(row, column).id()
@@ -116,6 +118,7 @@ mod tests {
         assert_eq!(store.n(), 4);
         assert_eq!(store.get(vid(0, 0)), Fill::full(4));
         assert_eq!(store.cells().count(), 16);
+        assert_eq!(store.candidates().count(), 16);
     }
 
     #[test]
@@ -166,16 +169,10 @@ mod tests {
     }
 
     #[test]
-    fn is_solved_only_when_all_singletons() {
-        let store = Store::full(1);
-        assert!(store.is_solved());
-        let mut store4 = Store::full(4);
-        assert!(!store4.is_solved());
-        for row in 0..4 {
-            for column in 0..4 {
-                store4.set(Cell::new(row, column).id(), Fill::new([1]));
-            }
-        }
-        assert!(store4.is_solved());
+    fn is_invalid_detects_empty_domain() {
+        let mut store = Store::full(2);
+        assert!(!store.is_invalid());
+        store.set(Cell::new(0, 0).id(), Fill::default());
+        assert!(store.is_invalid());
     }
 }

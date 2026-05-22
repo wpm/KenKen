@@ -1,6 +1,6 @@
 use std::cmp::Ordering;
 
-use crate::{Cage, Cell, Operation, Polyomino, constraints::Cover, types::N};
+use crate::{Cage, Cell, Operation, Polyomino, cover::Cover, types::N};
 
 /// A slot in a puzzle: either a claimed [`Polyomino`] region with no operation
 /// yet (`Region`), or a fully specified [`Cage`].
@@ -113,7 +113,7 @@ impl<'de> serde::Deserialize<'de> for CageSlot {
 #[allow(clippy::unwrap_used)]
 mod tests {
     use super::*;
-    use crate::constraints::test_utils::{pair, singleton};
+    use crate::test_utils::{pair, singleton};
 
     // --- Accessors ---
 
