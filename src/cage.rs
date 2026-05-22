@@ -25,19 +25,16 @@ pub struct Cage {
     polyomino: Polyomino,
     operation: Operation,
     n: N,
-    cells: Vec<Cell>,
 }
 
 impl Cage {
     /// Creates a cage over `polyomino` whose cells must satisfy `operation` on an
     /// `n`×`n` grid.
-    pub fn new(n: N, polyomino: Polyomino, operation: Operation) -> Self {
-        let cells = polyomino.cells().collect();
+    pub const fn new(n: N, polyomino: Polyomino, operation: Operation) -> Self {
         Self {
             polyomino,
             operation,
             n,
-            cells,
         }
     }
 
@@ -53,13 +50,13 @@ impl Cage {
 
     /// Iterates this cage's cells in row-major order.
     pub fn cells(&self) -> impl Iterator<Item = Cell> + '_ {
-        self.cells.iter().copied()
+        self.polyomino.cells()
     }
 
     /// Returns the number of cells in this cage. Always at least 1.
     #[allow(clippy::len_without_is_empty)]
-    pub const fn len(&self) -> usize {
-        self.cells.len()
+    pub fn len(&self) -> usize {
+        self.polyomino.len()
     }
 
     /// Returns this cage's operation.
@@ -82,7 +79,7 @@ impl Constraint<Cell> for Cage {
     fn propagate(&self, ctx: &mut PropagationCtx<Cell>) -> Outcome {
         let unions = {
             let viable = viable_tuples(self, ctx.store, ctx.cache);
-            let mut unions = vec![Fill::default(); self.cells.len()];
+            let mut unions = vec![Fill::default(); self.len()];
             for tuple in viable {
                 for (slot, &value) in unions.iter_mut().zip(tuple) {
                     *slot = *slot | Fill::new([value]);
@@ -91,7 +88,7 @@ impl Constraint<Cell> for Cage {
             unions
         };
         let mut outcome = Outcome::Unchanged;
-        for (cell, union) in self.cells.iter().zip(unions) {
+        for (cell, union) in self.cells().zip(unions) {
             match ctx.store.intersect(cell.id(), union) {
                 Narrowed::Empty => return Outcome::Contradiction,
                 Narrowed::Changed => outcome = Outcome::Changed,
