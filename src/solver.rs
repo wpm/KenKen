@@ -61,7 +61,7 @@ impl<C: Constraint<Cell>> Iterator for Search<C> {
     }
 }
 
-/// The unsolved cell with the fewest candidates, breaking ties by row-major cell
+/// The unsolved cell with the smallest domain, breaking ties by row-major cell
 /// order. `None` when every cell is a singleton.
 fn most_constrained(store: &Store) -> Option<Cell> {
     store
@@ -89,7 +89,7 @@ mod tests {
     }
 
     #[test]
-    fn most_constrained_picks_fewest_candidates() {
+    fn most_constrained_picks_smallest_domain() {
         let mut store = Store::full(4);
         store.set(Cell::new(0, 0).id(), Domain::new([1, 2, 3]));
         store.set(Cell::new(2, 2).id(), Domain::new([1, 2]));

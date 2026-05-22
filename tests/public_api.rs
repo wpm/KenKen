@@ -216,13 +216,13 @@ mod test {
     }
 
     #[test]
-    fn candidates_exposes_cell_fill_pairs_via_public_api() {
+    fn domains_exposes_cell_domain_pairs_via_public_api() {
         // Given(2) at (0,0) pins that cell to {2}; the remaining cells in row 0
         // and column 0 narrow to {1, 3, 4} via AllDifferent.
         let puzzle = Puzzle::with_cages(4, &[cage(4, &[(0, 0)], Operation::Given(2))])
             .unwrap()
             .unwrap();
-        let pairs: Vec<(Cell, Domain)> = puzzle.candidates().collect();
+        let pairs: Vec<(Cell, Domain)> = puzzle.domains().collect();
         assert_eq!(pairs.len(), 16);
         let pinned = pairs
             .iter()
@@ -256,11 +256,7 @@ mod test {
         assert_eq!(widened.cages().count(), 0);
         assert_eq!(widened.regions().count(), 1);
         assert_eq!(
-            widened
-                .candidates()
-                .find(|(c, _)| *c == cell(0, 0))
-                .unwrap()
-                .1,
+            widened.domains().find(|(c, _)| *c == cell(0, 0)).unwrap().1,
             Domain::full(4)
         );
     }
@@ -342,11 +338,7 @@ mod test {
             .remove_region(&p)
             .unwrap();
         assert_eq!(
-            puzzle
-                .candidates()
-                .find(|(c, _)| *c == cell(0, 0))
-                .unwrap()
-                .1,
+            puzzle.domains().find(|(c, _)| *c == cell(0, 0)).unwrap().1,
             Domain::full(4)
         );
     }

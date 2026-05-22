@@ -408,7 +408,7 @@ mod tests {
 
     #[test]
     fn regin_keeps_free_value() {
-        // One variable, two candidates: full Régin keeps both.
+        // One variable, two domain values: full Régin keeps both.
         assert_eq!(sorted(&regin_gac(&[Domain::new([1, 2])])), vec![vec![1, 2]]);
     }
 

@@ -318,9 +318,9 @@ impl Puzzle {
         self.slots.iter()
     }
 
-    /// Each cell paired with its current candidate [`Domain`], in row-major order.
-    pub fn candidates(&self) -> impl Iterator<Item = (Cell, Domain)> + '_ {
-        self.store.candidates()
+    /// Each cell paired with its current [`Domain`], in row-major order.
+    pub fn domains(&self) -> impl Iterator<Item = (Cell, Domain)> + '_ {
+        self.store.domains()
     }
 
     /// Enumerates the puzzle's solutions via depth-first backtracking search.
@@ -478,7 +478,7 @@ mod tests {
     fn new_valid_size_succeeds_with_full_cells() {
         let puzzle = Puzzle::new(3).unwrap();
         assert_eq!(puzzle.n(), 3);
-        assert!(puzzle.candidates().all(|(_, f)| f == Domain::full(3)));
+        assert!(puzzle.domains().all(|(_, f)| f == Domain::full(3)));
         assert_eq!(puzzle.cells().count(), 9);
     }
 
@@ -796,13 +796,13 @@ mod tests {
     }
 
     #[test]
-    fn candidates_are_row_major_and_reflect_pins() {
+    fn domains_are_row_major_and_reflect_pins() {
         let puzzle = puzzle_4().insert(singleton_cage()).unwrap().unwrap();
-        let cells: Vec<Cell> = puzzle.candidates().map(|(c, _)| c).collect();
+        let cells: Vec<Cell> = puzzle.domains().map(|(c, _)| c).collect();
         assert_eq!(cells.first(), Some(&Cell::new(0, 0)));
         assert_eq!(cells.len(), 16);
         let pinned = puzzle
-            .candidates()
+            .domains()
             .find(|(c, _)| *c == Cell::new(0, 0))
             .unwrap()
             .1;

@@ -90,7 +90,7 @@ impl Store {
     }
 
     /// Each cell paired with its current domain, in row-major order.
-    pub fn candidates(&self) -> impl Iterator<Item = (Cell, Domain)> + '_ {
+    pub fn domains(&self) -> impl Iterator<Item = (Cell, Domain)> + '_ {
         self.cells().map(|cell| (cell, self.get(cell.id())))
     }
 
@@ -115,7 +115,7 @@ mod tests {
         assert_eq!(store.n(), 4);
         assert_eq!(store.get(vid(0, 0)), Domain::full(4));
         assert_eq!(store.cells().count(), 16);
-        assert_eq!(store.candidates().count(), 16);
+        assert_eq!(store.domains().count(), 16);
     }
 
     #[test]
