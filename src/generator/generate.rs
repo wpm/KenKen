@@ -109,7 +109,7 @@ pub fn default_op_policy(values: &[N], n: Index) -> Result<Operation, Error> {
     }
 }
 
-/// Generates a random `n`×`n` puzzle using [`default_op_policy`] and
+/// Generates a random `n`×`n` puzzle using the default operation policy and
 /// [`SizeDistribution::default_for`].
 ///
 /// # Errors

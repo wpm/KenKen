@@ -7,7 +7,7 @@
 //! - Generate a random puzzle with [`Puzzle::generate`] (or [`Puzzle::generate_with`] for a custom
 //!   operation policy and cage-size distribution).
 //!
-//! Internally the solver is organized around standard constraint-satisfaction
+//! Internally, the solver is organized around standard constraint-satisfaction
 //! concepts: a `Variable` trait over grid cells, a `Store` of intrinsic domains,
 //! a derived viable-tuple `Cache`, `Constraint`s ([`Cage`] and `AllDifferent`)
 //! propagated to a fixed point, and a depth-first search.
@@ -35,7 +35,7 @@ mod test_utils;
 
 pub use cage::{Cage, Tuple};
 pub use cage_slot::CageSlot;
-pub use generator::generate::SizeDistribution;
+pub use generator::generate::{SizeDistribution, generate};
 pub use operation::{CageOption, Operation, Operator};
 pub use polyomino::Polyomino;
 pub use puzzle::Puzzle;
