@@ -5,10 +5,7 @@
 //! eventual search-tree DAG) and what the cache's keys project over. Anything
 //! that can be recomputed from the store is *cache*, not store.
 
-use crate::{
-    Cell, Fill,
-    spike::variable::{VarId, Variable},
-};
+use crate::{Cell, Fill, spike::variable::VarId};
 
 /// A variable's domain: the set of values it can still take.
 pub type Domain = Fill;
@@ -107,6 +104,7 @@ impl Store {
 #[allow(clippy::unwrap_used)]
 mod tests {
     use super::*;
+    use crate::spike::variable::Variable;
 
     fn vid(row: usize, column: usize) -> VarId {
         Cell::new(row, column).id()

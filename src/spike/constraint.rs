@@ -29,7 +29,7 @@ pub struct PropagationCtx<'a, V: Variable> {
 }
 
 impl<'a, V: Variable> PropagationCtx<'a, V> {
-    pub fn new(store: &'a mut Store, cache: &'a mut Cache) -> Self {
+    pub const fn new(store: &'a mut Store, cache: &'a mut Cache) -> Self {
         Self {
             store,
             cache,

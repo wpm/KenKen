@@ -3,7 +3,7 @@
 //! **Throwaway, exploratory code.** This module reorganizes one end-to-end
 //! slice of the KenKen solver around standard constraint-satisfaction
 //! nomenclature ([`Variable`](variable::Variable),
-//! [`Constraint`](constraint::Constraint), [`Solver`](solver::Solver)) layered
+//! [`Constraint`], [`Solver`](solver::Solver)) layered
 //! over the existing domain types (`Cell`, `Polyomino`, `Operation`, `Fill`).
 //! Its purpose is to be a concrete comparison partner to the parallel Pumpkin
 //! spike — not to ship.
@@ -20,15 +20,18 @@
 // deliberate — it mirrors the standard nomenclature the spike is exploring.
 #![allow(clippy::module_name_repetitions)]
 
-mod all_different;
-mod cache;
-mod cage;
-mod constraint;
+pub mod all_different;
+pub mod cache;
+pub mod cage;
+pub mod constraint;
+pub mod problem;
+pub mod solver;
+pub mod store;
+pub mod variable;
+// Test data only: it builds the shared instance with the production generator
+// and a seeded (dev-only) RNG, so it compiles under test like the test modules.
+#[cfg(test)]
 mod fixtures;
-mod problem;
-mod solver;
-mod store;
-mod variable;
 
 #[cfg(test)]
 mod tests;

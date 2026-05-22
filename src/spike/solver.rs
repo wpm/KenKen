@@ -26,7 +26,7 @@ pub struct SolveResult<V: Variable> {
 }
 
 impl<V: Variable> SolveResult<V> {
-    fn new(solutions: Vec<Store>) -> Self {
+    const fn new(solutions: Vec<Store>) -> Self {
         Self {
             solutions,
             marker: PhantomData,
@@ -38,11 +38,12 @@ impl<V: Variable> SolveResult<V> {
     }
 }
 
-/// Plain depth-first backtracking: propagate to a fixed point at each node,
-/// prune on contradiction, branch on the most-constrained unsolved cell. No
-/// restarts, heuristics, or conflict learning — just enough to solve the test
-/// instance. The cache is shared across the whole search (global memoization of
-/// viable tuples).
+/// Plain depth-first backtracking.
+///
+/// Propagate to a fixed point at each node, prune on contradiction, branch on
+/// the most-constrained unsolved cell. No restarts, heuristics, or conflict
+/// learning — just enough to solve the test instance. The cache is shared across
+/// the whole search (global memoization of viable tuples).
 #[derive(Default)]
 pub struct BacktrackSolver {
     cache: Cache,

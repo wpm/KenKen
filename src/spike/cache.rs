@@ -3,7 +3,7 @@
 //! [`viable_tuples`] is a **pure function** of `(cage, projected domains)`. The
 //! cache exists for performance only and is never the source of truth:
 //!
-//! - Each entry memoizes the pure computation [`compute_viable_tuples`].
+//! - Each entry memoizes the pure computation `compute_viable_tuples`.
 //! - The key projects onto only the cage's cells' current domains, so an entry is reusable across
 //!   different stores that agree on that subset (and so naturally shared across search-tree nodes
 //!   that agree there).
@@ -72,7 +72,7 @@ fn compute_viable_tuples(cage: &CageDef, store: &Store) -> TupleSet {
 ///
 /// Pure: for the same cage and the same store contents over the cage's cells it
 /// always returns the same set. The cache is a transparent memo of
-/// [`compute_viable_tuples`].
+/// `compute_viable_tuples`.
 pub fn viable_tuples<'c>(cage: &CageDef, store: &Store, cache: &'c mut Cache) -> &'c TupleSet {
     let key = TupleKey {
         cage: cage.clone(),

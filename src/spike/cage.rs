@@ -3,7 +3,7 @@
 //! [`CageDef`] is the structural fix for the historical `Cage.tuples` smell: it
 //! describes the constraint (cells, operation, grid size) and **nothing more**.
 //! It carries no mutable tuple state. Viable tuples are obtained exclusively
-//! through the pure, memoized [`viable_tuples`](crate::spike::cache::viable_tuples).
+//! through the pure, memoized [`viable_tuples`].
 
 use crate::{
     Cell, Fill, Operation, Polyomino, Tuple,
@@ -47,7 +47,7 @@ impl CageDef {
 
     /// All ordered tuples that satisfy the operation, *before* any
     /// store-dependent pruning. A pure function of the cage definition; reused
-    /// by [`viable_tuples`](crate::spike::cache::viable_tuples).
+    /// by [`viable_tuples`].
     pub fn static_tuples(&self) -> Vec<Tuple> {
         self.polyomino.valid_tuples(self.n, self.operation)
     }

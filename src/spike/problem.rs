@@ -23,7 +23,7 @@ pub struct Problem<V: Variable, C: Constraint<V>> {
 }
 
 impl<V: Variable, C: Constraint<V>> Problem<V, C> {
-    pub fn new(initial_store: Store, constraints: Vec<C>) -> Self {
+    pub const fn new(initial_store: Store, constraints: Vec<C>) -> Self {
         Self {
             initial_store,
             constraints,
@@ -51,7 +51,7 @@ pub struct PartialPuzzle {
 }
 
 impl PartialPuzzle {
-    pub fn new(n: usize) -> Self {
+    pub const fn new(n: usize) -> Self {
         Self {
             n,
             cages: vec![],

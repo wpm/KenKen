@@ -16,12 +16,10 @@ mod puzzle;
 mod solver;
 mod types;
 
-// Throwaway exploratory spike for issue #106 (CS-trait architecture). Gated to
-// test builds: it is compiled, linted (`clippy --all-targets`), and covered
-// under test, but never enters the production crate's public API. Nothing here
-// is meant to ship; it exists to be compared against the parallel Pumpkin spike.
-#[cfg(test)]
-mod spike;
+// Exploratory spike for issue #106 (CS-trait architecture). This branch
+// (`spike/cs-trait`) carries the spike as a reference artifact for comparison
+// against the parallel Pumpkin spike; it never merges to `main`.
+pub mod spike;
 
 pub(crate) use constraints::Cover;
 pub use constraints::{
