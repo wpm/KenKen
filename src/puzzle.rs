@@ -15,7 +15,7 @@ use crate::{
     },
     Operation, Polyomino, Slot,
     all_different::AllDifferent,
-    cache::Cache,
+    cache::{Cache, viable_tuples},
     constraint::{Constraint, Outcome, PropagationCtx, propagate_to_fixpoint},
     cover::Cover,
     generator::generate::{SizeDistribution, default_op_policy, generate, generate_with},
@@ -59,6 +59,7 @@ pub struct Puzzle {
     store: Store,
     all_different: Vec<AllDifferent>,
     slots: BTreeSet<Slot>,
+    cache: Cache,
 }
 
 /// The row and column all-different constraints of an `n`×`n` grid.
@@ -82,6 +83,7 @@ impl Puzzle {
             store: Store::full(n),
             all_different: all_different_constraints(n)?,
             slots: BTreeSet::new(),
+            cache: Cache::default(),
         })
     }
 
@@ -125,6 +127,7 @@ impl Puzzle {
             store: Store::full(n),
             all_different: all_different_constraints(n)?,
             slots: slots.iter().cloned().collect(),
+            cache: Cache::default(),
         }
         .propagate())
     }
@@ -160,6 +163,7 @@ impl Puzzle {
             store: self.store.clone(),
             all_different: self.all_different.clone(),
             slots,
+            cache: self.cache.clone(),
         }
         .propagate())
     }
@@ -210,6 +214,7 @@ impl Puzzle {
             store: self.store.clone(),
             all_different: self.all_different.clone(),
             slots,
+            cache: self.cache.clone(),
         })
     }
 
@@ -232,6 +237,7 @@ impl Puzzle {
             store: self.store.clone(),
             all_different: self.all_different.clone(),
             slots,
+            cache: self.cache.clone(),
         })
     }
 
@@ -267,6 +273,7 @@ impl Puzzle {
             store: self.store.clone(),
             all_different: self.all_different.clone(),
             slots,
+            cache: self.cache.clone(),
         }
         .propagate())
     }
@@ -359,9 +366,38 @@ impl Puzzle {
             store: Store::full(self.n()),
             all_different: self.all_different.clone(),
             slots,
+            cache: Cache::default(),
         }
         .propagate()
         .unwrap_or_else(|| unreachable!("widening fills cannot produce a contradiction"))
+    }
+
+    /// The number of distinct ordered tuples (one value per cage cell) that are
+    /// viable for `cage` under the current puzzle state.
+    ///
+    /// Each viable tuple is one specific ordered assignment of values to the
+    /// cage's cells. The result is memoized in the puzzle's cache.
+    pub fn viable_tuple_count(&self, cage: &Cage) -> usize {
+        let mut cache = self.cache.clone();
+        viable_tuples(cage, &self.store, &mut cache).len()
+    }
+
+    /// The number of distinct unordered value-sets (multisets) that are viable
+    /// for `cage` under the current puzzle state.
+    ///
+    /// Multiple ordered tuples may share the same underlying multiset; this
+    /// counts each multiset once. The result is derived from the cached viable
+    /// tuples.
+    pub fn viable_multiset_count(&self, cage: &Cage) -> usize {
+        let mut cache = self.cache.clone();
+        let tuples = viable_tuples(cage, &self.store, &mut cache);
+        let mut seen: std::collections::HashSet<Vec<u8>> = std::collections::HashSet::new();
+        for tuple in tuples {
+            let mut sorted = tuple.clone();
+            sorted.sort_unstable();
+            let _ = seen.insert(sorted);
+        }
+        seen.len()
     }
 
     /// The puzzle's cages in ascending polyomino order.
@@ -396,6 +432,7 @@ impl Puzzle {
             store,
             all_different: all_different.clone(),
             slots: slots.clone(),
+            cache: Cache::default(),
         })
     }
 
@@ -450,7 +487,7 @@ impl Puzzle {
     fn propagate(self) -> Option<Self> {
         let constraints = self.constraints();
         let mut store = self.store;
-        let mut cache = Cache::default();
+        let mut cache = self.cache;
         let outcome = {
             let mut ctx = PropagationCtx::new(&mut store, &mut cache);
             propagate_to_fixpoint(&mut ctx, &constraints)
@@ -462,6 +499,7 @@ impl Puzzle {
             store,
             all_different: self.all_different,
             slots: self.slots,
+            cache,
         })
     }
 
@@ -866,6 +904,63 @@ mod tests {
             .unwrap()
             .1;
         assert_eq!(pinned, Domain::new([3]));
+    }
+
+    // --- viable_tuple_count / viable_multiset_count ---
+
+    #[test]
+    fn viable_tuple_count_full_store() {
+        // n=4, same-row pair, Add(3): viable tuples are [1,2] and [2,1].
+        let c = cage(4, &[(0, 0), (0, 1)], Operation::Add(3));
+        let puzzle = puzzle_4().insert_cage(c.clone()).unwrap().unwrap();
+        assert_eq!(puzzle.viable_tuple_count(&c), 2);
+    }
+
+    #[test]
+    fn viable_multiset_count_full_store() {
+        // n=4, same-row pair, Add(3): only one underlying multiset {1,2}.
+        let c = cage(4, &[(0, 0), (0, 1)], Operation::Add(3));
+        let puzzle = puzzle_4().insert_cage(c.clone()).unwrap().unwrap();
+        assert_eq!(puzzle.viable_multiset_count(&c), 1);
+    }
+
+    #[test]
+    fn viable_counts_narrow_with_store() {
+        // n=4, two cages: Add(3) at (0,0)+(0,1) and Given(1) at (1,0).
+        // Given(1) propagates to pin row-0 col-0 via all-different, so (0,0)
+        // cannot be 1, leaving only [2,1] for Add(3). Tuple count drops from 2→1.
+        let add3 = cage(4, &[(0, 0), (0, 1)], Operation::Add(3));
+        let given1 = cage(4, &[(1, 0)], Operation::Given(1));
+        let puzzle = puzzle_4()
+            .insert_cage(add3.clone())
+            .unwrap()
+            .unwrap()
+            .insert_cage(given1)
+            .unwrap()
+            .unwrap();
+        // After propagation, (0,0) cannot be 1, so only [2,1] survives.
+        assert_eq!(puzzle.viable_tuple_count(&add3), 1);
+        assert_eq!(puzzle.viable_multiset_count(&add3), 1);
+    }
+
+    #[test]
+    fn viable_tuple_and_multiset_agree_on_singleton_cage() {
+        // A Given cage has exactly one tuple and one multiset.
+        let c = singleton_cage(); // Given(3)
+        let puzzle = puzzle_4().insert_cage(c.clone()).unwrap().unwrap();
+        assert_eq!(puzzle.viable_tuple_count(&c), 1);
+        assert_eq!(puzzle.viable_multiset_count(&c), 1);
+    }
+
+    #[test]
+    fn viable_multiset_count_less_than_tuple_count_for_multi_permutation_cage() {
+        // n=4, l-shape, Add(6): has 7 ordered tuples but fewer multisets.
+        let c = cage(4, &[(0, 0), (0, 1), (1, 0)], Operation::Add(6));
+        let puzzle = puzzle_4().insert_cage(c.clone()).unwrap().unwrap();
+        let tuples = puzzle.viable_tuple_count(&c);
+        let multisets = puzzle.viable_multiset_count(&c);
+        assert!(multisets <= tuples);
+        assert_eq!(tuples, 7); // matches existing cage test
     }
 
     // --- internal engine ---
