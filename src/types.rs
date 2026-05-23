@@ -3,7 +3,7 @@ use std::{
     ops::{BitAnd, BitOr},
 };
 
-use crate::{cage::Cage, cage_slot::CageSlot, operation::Operation, polyomino::Polyomino};
+use crate::{cage::Cage, operation::Operation, polyomino::Polyomino, slot::Slot};
 
 /// Possible cell value: a number in the range `1..=9`.
 pub type N = u8;
@@ -143,12 +143,12 @@ pub enum Error {
     InvalidCell(Cell),
     /// A new [`Cage`] conflicts with an existing cage.
     CageConflict(Cage),
-    /// A [`CageSlot`] passed to a `Puzzle` constructor covers cells outside the
+    /// A [`Slot`] passed to a `Puzzle` constructor covers cells outside the
     /// grid, so it cannot belong to that puzzle.
-    SlotNotInPuzzle(CageSlot),
+    SlotNotInPuzzle(Slot),
     /// Two slots passed to a `Puzzle` constructor share the same
     /// [`Polyomino`]. Allowed shapes must be distinct: storing both would
-    /// silently collide in the puzzle's slot set ([`CageSlot::cmp`] keys on the
+    /// silently collide in the puzzle's slot set ([`Slot::cmp`] keys on the
     /// polyomino).
     DuplicateSlotPolyomino(Polyomino),
     /// A new region [`Polyomino`] conflicts with an existing slot in the puzzle.
@@ -197,8 +197,8 @@ impl fmt::Display for Error {
                 )
             }
             Self::SlotNotInPuzzle(slot) => match slot {
-                CageSlot::Cage(c) => write!(f, "cage {c:?} is not in this puzzle"),
-                CageSlot::Region(p) => write!(f, "region {p:?} is not in this puzzle"),
+                Slot::Cage(c) => write!(f, "cage {c:?} is not in this puzzle"),
+                Slot::Region(p) => write!(f, "region {p:?} is not in this puzzle"),
             },
             Self::DuplicateSlotPolyomino(p) => {
                 write!(f, "duplicate polyomino {p:?} across puzzle slots")
@@ -431,7 +431,7 @@ mod tests {
 
     #[test]
     fn error_display_cage_and_region_variants() {
-        use crate::{Cage, CageSlot, Error, Operation, Polyomino};
+        use crate::{Cage, Error, Operation, Polyomino, Slot};
         let p = Polyomino::from_cells(&[Cell::new(0, 0)]).unwrap();
         let cage = Cage::new(4, p.clone(), Operation::Given(1));
         assert!(
@@ -439,10 +439,10 @@ mod tests {
                 .to_string()
                 .contains("conflicts")
         );
-        let cage_msg = Error::SlotNotInPuzzle(CageSlot::Cage(cage)).to_string();
+        let cage_msg = Error::SlotNotInPuzzle(Slot::Cage(cage)).to_string();
         assert!(cage_msg.starts_with("cage "));
         assert!(cage_msg.contains("not in this puzzle"));
-        let region_msg = Error::SlotNotInPuzzle(CageSlot::Region(p.clone())).to_string();
+        let region_msg = Error::SlotNotInPuzzle(Slot::Region(p.clone())).to_string();
         assert!(region_msg.starts_with("region "));
         assert!(region_msg.contains("not in this puzzle"));
         assert!(

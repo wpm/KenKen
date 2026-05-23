@@ -4,9 +4,7 @@
 #![allow(clippy::unwrap_used)]
 mod test {
 
-    use kenken::{
-        Cage, CageOption, CageSlot, Cell, Domain, Operation, Operator, Polyomino, Puzzle,
-    };
+    use kenken::{Cage, CageOption, Cell, Domain, Operation, Operator, Polyomino, Puzzle, Slot};
 
     const fn cell(row: usize, column: usize) -> Cell {
         Cell::new(row, column)
@@ -289,14 +287,14 @@ mod test {
     }
 
     #[test]
-    fn slots_iterator_yields_cage_slot_references() {
+    fn slots_iterator_yields_slot_references() {
         let puzzle = Puzzle::new(4)
             .unwrap()
             .insert_region(region(&[(0, 0)]))
             .unwrap();
-        let slots: Vec<&CageSlot> = puzzle.slots().collect();
+        let slots: Vec<&Slot> = puzzle.slots().collect();
         assert_eq!(slots.len(), 1);
-        assert!(matches!(slots[0], CageSlot::Region(_)));
+        assert!(matches!(slots[0], Slot::Region(_)));
     }
 
     #[test]

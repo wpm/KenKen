@@ -8,12 +8,12 @@ use rand::Rng;
 #[cfg(test)]
 use crate::variable::Variable;
 use crate::{
-    Cage, CageSlot, Cell, Domain, Error,
+    Cage, Cell, Domain, Error,
     Error::{
         CageConflict, DuplicateSlotPolyomino, InfeasibleOperation, InvalidGridSize, RegionConflict,
         SlotNotInPuzzle,
     },
-    Operation, Polyomino,
+    Operation, Polyomino, Slot,
     all_different::AllDifferent,
     cache::Cache,
     constraint::{Constraint, Outcome, PropagationCtx, propagate_to_fixpoint},
@@ -58,7 +58,7 @@ impl Constraint<Cell> for KenKenConstraint {
 pub struct Puzzle {
     store: Store,
     all_different: Vec<AllDifferent>,
-    slots: BTreeSet<CageSlot>,
+    slots: BTreeSet<Slot>,
 }
 
 /// The row and column all-different constraints of an `n`×`n` grid.
@@ -93,20 +93,20 @@ impl Puzzle {
     /// [`Error::SlotNotInPuzzle`] if any cage contains a cell outside the grid,
     /// or [`Error::DuplicateSlotPolyomino`] if two cages share a polyomino.
     pub fn with_cages(n: usize, cages: &[Cage]) -> Result<Option<Self>, Error> {
-        let slots: Vec<CageSlot> = cages.iter().cloned().map(CageSlot::Cage).collect();
+        let slots: Vec<Slot> = cages.iter().cloned().map(Slot::Cage).collect();
         Self::with_slots(n, &slots)
     }
 
-    /// Creates an `n`×`n` puzzle from a set of [`CageSlot`]s (mixed regions and
+    /// Creates an `n`×`n` puzzle from a set of [`Slot`]s (mixed regions and
     /// cages), then propagates all constraints. Returns `None` on contradiction.
     ///
     /// # Errors
     /// Returns [`Error::InvalidGridSize`] if `n` is not in `1..=9`,
     /// [`Error::SlotNotInPuzzle`] if any slot covers a cell outside the grid, or
     /// [`Error::DuplicateSlotPolyomino`] if two slots share the same polyomino
-    /// ([`CageSlot::cmp`] keys on the polyomino alone, so distinct slots over the
+    /// ([`Slot::cmp`] keys on the polyomino alone, so distinct slots over the
     /// same polyomino would silently collide in the slot set).
-    pub fn with_slots(n: usize, slots: &[CageSlot]) -> Result<Option<Self>, Error> {
+    pub fn with_slots(n: usize, slots: &[Slot]) -> Result<Option<Self>, Error> {
         if !(1..=9).contains(&n) {
             return Err(InvalidGridSize(n));
         }
@@ -148,14 +148,14 @@ impl Puzzle {
             .iter()
             .find(|s| s.polyomino().intersects(cage.polyomino()))
         {
-            Some(CageSlot::Cage(existing)) if existing == &cage => {
+            Some(Slot::Cage(existing)) if existing == &cage => {
                 return Ok(Some(self.clone()));
             }
-            Some(CageSlot::Cage(_) | CageSlot::Region(_)) => return Err(CageConflict(cage)),
+            Some(Slot::Cage(_) | Slot::Region(_)) => return Err(CageConflict(cage)),
             None => {}
         }
         let mut slots = self.slots.clone();
-        let _ = slots.insert(CageSlot::Cage(cage));
+        let _ = slots.insert(Slot::Cage(cage));
         Ok(Self {
             store: self.store.clone(),
             all_different: self.all_different.clone(),
@@ -173,7 +173,7 @@ impl Puzzle {
     /// # Errors
     /// Never returns an error today; the signature mirrors the other mutators.
     pub fn remove_cage(&self, cage: &Cage) -> Result<Self, Error> {
-        let key = CageSlot::Cage(cage.clone());
+        let key = Slot::Cage(cage.clone());
         if self.slots.get(&key) != Some(&key) {
             return Ok(self.clone());
         }
@@ -196,16 +196,16 @@ impl Puzzle {
             .iter()
             .find(|s| s.polyomino().intersects(&polyomino))
         {
-            Some(CageSlot::Region(existing)) if existing == &polyomino => {
+            Some(Slot::Region(existing)) if existing == &polyomino => {
                 return Ok(self.clone());
             }
-            Some(CageSlot::Cage(_) | CageSlot::Region(_)) => {
+            Some(Slot::Cage(_) | Slot::Region(_)) => {
                 return Err(RegionConflict(polyomino));
             }
             None => {}
         }
         let mut slots = self.slots.clone();
-        let _ = slots.insert(CageSlot::Region(polyomino));
+        let _ = slots.insert(Slot::Region(polyomino));
         Ok(Self {
             store: self.store.clone(),
             all_different: self.all_different.clone(),
@@ -222,7 +222,7 @@ impl Puzzle {
     /// # Errors
     /// Never returns an error today; the signature mirrors [`remove_cage`](Self::remove_cage).
     pub fn remove_region(&self, polyomino: &Polyomino) -> Result<Self, Error> {
-        let key = CageSlot::Region(polyomino.clone());
+        let key = Slot::Region(polyomino.clone());
         if self.slots.get(&key) != Some(&key) {
             return Ok(self.clone());
         }
@@ -247,22 +247,22 @@ impl Puzzle {
     pub fn promote(&self, polyomino: &Polyomino, op: Operation) -> Result<Option<Self>, Error> {
         let n = u8::try_from(self.n())
             .unwrap_or_else(|_| unreachable!("Puzzle invariant: n is in 1..=9"));
-        match self.slots.get(&CageSlot::Region(polyomino.clone())) {
-            Some(CageSlot::Cage(existing)) if existing.operation() == op => {
+        match self.slots.get(&Slot::Region(polyomino.clone())) {
+            Some(Slot::Cage(existing)) if existing.operation() == op => {
                 return Ok(Some(self.clone()));
             }
-            Some(CageSlot::Cage(_)) => {
+            Some(Slot::Cage(_)) => {
                 return Err(CageConflict(Cage::new(n, polyomino.clone(), op)));
             }
             None => return Ok(Some(self.clone())),
-            Some(CageSlot::Region(_)) => {}
+            Some(Slot::Region(_)) => {}
         }
         let cage = Cage::new(n, polyomino.clone(), op);
         if cage.tuples().is_empty() {
             return Err(InfeasibleOperation(polyomino.clone(), op));
         }
         let mut slots = self.slots.clone();
-        let _ = slots.replace(CageSlot::Cage(cage));
+        let _ = slots.replace(Slot::Cage(cage));
         Ok(Self {
             store: self.store.clone(),
             all_different: self.all_different.clone(),
@@ -279,12 +279,12 @@ impl Puzzle {
     /// # Errors
     /// Never returns an error today; the signature mirrors [`remove_cage`](Self::remove_cage).
     pub fn demote(&self, polyomino: &Polyomino) -> Result<Self, Error> {
-        match self.slots.get(&CageSlot::Region(polyomino.clone())) {
-            None | Some(CageSlot::Region(_)) => return Ok(self.clone()),
-            Some(CageSlot::Cage(_)) => {}
+        match self.slots.get(&Slot::Region(polyomino.clone())) {
+            None | Some(Slot::Region(_)) => return Ok(self.clone()),
+            Some(Slot::Cage(_)) => {}
         }
         let mut slots = self.slots.clone();
-        let _ = slots.replace(CageSlot::Region(polyomino.clone()));
+        let _ = slots.replace(Slot::Region(polyomino.clone()));
         Ok(self.rebuilt(slots))
     }
 
@@ -292,7 +292,7 @@ impl Puzzle {
     /// re-propagates. Used by the widening mutators ([`remove_cage`](Self::remove_cage),
     /// [`demote`](Self::demote)); widening can only enlarge domains, so
     /// propagation cannot contradict.
-    fn rebuilt(&self, slots: BTreeSet<CageSlot>) -> Self {
+    fn rebuilt(&self, slots: BTreeSet<Slot>) -> Self {
         Self {
             store: Store::full(self.n()),
             all_different: self.all_different.clone(),
@@ -304,17 +304,17 @@ impl Puzzle {
 
     /// The puzzle's cages in ascending polyomino order.
     pub fn cages(&self) -> impl Iterator<Item = &Cage> {
-        self.slots.iter().filter_map(CageSlot::as_cage)
+        self.slots.iter().filter_map(Slot::as_cage)
     }
 
     /// The puzzle's regions (claimed shapes with no operation yet) in ascending
     /// polyomino order.
     pub fn regions(&self) -> impl Iterator<Item = &Polyomino> {
-        self.slots.iter().filter_map(CageSlot::as_region)
+        self.slots.iter().filter_map(Slot::as_region)
     }
 
     /// All slots (cages and regions) in ascending polyomino order.
-    pub fn slots(&self) -> impl Iterator<Item = &CageSlot> {
+    pub fn slots(&self) -> impl Iterator<Item = &Slot> {
         self.slots.iter()
     }
 
@@ -435,7 +435,7 @@ impl<'de> serde::Deserialize<'de> for Puzzle {
         #[derive(serde::Deserialize)]
         struct PuzzleData {
             n: usize,
-            slots: Vec<CageSlot>,
+            slots: Vec<Slot>,
         }
         let PuzzleData { n, slots } = PuzzleData::deserialize(d)?;
         Self::with_slots(n, &slots)
@@ -514,7 +514,7 @@ mod tests {
         let out = cage(4, &[(0, 0), (0, 1)], Operation::Add(3));
         assert!(matches!(
             Puzzle::with_cages(1, &[out]),
-            Err(SlotNotInPuzzle(CageSlot::Cage(_)))
+            Err(SlotNotInPuzzle(Slot::Cage(_)))
         ));
     }
 
@@ -530,8 +530,8 @@ mod tests {
 
     #[test]
     fn with_slots_mixed_region_and_cage() {
-        let region = CageSlot::Region(poly(&[(0, 0)]));
-        let c = CageSlot::Cage(cage(4, &[(1, 1)], Operation::Given(2)));
+        let region = Slot::Region(poly(&[(0, 0)]));
+        let c = Slot::Cage(cage(4, &[(1, 1)], Operation::Given(2)));
         let puzzle = Puzzle::with_slots(4, &[region, c]).unwrap().unwrap();
         assert_eq!(puzzle.regions().count(), 1);
         assert_eq!(puzzle.cages().count(), 1);
@@ -540,19 +540,16 @@ mod tests {
 
     #[test]
     fn with_slots_region_outside_grid_is_err() {
-        let region = CageSlot::Region(poly(&[(5, 0)]));
+        let region = Slot::Region(poly(&[(5, 0)]));
         assert!(matches!(
             Puzzle::with_slots(2, &[region]),
-            Err(SlotNotInPuzzle(CageSlot::Region(_)))
+            Err(SlotNotInPuzzle(Slot::Region(_)))
         ));
     }
 
     #[test]
     fn with_slots_duplicate_polyomino_is_err() {
-        let slots = [
-            CageSlot::Region(singleton()),
-            CageSlot::Cage(singleton_cage()),
-        ];
+        let slots = [Slot::Region(singleton()), Slot::Cage(singleton_cage())];
         assert!(matches!(
             Puzzle::with_slots(4, &slots),
             Err(DuplicateSlotPolyomino(_))
@@ -862,8 +859,8 @@ mod tests {
         let original = Puzzle::with_slots(
             4,
             &[
-                CageSlot::Region(poly(&[(0, 0)])),
-                CageSlot::Cage(cage(4, &[(1, 1)], Operation::Given(2))),
+                Slot::Region(poly(&[(0, 0)])),
+                Slot::Cage(cage(4, &[(1, 1)], Operation::Given(2))),
             ],
         )
         .unwrap()
@@ -879,12 +876,9 @@ mod tests {
 
     #[test]
     fn serialize_format_locks_shape() {
-        let puzzle = Puzzle::with_slots(
-            2,
-            &[CageSlot::Cage(cage(2, &[(1, 1)], Operation::Given(2)))],
-        )
-        .unwrap()
-        .unwrap();
+        let puzzle = Puzzle::with_slots(2, &[Slot::Cage(cage(2, &[(1, 1)], Operation::Given(2)))])
+            .unwrap()
+            .unwrap();
         assert_eq!(
             serde_json::to_value(&puzzle).unwrap(),
             serde_json::json!({
