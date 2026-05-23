@@ -15,7 +15,7 @@ use crate::{
     },
     Operation, Polyomino, Slot,
     all_different::AllDifferent,
-    cache::{Cache, viable_multisets, viable_tuples},
+    cache::{TuplesCache, viable_multisets, viable_tuples},
     constraint::{Constraint, Outcome, PropagationCtx, propagate_to_fixpoint},
     cover::Cover,
     generator::generate::{SizeDistribution, default_op_policy, generate, generate_with},
@@ -68,7 +68,7 @@ pub struct Puzzle {
     store: Store,
     all_different: Vec<AllDifferent>,
     slots: BTreeSet<Slot>,
-    cache: Mutex<Cache>,
+    tuples_cache: Mutex<TuplesCache>,
     solutions_cache: Mutex<SolutionsCache>,
 }
 
@@ -78,7 +78,7 @@ impl Clone for Puzzle {
             store: self.store.clone(),
             all_different: self.all_different.clone(),
             slots: self.slots.clone(),
-            cache: Mutex::new(self.cache_lock().clone()),
+            tuples_cache: Mutex::new(self.tuples_cache_lock().clone()),
             solutions_cache: Mutex::new(
                 self.solutions_cache
                     .lock()
@@ -110,7 +110,7 @@ impl Puzzle {
             store: Store::full(n),
             all_different: all_different_constraints(n)?,
             slots: BTreeSet::new(),
-            cache: Mutex::new(Cache::default()),
+            tuples_cache: Mutex::new(TuplesCache::default()),
             solutions_cache: Mutex::new(SolutionsCache::Uncomputed),
         })
     }
@@ -155,7 +155,7 @@ impl Puzzle {
             store: Store::full(n),
             all_different: all_different_constraints(n)?,
             slots: slots.iter().cloned().collect(),
-            cache: Mutex::new(Cache::default()),
+            tuples_cache: Mutex::new(TuplesCache::default()),
             solutions_cache: Mutex::new(SolutionsCache::Uncomputed),
         }
         .propagate())
@@ -188,7 +188,7 @@ impl Puzzle {
         }
         let mut slots = self.slots.clone();
         let _ = slots.insert(Slot::Cage(cage));
-        // Carry the existing cache into propagation: entries are keyed on
+        // Carry the existing tuples cache into propagation: entries are keyed on
         // (cage, domain-projection), so prior entries remain valid even as
         // the new cage may further narrow domains.
         Ok(self.with_slots_and_cache(slots).propagate())
@@ -367,18 +367,20 @@ impl Puzzle {
         Ok(self.rebuilt(slots))
     }
 
-    fn cache_lock(&self) -> std::sync::MutexGuard<'_, Cache> {
-        self.cache.lock().expect("cache mutex poisoned")
+    fn tuples_cache_lock(&self) -> std::sync::MutexGuard<'_, TuplesCache> {
+        self.tuples_cache
+            .lock()
+            .expect("tuples_cache mutex poisoned")
     }
 
     /// Returns a new puzzle with `slots` and this puzzle's store, all-different
-    /// constraints, and a clone of its cache (so warm entries carry over).
+    /// constraints, and a clone of its tuples cache (so warm entries carry over).
     fn with_slots_and_cache(&self, slots: BTreeSet<Slot>) -> Self {
         Self {
             store: self.store.clone(),
             all_different: self.all_different.clone(),
             slots,
-            cache: Mutex::new(self.cache_lock().clone()),
+            tuples_cache: Mutex::new(self.tuples_cache_lock().clone()),
             solutions_cache: Mutex::new(SolutionsCache::Uncomputed),
         }
     }
@@ -392,7 +394,7 @@ impl Puzzle {
             store: Store::full(self.n()),
             all_different: self.all_different.clone(),
             slots,
-            cache: Mutex::new(Cache::default()),
+            tuples_cache: Mutex::new(TuplesCache::default()),
             solutions_cache: Mutex::new(SolutionsCache::Uncomputed),
         }
         .propagate()
@@ -405,7 +407,7 @@ impl Puzzle {
     /// Each viable tuple is one specific ordered assignment of values to the
     /// cage's cells. Results are memoized across calls.
     pub fn viable_tuple_count(&self, cage: &Cage) -> usize {
-        viable_tuples(cage, &self.store, &mut self.cache_lock()).len()
+        viable_tuples(cage, &self.store, &mut self.tuples_cache_lock()).len()
     }
 
     /// The number of distinct unordered value-sets (multisets) that are viable
@@ -414,7 +416,7 @@ impl Puzzle {
     /// Multiple ordered tuples may share the same underlying multiset; this
     /// counts each multiset once. Results are memoized across calls.
     pub fn viable_multiset_count(&self, cage: &Cage) -> usize {
-        viable_multisets(cage, &self.store, &mut self.cache_lock()).len()
+        viable_multisets(cage, &self.store, &mut self.tuples_cache_lock()).len()
     }
 
     /// The puzzle's cages in ascending polyomino order.
@@ -488,7 +490,7 @@ impl Puzzle {
             store,
             all_different: all_different.clone(),
             slots: slots.clone(),
-            cache: Mutex::new(Cache::default()),
+            tuples_cache: Mutex::new(TuplesCache::default()),
             solutions_cache: Mutex::new(SolutionsCache::Uncomputed),
         })
     }
@@ -544,9 +546,12 @@ impl Puzzle {
     fn propagate(self) -> Option<Self> {
         let constraints = self.constraints();
         let mut store = self.store;
-        let mut cache = self.cache.into_inner().expect("cache mutex poisoned");
+        let mut tuples_cache = self
+            .tuples_cache
+            .into_inner()
+            .expect("tuples_cache mutex poisoned");
         let outcome = {
-            let mut ctx = PropagationCtx::new(&mut store, &mut cache);
+            let mut ctx = PropagationCtx::new(&mut store, &mut tuples_cache);
             propagate_to_fixpoint(&mut ctx, &constraints)
         };
         if outcome == Outcome::Contradiction || store.is_invalid() {
@@ -556,7 +561,7 @@ impl Puzzle {
             store,
             all_different: self.all_different,
             slots: self.slots,
-            cache: Mutex::new(cache),
+            tuples_cache: Mutex::new(tuples_cache),
             solutions_cache: Mutex::new(SolutionsCache::Uncomputed),
         })
     }

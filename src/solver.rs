@@ -4,11 +4,11 @@
 //! fixed point, prunes on contradiction, and otherwise branches on the
 //! most-constrained unsolved cell. It yields one solved [`Store`] at a time, so
 //! callers can stop after the first solution (a uniqueness check) or drain it to
-//! enumerate all. The viable-tuple [`Cache`] is shared across the whole search.
+//! enumerate all. The viable-tuple [`TuplesCache`] is shared across the whole search.
 
 use crate::{
     Cell, Domain,
-    cache::Cache,
+    cache::TuplesCache,
     constraint::{Constraint, Outcome, PropagationCtx, propagate_to_fixpoint},
     store::Store,
     variable::Variable,
@@ -18,7 +18,7 @@ use crate::{
 pub struct Search<C: Constraint<Cell>> {
     constraints: Vec<C>,
     stack: Vec<Store>,
-    cache: Cache,
+    cache: TuplesCache,
 }
 
 impl<C: Constraint<Cell>> Search<C> {
@@ -27,7 +27,7 @@ impl<C: Constraint<Cell>> Search<C> {
         Self {
             constraints,
             stack: vec![root],
-            cache: Cache::default(),
+            cache: TuplesCache::default(),
         }
     }
 }

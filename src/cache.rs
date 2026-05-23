@@ -32,13 +32,13 @@ struct ViableKey {
 /// (independent of the store), the viable ordered-tuple subset under a given
 /// projection, and the viable unordered-multiset subset under a given projection.
 #[derive(Debug, Default, Clone)]
-pub struct Cache {
+pub struct TuplesCache {
     static_tuples: HashMap<Cage, Arc<[Tuple]>>,
     viable_tuples: HashMap<ViableKey, TupleSet>,
     viable_multisets: HashMap<ViableKey, MultisetSet>,
 }
 
-impl Cache {
+impl TuplesCache {
     #[cfg(test)]
     pub fn viable_tuple_entry_count(&self) -> usize {
         self.viable_tuples.len()
@@ -79,7 +79,7 @@ fn filter_viable(statics: &[Tuple], domains: &[Domain]) -> TupleSet {
 ///
 /// Pure: for the same cage and the same store contents over the cage's cells it
 /// always returns the same set, regardless of cache state.
-pub fn viable_tuples<'c>(cage: &Cage, store: &Store, cache: &'c mut Cache) -> &'c TupleSet {
+pub fn viable_tuples<'c>(cage: &Cage, store: &Store, cache: &'c mut TuplesCache) -> &'c TupleSet {
     let key = ViableKey {
         cage: cage.clone(),
         projection: projection(cage, store),
@@ -97,7 +97,11 @@ pub fn viable_tuples<'c>(cage: &Cage, store: &Store, cache: &'c mut Cache) -> &'
 ///
 /// Each entry is a sorted `Tuple`; permutations of the same values appear once.
 /// Pure: for the same cage and store projection, it always returns the same set.
-pub fn viable_multisets<'c>(cage: &Cage, store: &Store, cache: &'c mut Cache) -> &'c MultisetSet {
+pub fn viable_multisets<'c>(
+    cage: &Cage,
+    store: &Store,
+    cache: &'c mut TuplesCache,
+) -> &'c MultisetSet {
     let key = ViableKey {
         cage: cage.clone(),
         projection: projection(cage, store),
@@ -135,7 +139,7 @@ mod tests {
         let mut store = Store::full(4);
         // Pin (0,0) to {1}: only [1,3] survives for Add(4) on a row pair.
         store.set(Cell::new(0, 0).id(), Domain::new([1]));
-        let mut cache = Cache::default();
+        let mut cache = TuplesCache::default();
         let viable = viable_tuples(&cage, &store, &mut cache).clone();
         assert_eq!(viable, vec![vec![1u8, 3]]);
     }
@@ -146,7 +150,7 @@ mod tests {
         let store = Store::full(4);
 
         // A repeated call on the same cache is a hit and yields the same value.
-        let mut cache = Cache::default();
+        let mut cache = TuplesCache::default();
         let first = viable_tuples(&cage, &store, &mut cache).clone();
         let second = viable_tuples(&cage, &store, &mut cache).clone();
         assert_eq!(cache.viable_tuple_entry_count(), 1);
@@ -154,7 +158,7 @@ mod tests {
 
         // An independent, empty cache produces the identical value: the cache
         // affects only performance, never the result.
-        let mut fresh = Cache::default();
+        let mut fresh = TuplesCache::default();
         assert_eq!(first, *viable_tuples(&cage, &store, &mut fresh));
 
         // And both equal a fresh, uncached pure computation.
@@ -165,7 +169,7 @@ mod tests {
     #[test]
     fn distinct_projections_get_distinct_entries() {
         let cage = cage();
-        let mut cache = Cache::default();
+        let mut cache = TuplesCache::default();
 
         let full = Store::full(4);
         let _ = viable_tuples(&cage, &full, &mut cache);
@@ -182,7 +186,7 @@ mod tests {
         // Add(4) on a same-row pair: tuples are [1,3] and [3,1], one multiset {1,3}.
         let cage = cage();
         let store = Store::full(4);
-        let mut cache = Cache::default();
+        let mut cache = TuplesCache::default();
         let multisets = viable_multisets(&cage, &store, &mut cache).clone();
         assert_eq!(multisets.len(), 1);
         assert_eq!(multisets[0], vec![1u8, 3]);
@@ -192,12 +196,12 @@ mod tests {
     fn viable_multisets_is_a_pure_memo() {
         let cage = cage();
         let store = Store::full(4);
-        let mut cache = Cache::default();
+        let mut cache = TuplesCache::default();
         let first = viable_multisets(&cage, &store, &mut cache).clone();
         let second = viable_multisets(&cage, &store, &mut cache).clone();
         assert_eq!(first, second);
         // A fresh cache gives the same result.
-        let mut fresh = Cache::default();
+        let mut fresh = TuplesCache::default();
         assert_eq!(first, *viable_multisets(&cage, &store, &mut fresh));
     }
 
@@ -206,7 +210,7 @@ mod tests {
         // Every multiset entry must appear as a sorted tuple in the tuple set.
         let cage = cage();
         let store = Store::full(4);
-        let mut cache = Cache::default();
+        let mut cache = TuplesCache::default();
         let tuples = viable_tuples(&cage, &store, &mut cache).clone();
         let multisets = viable_multisets(&cage, &store, &mut cache).clone();
         let tuple_multisets: std::collections::HashSet<Vec<u8>> = tuples

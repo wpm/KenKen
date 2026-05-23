@@ -264,7 +264,7 @@ mod tests {
     use rand_chacha::ChaCha8Rng;
 
     use super::*;
-    use crate::{cache::Cache, store::Store};
+    use crate::{cache::TuplesCache, store::Store};
 
     fn row_4() -> AllDifferent {
         AllDifferent::row(4, 2).unwrap()
@@ -328,7 +328,7 @@ mod tests {
         let mut store = Store::full(2);
         store.set(Cell::new(0, 0).id(), Domain::new([1]));
         store.set(Cell::new(0, 1).id(), Domain::new([1]));
-        let mut cache = Cache::default();
+        let mut cache = TuplesCache::default();
         let mut ctx = PropagationCtx::new(&mut store, &mut cache);
         assert_eq!(
             AllDifferent::row(2, 0).unwrap().propagate(&mut ctx),
@@ -339,7 +339,7 @@ mod tests {
     #[test]
     fn propagate_unchanged_when_already_consistent() {
         let mut store = Store::full(4);
-        let mut cache = Cache::default();
+        let mut cache = TuplesCache::default();
         let mut ctx = PropagationCtx::new(&mut store, &mut cache);
         assert_eq!(
             AllDifferent::row(4, 0).unwrap().propagate(&mut ctx),

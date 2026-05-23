@@ -9,7 +9,7 @@
 //!
 //! Internally, the solver is organized around standard constraint-satisfaction
 //! concepts: a `Variable` trait over grid cells, a `Store` of intrinsic domains,
-//! a derived viable-tuple `Cache`, `Constraint`s ([`Cage`] and `AllDifferent`)
+//! a derived viable-tuple `TuplesCache`, `Constraint`s ([`Cage`] and `AllDifferent`)
 //! propagated to a fixed point, and a depth-first search.
 //!
 //! ## Threading

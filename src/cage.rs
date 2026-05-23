@@ -116,7 +116,7 @@ impl serde::Serialize for Cage {
 mod tests {
     use super::*;
     use crate::{
-        cache::Cache,
+        cache::TuplesCache,
         store::Store,
         test_utils::{l_shape, pair, singleton},
     };
@@ -173,7 +173,7 @@ mod tests {
     fn propagate_narrows_to_supported_values() {
         let cage = Cage::new(4, pair(), Operation::Add(3));
         let mut store = Store::full(4);
-        let mut cache = Cache::default();
+        let mut cache = TuplesCache::default();
         let outcome = {
             let mut ctx = PropagationCtx::new(&mut store, &mut cache);
             cage.propagate(&mut ctx)
@@ -189,7 +189,7 @@ mod tests {
         // the full domain, so a fresh store is not narrowed.
         let cage = Cage::new(2, pair(), Operation::Multiply(2));
         let mut store = Store::full(2);
-        let mut cache = Cache::default();
+        let mut cache = TuplesCache::default();
         let mut ctx = PropagationCtx::new(&mut store, &mut cache);
         assert_eq!(cage.propagate(&mut ctx), Outcome::Unchanged);
     }
@@ -200,7 +200,7 @@ mod tests {
         let mut store = Store::full(4);
         store.set(Cell::new(0, 0).id(), Domain::new([4]));
         store.set(Cell::new(0, 1).id(), Domain::new([4]));
-        let mut cache = Cache::default();
+        let mut cache = TuplesCache::default();
         let mut ctx = PropagationCtx::new(&mut store, &mut cache);
         assert_eq!(cage.propagate(&mut ctx), Outcome::Contradiction);
     }

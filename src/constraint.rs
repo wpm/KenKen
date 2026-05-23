@@ -8,7 +8,7 @@
 
 use std::marker::PhantomData;
 
-use crate::{cache::Cache, store::Store, variable::Variable};
+use crate::{cache::TuplesCache, store::Store, variable::Variable};
 
 /// What a single propagation step did to the store.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -23,18 +23,18 @@ pub enum Outcome {
 
 /// The mutable context a constraint propagates against.
 ///
-/// Holds the [`Store`] (intrinsic state being narrowed) and the [`Cache`]
+/// Holds the [`Store`] (intrinsic state being narrowed) and the [`TuplesCache`]
 /// (derived viable-tuple memo) as two *separate* mutable borrows, so a
 /// constraint can read a cached tuple set and write domain reductions back to
 /// the store without aliasing — store and cache never overlap.
 pub struct PropagationCtx<'a, V: Variable> {
     pub store: &'a mut Store,
-    pub cache: &'a mut Cache,
+    pub cache: &'a mut TuplesCache,
     marker: PhantomData<V>,
 }
 
 impl<'a, V: Variable> PropagationCtx<'a, V> {
-    pub const fn new(store: &'a mut Store, cache: &'a mut Cache) -> Self {
+    pub const fn new(store: &'a mut Store, cache: &'a mut TuplesCache) -> Self {
         Self {
             store,
             cache,
