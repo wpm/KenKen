@@ -43,7 +43,7 @@ impl Polyomino {
         self.0.contains(&cell)
     }
 
-    /// Returns `true` if `cells` form a single edge-connected component, or are
+    /// Returns `true` if `cells` form a single edge-connected component or are
     /// empty. Two cells are edge-connected when they share a side.
     ///
     /// Allocates a `BTreeSet` to delegate to the internal helper used by
@@ -94,17 +94,18 @@ impl Polyomino {
     /// Idempotent: if `cell` is not present, returns an equivalent polyomino.
     ///
     /// # Errors
-    /// Returns [`Error::EmptyPolyomino`] if removing `cell` would empty the
-    /// polyomino, or [`Error::DisconnectedPolyomino`] if it would leave the
+    /// Returns [`Error::RemovalWouldEmptyPolyomino`] if removing `cell`
+    /// empties the polyomino, or [`Error::WouldDisconnect`] if it leaves the
     /// remaining cells disconnected.
     pub fn remove(&self, cell: Cell) -> Result<Self, Error> {
-        let cells = self
-            .0
-            .iter()
-            .copied()
-            .filter(|c| *c != cell)
-            .collect::<Vec<_>>();
-        Self::from_cells(&cells)
+        let cells: BTreeSet<Cell> = self.0.iter().copied().filter(|c| *c != cell).collect();
+        if cells.is_empty() {
+            return Err(Error::RemovalWouldEmptyPolyomino(cell));
+        }
+        if !is_edge_connected_component(&cells) {
+            return Err(Error::WouldDisconnect(cell));
+        }
+        Ok(Self(cells))
     }
 
     /// Returns the operators legal for a cage covering `cells`.
@@ -1060,8 +1061,15 @@ mod tests {
     fn remove_last_cell_returns_err() {
         assert!(matches!(
             singleton().remove(c00()),
-            Err(Error::EmptyPolyomino)
+            Err(Error::RemovalWouldEmptyPolyomino(_))
         ));
+    }
+
+    #[test]
+    fn remove_middle_cell_disconnects_returns_would_disconnect() {
+        // row of 3: removing middle disconnects
+        let p = Polyomino::from_cells(&[c00(), c01(), c02()]).unwrap();
+        assert!(matches!(p.remove(c01()), Err(Error::WouldDisconnect(_))));
     }
 
     #[test]

@@ -1,9 +1,9 @@
 use std::cmp::Ordering;
 
-use crate::{Cage, Cell, Operation, Polyomino, cover::Cover, types::N};
+use crate::{Cage, Cell, Error, Operation, Polyomino, cover::Cover, types::N};
 
 /// A slot in a puzzle: either a claimed [`Polyomino`] region with no operation
-/// yet (`Region`), or a fully specified [`Cage`].
+/// or a fully specified [`Cage`].
 ///
 /// `Slot` lets the library model incomplete puzzles directly, so the
 /// Designer can promote a `Region` to a `Cage` (and demote it back) without
@@ -39,6 +39,35 @@ impl Slot {
             Some(p)
         } else {
             None
+        }
+    }
+
+    /// Returns a new [`Polyomino`] with `cell` added.
+    ///
+    /// Idempotent: if `cell` is already present, the polyomino is returned
+    /// unchanged.
+    ///
+    /// # Errors
+    /// Returns [`Error::DisconnectedPolyomino`] if `cell` is not
+    /// edge-adjacent to any existing cell of the polyomino.
+    pub fn insert_cell(&self, cell: Cell) -> Result<Polyomino, Error> {
+        self.polyomino().insert(cell)
+    }
+
+    /// Returns a new [`Polyomino`] with `cell` removed, or `None` if the
+    /// polyomino contained only `cell` (i.e. the slot should be deleted).
+    ///
+    /// Idempotent: if `cell` is not present the polyomino is returned
+    /// unchanged as `Some`.
+    ///
+    /// # Errors
+    /// Returns [`Error::WouldDisconnect`] if removing `cell` leaves the
+    /// remaining cells disconnected.
+    pub fn remove_cell(&self, cell: Cell) -> Result<Option<Polyomino>, Error> {
+        match self.polyomino().remove(cell) {
+            Ok(p) => Ok(Some(p)),
+            Err(Error::RemovalWouldEmptyPolyomino(_)) => Ok(None),
+            Err(e) => Err(e),
         }
     }
 }
@@ -113,7 +142,7 @@ impl<'de> serde::Deserialize<'de> for Slot {
 #[allow(clippy::unwrap_used)]
 mod tests {
     use super::*;
-    use crate::test_utils::{pair, singleton};
+    use crate::test_utils::{c00, c01, c02, pair, singleton};
 
     // --- Accessors ---
 
@@ -213,8 +242,66 @@ mod tests {
         assert!(serde_json::from_str::<Slot>(json).is_err());
     }
 
+    // --- insert_cell / remove_cell ---
+
+    #[test]
+    fn insert_cell_on_region_adds_cell() {
+        let slot = Slot::Region(singleton());
+        let p = slot.insert_cell(c01()).unwrap();
+        assert!(p.contains(c01()));
+        assert_eq!(p.len(), 2);
+    }
+
+    #[test]
+    fn insert_cell_on_cage_adds_cell() {
+        let slot = Slot::Cage(Cage::new(4, singleton(), Operation::Given(3)));
+        let p = slot.insert_cell(c01()).unwrap();
+        assert!(p.contains(c01()));
+    }
+
+    #[test]
+    fn insert_cell_non_adjacent_returns_err() {
+        let slot = Slot::Region(singleton());
+        assert!(matches!(
+            slot.insert_cell(c02()),
+            Err(Error::DisconnectedPolyomino)
+        ));
+    }
+
+    #[test]
+    fn remove_cell_from_pair_returns_some() {
+        let slot = Slot::Region(pair());
+        let result = slot.remove_cell(c01()).unwrap();
+        assert!(result.is_some());
+        assert_eq!(result.unwrap().len(), 1);
+    }
+
+    #[test]
+    fn remove_cell_from_cage_pair_returns_some() {
+        let slot = Slot::Cage(Cage::new(4, pair(), Operation::Add(3)));
+        let result = slot.remove_cell(c01()).unwrap();
+        assert!(result.is_some());
+    }
+
+    #[test]
+    fn remove_cell_from_singleton_returns_none() {
+        let slot = Slot::Region(singleton());
+        assert!(slot.remove_cell(c00()).unwrap().is_none());
+    }
+
+    #[test]
+    fn remove_cell_would_disconnect_returns_err() {
+        // row of 3: removing middle disconnects
+        let row3 = Polyomino::from_cells(&[c00(), c01(), c02()]).unwrap();
+        let slot = Slot::Region(row3);
+        assert!(matches!(
+            slot.remove_cell(c01()),
+            Err(Error::WouldDisconnect(_))
+        ));
+    }
+
     // Locks in the wire-format contract: future changes that drift the
-    // shape (variant tags, field names, sequence vs struct for Region) will
+    // shape (variant tags, field names, sequence vs. struct for Region) will
     // break this test.
     #[test]
     fn serializes_to_externally_tagged_shape() {

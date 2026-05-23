@@ -354,4 +354,125 @@ mod test {
         let round_tripped_regions: Vec<&Polyomino> = round_tripped.regions().collect();
         assert_eq!(base_regions, round_tripped_regions);
     }
+
+    // --- insert_cell (public API) ---
+
+    #[test]
+    fn insert_cell_adjacent_cell_grows_region() {
+        let p = Puzzle::new(4)
+            .unwrap()
+            .insert_region(region(&[(0, 0)]))
+            .unwrap();
+        let slot = Slot::Region(region(&[(0, 0)]));
+        let new_p = p.insert_cell(cell(0, 1), &slot).unwrap().unwrap();
+        assert_eq!(new_p.regions().count(), 1);
+        assert!(new_p.regions().next().unwrap().contains(cell(0, 1)));
+    }
+
+    #[test]
+    fn insert_cell_on_cage_demotes_and_widens() {
+        let c = cage(4, &[(0, 0)], Operation::Given(3));
+        let p = Puzzle::new(4)
+            .unwrap()
+            .insert_cage(c.clone())
+            .unwrap()
+            .unwrap();
+        let slot = Slot::Cage(c);
+        let new_p = p.insert_cell(cell(0, 1), &slot).unwrap().unwrap();
+        assert_eq!(new_p.cages().count(), 0);
+        assert_eq!(new_p.regions().count(), 1);
+        assert_eq!(
+            new_p.domains().find(|(c, _)| *c == cell(0, 0)).unwrap().1,
+            Domain::full(4)
+        );
+    }
+
+    #[test]
+    fn insert_cell_non_adjacent_returns_target_not_adjacent() {
+        let p = Puzzle::new(4)
+            .unwrap()
+            .insert_region(region(&[(0, 0)]))
+            .unwrap();
+        let slot = Slot::Region(region(&[(0, 0)]));
+        assert!(matches!(
+            p.insert_cell(cell(1, 1), &slot),
+            Err(kenken::Error::TargetNotAdjacent)
+        ));
+    }
+
+    #[test]
+    fn insert_cell_slot_not_in_puzzle_returns_err() {
+        let slot = Slot::Region(region(&[(0, 0)]));
+        assert!(matches!(
+            Puzzle::new(4).unwrap().insert_cell(cell(0, 1), &slot),
+            Err(kenken::Error::SlotNotInPuzzle(_))
+        ));
+    }
+
+    #[test]
+    fn insert_cell_into_occupied_cell_returns_region_conflict() {
+        let p = Puzzle::new(4)
+            .unwrap()
+            .insert_region(region(&[(0, 0)]))
+            .unwrap()
+            .insert_region(region(&[(0, 1)]))
+            .unwrap();
+        let slot = Slot::Region(region(&[(0, 0)]));
+        assert!(matches!(
+            p.insert_cell(cell(0, 1), &slot),
+            Err(kenken::Error::RegionConflict(_))
+        ));
+    }
+
+    // --- remove_cell (public API) ---
+
+    #[test]
+    fn remove_cell_shrinks_region() {
+        let p = Puzzle::new(4)
+            .unwrap()
+            .insert_region(region(&[(0, 0), (0, 1)]))
+            .unwrap();
+        let new_p = p.remove_cell(cell(0, 1)).unwrap();
+        assert_eq!(new_p.regions().count(), 1);
+        assert!(!new_p.regions().next().unwrap().contains(cell(0, 1)));
+    }
+
+    #[test]
+    fn remove_cell_from_cage_demotes_and_widens() {
+        let c = cage(4, &[(0, 0), (0, 1)], Operation::Add(3));
+        let p = Puzzle::new(4).unwrap().insert_cage(c).unwrap().unwrap();
+        let new_p = p.remove_cell(cell(0, 1)).unwrap();
+        assert_eq!(new_p.cages().count(), 0);
+        assert_eq!(new_p.regions().count(), 1);
+    }
+
+    #[test]
+    fn remove_cell_singleton_removes_slot() {
+        let p = Puzzle::new(4)
+            .unwrap()
+            .insert_region(region(&[(0, 0)]))
+            .unwrap();
+        let new_p = p.remove_cell(cell(0, 0)).unwrap();
+        assert_eq!(new_p.slots().count(), 0);
+    }
+
+    #[test]
+    fn remove_cell_not_covered_returns_cell_not_covered() {
+        assert!(matches!(
+            Puzzle::new(4).unwrap().remove_cell(cell(0, 0)),
+            Err(kenken::Error::CellNotCovered(_))
+        ));
+    }
+
+    #[test]
+    fn remove_cell_would_disconnect_returns_err() {
+        let p = Puzzle::new(4)
+            .unwrap()
+            .insert_region(region(&[(0, 0), (0, 1), (0, 2)]))
+            .unwrap();
+        assert!(matches!(
+            p.remove_cell(cell(0, 1)),
+            Err(kenken::Error::WouldDisconnect(_))
+        ));
+    }
 }

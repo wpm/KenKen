@@ -10,8 +10,8 @@ use crate::variable::Variable;
 use crate::{
     Cage, Cell, Domain, Error,
     Error::{
-        CageConflict, DuplicateSlotPolyomino, InfeasibleOperation, InvalidGridSize, RegionConflict,
-        SlotNotInPuzzle,
+        CageConflict, CellNotCovered, DuplicateSlotPolyomino, InfeasibleOperation, InvalidGridSize,
+        RegionConflict, SlotNotInPuzzle, TargetNotAdjacent,
     },
     Operation, Polyomino, Slot,
     all_different::AllDifferent,
@@ -50,7 +50,7 @@ impl Constraint<Cell> for KenKenConstraint {
 /// change — every cell's domain is already as narrow as the constraints
 /// require. Every `Puzzle` upholds this invariant: construction and mutation
 /// methods propagate constraints to a fixpoint before returning. If propagation
-/// would empty any cell's domain (a contradiction), the method returns
+///  empties any cell's domain (a contradiction), the method returns
 /// `None` instead of a `Puzzle`, so a `Puzzle` value always represents a
 /// consistent, fully propagated state. Regions contribute no propagation, so
 /// region-only mutations skip that step.
@@ -73,7 +73,7 @@ impl Puzzle {
     /// Creates an `n`×`n` puzzle with no cages and every cell holding `1..=n`.
     ///
     /// # Errors
-    /// Returns [`Error::InvalidGridSize`] if `n` is not in `1..=9`.
+    /// Returns [`InvalidGridSize`] if `n` is not in `1..=9`.
     pub fn new(n: usize) -> Result<Self, Error> {
         if !(1..=9).contains(&n) {
             return Err(InvalidGridSize(n));
@@ -89,9 +89,9 @@ impl Puzzle {
     /// constraints. Returns `None` if propagation finds a contradiction.
     ///
     /// # Errors
-    /// Returns [`Error::InvalidGridSize`] if `n` is not in `1..=9`,
-    /// [`Error::SlotNotInPuzzle`] if any cage contains a cell outside the grid,
-    /// or [`Error::DuplicateSlotPolyomino`] if two cages share a polyomino.
+    /// Returns [`InvalidGridSize`] if `n` is not in `1..=9`,
+    /// [`SlotNotInPuzzle`] if any cage contains a cell outside the grid,
+    /// or [`DuplicateSlotPolyomino`] if two cages share a polyomino.
     pub fn with_cages(n: usize, cages: &[Cage]) -> Result<Option<Self>, Error> {
         let slots: Vec<Slot> = cages.iter().cloned().map(Slot::Cage).collect();
         Self::with_slots(n, &slots)
@@ -101,9 +101,9 @@ impl Puzzle {
     /// cages), then propagates all constraints. Returns `None` on contradiction.
     ///
     /// # Errors
-    /// Returns [`Error::InvalidGridSize`] if `n` is not in `1..=9`,
-    /// [`Error::SlotNotInPuzzle`] if any slot covers a cell outside the grid, or
-    /// [`Error::DuplicateSlotPolyomino`] if two slots share the same polyomino
+    /// Returns [`InvalidGridSize`] if `n` is not in `1..=9`,
+    /// [`SlotNotInPuzzle`] if any slot covers a cell outside the grid, or
+    /// [`DuplicateSlotPolyomino`] if two slots share the same polyomino
     /// ([`Slot::cmp`] keys on the polyomino alone, so distinct slots over the
     /// same polyomino would silently collide in the slot set).
     pub fn with_slots(n: usize, slots: &[Slot]) -> Result<Option<Self>, Error> {
@@ -140,7 +140,7 @@ impl Puzzle {
     /// Idempotent: re-adding an identical cage returns the puzzle unchanged.
     ///
     /// # Errors
-    /// Returns [`Error::CageConflict`] if `cage` overlaps a different cage or
+    /// Returns [`CageConflict`] if `cage` overlaps a different cage or
     /// region already in the puzzle.
     pub fn insert_cage(&self, cage: Cage) -> Result<Option<Self>, Error> {
         match self
@@ -188,7 +188,7 @@ impl Puzzle {
     /// Idempotent on a value-identical region already present.
     ///
     /// # Errors
-    /// Returns [`Error::RegionConflict`] if `polyomino` overlaps an existing slot
+    /// Returns [`RegionConflict`] if `polyomino` overlaps an existing slot
     /// and is not value-identical to an existing region.
     pub fn insert_region(&self, polyomino: Polyomino) -> Result<Self, Error> {
         match self
@@ -242,8 +242,8 @@ impl Puzzle {
     /// polyomino.
     ///
     /// # Errors
-    /// - [`Error::CageConflict`] if a cage at `polyomino` uses a different operation.
-    /// - [`Error::InfeasibleOperation`] if `op` admits no valid tuples for `polyomino`.
+    /// - [`CageConflict`] if a cage at `polyomino` uses a different operation.
+    /// - [`InfeasibleOperation`] if `op` admits no valid tuples for `polyomino`.
     pub fn promote(&self, polyomino: &Polyomino, op: Operation) -> Result<Option<Self>, Error> {
         let n = u8::try_from(self.n())
             .unwrap_or_else(|_| unreachable!("Puzzle invariant: n is in 1..=9"));
@@ -285,6 +285,68 @@ impl Puzzle {
         }
         let mut slots = self.slots.clone();
         let _ = slots.replace(Slot::Region(polyomino.clone()));
+        Ok(self.rebuilt(slots))
+    }
+
+    /// Returns a new [`Puzzle`] with `cell` added to `slot`'s polyomino,
+    /// re-propagated. Returns `None` on contradiction.
+    ///
+    /// The resulting slot is always a [`Slot::Region`] — adding a cell
+    /// invalidates any cage operation, so cages are demoted automatically.
+    /// If `cell` is already in `slot`'s polyomino, the slot is still
+    /// converted to a region and the cage constraint is removed.
+    ///
+    /// # Errors
+    /// - [`SlotNotInPuzzle`] if `slot` does not match any slot in this puzzle.
+    /// - [`TargetNotAdjacent`] if `cell` is not already in the polyomino and is not edge-adjacent
+    ///   to it.
+    /// - [`RegionConflict`] if `cell` is already covered by a different slot.
+    pub fn insert_cell(&self, cell: Cell, slot: &Slot) -> Result<Option<Self>, Error> {
+        let Some(existing) = self.slots.get(slot) else {
+            return Err(SlotNotInPuzzle(slot.clone()));
+        };
+        let poly = existing.polyomino();
+        if !poly.contains(cell) && !cell.neighbors_4().any(|n| poly.contains(n)) {
+            return Err(TargetNotAdjacent);
+        }
+        if !poly.contains(cell)
+            && let Some(other) = self.slots.iter().find(|s| s.polyomino().contains(cell))
+        {
+            return Err(RegionConflict(other.polyomino().clone()));
+        }
+        let new_poly = existing.insert_cell(cell)?;
+        let mut slots = self.slots.clone();
+        let _ = slots.remove(existing);
+        let _ = slots.insert(Slot::Region(new_poly));
+        Ok(Some(self.rebuilt(slots)))
+    }
+
+    /// Returns a new [`Puzzle`] with `cell` removed from its slot's polyomino.
+    ///
+    /// The resulting slot is always a [`Slot::Region`]. If removing `cell`
+    /// empties the polyomino (it was the only cell), the slot is removed
+    /// entirely.
+    ///
+    /// # Errors
+    /// - [`CellNotCovered`] if `cell` is not in any slot.
+    /// - [`Error::WouldDisconnect`] if removing `cell` would leave the remaining cells
+    ///   disconnected.
+    pub fn remove_cell(&self, cell: Cell) -> Result<Self, Error> {
+        let Some(slot) = self.slots.iter().find(|s| s.polyomino().contains(cell)) else {
+            return Err(CellNotCovered(cell));
+        };
+        let mut slots = self.slots.clone();
+        // Clone the slot reference before removing, since `slot` borrows `self.slots`.
+        let slot_clone = slot.clone();
+        match slot_clone.remove_cell(cell)? {
+            Some(new_poly) => {
+                let _ = slots.remove(&slot_clone);
+                let _ = slots.insert(Slot::Region(new_poly));
+            }
+            None => {
+                let _ = slots.remove(&slot_clone);
+            }
+        }
         Ok(self.rebuilt(slots))
     }
 
@@ -341,7 +403,7 @@ impl Puzzle {
     /// the default cage-size distribution.
     ///
     /// # Errors
-    /// Returns [`Error::InvalidGridSize`] if `n` is not in `1..=9`.
+    /// Returns [`InvalidGridSize`] if `n` is not in `1..=9`.
     pub fn generate<R: Rng>(n: usize, rng: &mut R) -> Result<Self, Error> {
         generate(n, rng)
     }
@@ -350,7 +412,7 @@ impl Puzzle {
     /// and cage-size distribution.
     ///
     /// # Errors
-    /// Returns [`Error::InvalidGridSize`] if `n` is not in `1..=9`, or any error
+    /// Returns [`InvalidGridSize`] if `n` is not in `1..=9`, or any error
     /// returned by `op`.
     pub fn generate_with<R: Rng, F>(
         n: usize,
@@ -892,6 +954,131 @@ mod tests {
                 ],
             }),
         );
+    }
+
+    // --- insert_cell ---
+
+    #[test]
+    fn insert_cell_adjacent_to_region_grows_region() {
+        let p = puzzle_4().insert_region(singleton()).unwrap();
+        let slot = Slot::Region(singleton());
+        let new_p = p.insert_cell(Cell::new(0, 1), &slot).unwrap().unwrap();
+        assert_eq!(new_p.regions().count(), 1);
+        assert!(new_p.regions().next().unwrap().contains(Cell::new(0, 1)));
+        assert_eq!(new_p.regions().next().unwrap().len(), 2);
+    }
+
+    #[test]
+    fn insert_cell_into_cage_demotes_to_region_and_widens() {
+        let c = singleton_cage(); // Given(3) at (0,0)
+        let p = puzzle_4().insert_cage(c.clone()).unwrap().unwrap();
+        assert_eq!(p.domain(Cell::new(0, 0)), Domain::new([3]));
+        let slot = Slot::Cage(c);
+        let new_p = p.insert_cell(Cell::new(0, 1), &slot).unwrap().unwrap();
+        assert_eq!(new_p.cages().count(), 0);
+        assert_eq!(new_p.regions().count(), 1);
+        assert_eq!(new_p.domain(Cell::new(0, 0)), Domain::full(4));
+    }
+
+    #[test]
+    fn insert_cell_already_in_cage_demotes_to_region() {
+        let c = singleton_cage();
+        let p = puzzle_4().insert_cage(c.clone()).unwrap().unwrap();
+        let slot = Slot::Cage(c);
+        let new_p = p.insert_cell(Cell::new(0, 0), &slot).unwrap().unwrap();
+        assert_eq!(new_p.cages().count(), 0);
+        assert_eq!(new_p.regions().count(), 1);
+    }
+
+    #[test]
+    fn insert_cell_non_adjacent_returns_target_not_adjacent() {
+        let p = puzzle_4().insert_region(singleton()).unwrap();
+        let slot = Slot::Region(singleton());
+        assert!(matches!(
+            p.insert_cell(Cell::new(1, 1), &slot),
+            Err(TargetNotAdjacent)
+        ));
+    }
+
+    #[test]
+    fn insert_cell_slot_not_in_puzzle_returns_err() {
+        let p = puzzle_4();
+        let slot = Slot::Region(singleton());
+        assert!(matches!(
+            p.insert_cell(Cell::new(0, 1), &slot),
+            Err(SlotNotInPuzzle(_))
+        ));
+    }
+
+    #[test]
+    fn insert_cell_conflicts_with_other_slot_returns_region_conflict() {
+        // Two adjacent regions; trying to grow one into the other's cell.
+        let p = puzzle_4()
+            .insert_region(singleton())
+            .unwrap()
+            .insert_region(poly(&[(0, 1)]))
+            .unwrap();
+        let slot = Slot::Region(singleton());
+        assert!(matches!(
+            p.insert_cell(Cell::new(0, 1), &slot),
+            Err(RegionConflict(_))
+        ));
+    }
+
+    // --- remove_cell ---
+
+    #[test]
+    fn remove_cell_from_region_shrinks_region() {
+        let p = puzzle_4().insert_region(pair()).unwrap();
+        let new_p = p.remove_cell(Cell::new(0, 1)).unwrap();
+        assert_eq!(new_p.regions().count(), 1);
+        assert!(!new_p.regions().next().unwrap().contains(Cell::new(0, 1)));
+        assert_eq!(new_p.regions().next().unwrap().len(), 1);
+    }
+
+    #[test]
+    fn remove_cell_from_cage_demotes_to_region_and_widens() {
+        let c = cage(4, &[(0, 0), (0, 1)], Operation::Add(3));
+        let p = puzzle_4().insert_cage(c).unwrap().unwrap();
+        let new_p = p.remove_cell(Cell::new(0, 1)).unwrap();
+        assert_eq!(new_p.cages().count(), 0);
+        assert_eq!(new_p.regions().count(), 1);
+        assert_eq!(new_p.domain(Cell::new(0, 0)), Domain::full(4));
+    }
+
+    #[test]
+    fn remove_cell_from_singleton_removes_slot() {
+        let p = puzzle_4().insert_region(singleton()).unwrap();
+        let new_p = p.remove_cell(Cell::new(0, 0)).unwrap();
+        assert_eq!(new_p.slots().count(), 0);
+    }
+
+    #[test]
+    fn remove_cell_from_singleton_cage_removes_slot_and_widens() {
+        let c = singleton_cage();
+        let p = puzzle_4().insert_cage(c).unwrap().unwrap();
+        assert_eq!(p.domain(Cell::new(0, 0)), Domain::new([3]));
+        let new_p = p.remove_cell(Cell::new(0, 0)).unwrap();
+        assert_eq!(new_p.slots().count(), 0);
+        assert_eq!(new_p.domain(Cell::new(0, 0)), Domain::full(4));
+    }
+
+    #[test]
+    fn remove_cell_not_in_any_slot_returns_cell_not_covered() {
+        assert!(matches!(
+            puzzle_4().remove_cell(Cell::new(0, 0)),
+            Err(CellNotCovered(_))
+        ));
+    }
+
+    #[test]
+    fn remove_cell_would_disconnect_returns_err() {
+        let row3 = poly(&[(0, 0), (0, 1), (0, 2)]);
+        let p = puzzle_4().insert_region(row3).unwrap();
+        assert!(matches!(
+            p.remove_cell(Cell::new(0, 1)),
+            Err(Error::WouldDisconnect(_))
+        ));
     }
 
     #[test]
