@@ -50,7 +50,7 @@ impl Constraint<Cell> for KenKenConstraint {
 /// | `IsSolution`     | This puzzle is itself a solution; no nested vec needed   |
 /// | `Solved([])`     | Puzzle is complete but its constraints are unsatisfiable |
 /// | `Solved([…])`    | Puzzle is complete and these are all its solutions       |
-#[derive(Debug, Clone, Default)]
+#[derive(Debug, Clone, Default, serde::Serialize, serde::Deserialize)]
 enum SolutionsCache {
     #[default]
     Uncomputed,
@@ -590,9 +590,16 @@ impl Cover for Puzzle {
 impl serde::Serialize for Puzzle {
     fn serialize<S: serde::Serializer>(&self, s: S) -> Result<S::Ok, S::Error> {
         use serde::ser::SerializeStruct;
-        let mut st = s.serialize_struct("Puzzle", 2)?;
+        let mut st = s.serialize_struct("Puzzle", 3)?;
         st.serialize_field("n", &self.n())?;
         st.serialize_field("slots", &self.slots)?;
+        st.serialize_field(
+            "solutions_cache",
+            &*self
+                .solutions_cache
+                .lock()
+                .expect("solutions_cache mutex poisoned"),
+        )?;
         st.end()
     }
 }
@@ -603,11 +610,22 @@ impl<'de> serde::Deserialize<'de> for Puzzle {
         struct PuzzleData {
             n: usize,
             slots: Vec<Slot>,
+            #[serde(default)]
+            solutions_cache: SolutionsCache,
         }
-        let PuzzleData { n, slots } = PuzzleData::deserialize(d)?;
-        Self::with_slots(n, &slots)
+        let PuzzleData {
+            n,
+            slots,
+            solutions_cache,
+        } = PuzzleData::deserialize(d)?;
+        let puzzle = Self::with_slots(n, &slots)
             .map_err(serde::de::Error::custom)?
-            .ok_or_else(|| serde::de::Error::custom("puzzle slots produce a contradiction"))
+            .ok_or_else(|| serde::de::Error::custom("puzzle slots produce a contradiction"))?;
+        *puzzle
+            .solutions_cache
+            .lock()
+            .expect("solutions_cache mutex poisoned") = solutions_cache;
+        Ok(puzzle)
     }
 }
 
@@ -1219,8 +1237,23 @@ mod tests {
                         "n": 2,
                     }},
                 ],
+                "solutions_cache": "Uncomputed",
             }),
         );
+    }
+
+    #[test]
+    fn solutions_cache_round_trips_through_json() {
+        // A complete puzzle with solutions computed: cache should survive the round-trip.
+        let c1 = cage(2, &[(0, 0)], Operation::Given(1));
+        let c2 = cage(2, &[(0, 1)], Operation::Given(2));
+        let c3 = cage(2, &[(1, 0), (1, 1)], Operation::Add(3));
+        let p = Puzzle::with_cages(2, &[c1, c2, c3]).unwrap().unwrap();
+        let _ = p.solutions(); // populate cache
+        let json = serde_json::to_string(&p).unwrap();
+        let restored: Puzzle = serde_json::from_str(&json).unwrap();
+        // Cache was serialized: solution_count must not re-run the solver.
+        assert_eq!(restored.solution_count(), Some(1));
     }
 
     // --- insert_cell ---
