@@ -41,16 +41,16 @@ impl Constraint<Cell> for KenKenConstraint {
     }
 }
 
-/// A KenKen puzzle: a grid of candidate values together with cage and
+/// A KenKen puzzle: a grid of cell domains together with cage and
 /// all-different constraints.
 ///
 /// ## Fixpoint invariant
 ///
 /// A *fixpoint* is a state in which applying all constraints produces no further
-/// change — every cell's candidate set is already as narrow as the constraints
+/// change — every cell's domain is already as narrow as the constraints
 /// require. Every `Puzzle` upholds this invariant: construction and mutation
 /// methods propagate constraints to a fixpoint before returning. If propagation
-/// would empty any cell's candidate set (a contradiction), the method returns
+/// would empty any cell's domain (a contradiction), the method returns
 /// `None` instead of a `Puzzle`, so a `Puzzle` value always represents a
 /// consistent, fully propagated state. Regions contribute no propagation, so
 /// region-only mutations skip that step.
@@ -289,7 +289,7 @@ impl Puzzle {
     }
 
     /// Rebuilds the puzzle from a fully widened grid with `slots` and
-    /// re-propagates. Used by the widening mutators ([`remove`](Self::remove),
+    /// re-propagates. Used by the widening mutators ([`remove_cage`](Self::remove_cage),
     /// [`demote`](Self::demote)); widening can only enlarge domains, so
     /// propagation cannot contradict.
     fn rebuilt(&self, slots: BTreeSet<CageSlot>) -> Self {

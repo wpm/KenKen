@@ -46,7 +46,7 @@ impl Cell {
 /// A 0-based row or column index.
 pub type Index = usize;
 
-/// A set of candidate values in `1..=9` for a cell stored as a bitmap.
+/// A cell's domain: a set of values in `1..=9` stored as a bitmap.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub struct Domain(u16);
 
@@ -84,7 +84,7 @@ impl Domain {
         self.0.is_power_of_two()
     }
 
-    /// Returns the number of candidate values in the fill.
+    /// Returns the number of values in the domain.
     pub const fn len(self) -> usize {
         self.0.count_ones() as usize
     }
