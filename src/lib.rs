@@ -11,6 +11,11 @@
 //! concepts: a `Variable` trait over grid cells, a `Store` of intrinsic domains,
 //! a derived viable-tuple `Cache`, `Constraint`s ([`Cage`] and `AllDifferent`)
 //! propagated to a fixed point, and a depth-first search.
+//!
+//! ## Threading
+//!
+//! This crate is single-threaded. [`Puzzle`] uses [`std::cell::RefCell`] for
+//! interior mutability and is neither [`Send`] nor [`Sync`].
 
 #![allow(clippy::must_use_candidate, clippy::return_self_not_must_use)]
 
