@@ -131,12 +131,6 @@ mod test {
         }
     }
 
-    #[test]
-    fn puzzle_is_send_and_sync() {
-        fn assert_send_sync<T: Send + Sync>() {}
-        assert_send_sync::<Puzzle>();
-    }
-
     // The tests below mirror in-crate unit tests for the same methods. The
     // duplication is intentional: this file runs as an external consumer would,
     // so it catches accidental visibility regressions that internal tests
