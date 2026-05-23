@@ -1,7 +1,7 @@
 //! A [`Puzzle`] pairs a domain [`Store`] with a set of [`Cage`] constraints and
 //! all-different constraints for every row and column.
 
-use std::{cell::RefCell, collections::BTreeSet};
+use std::{collections::BTreeSet, sync::Mutex};
 
 use rand::Rng;
 
@@ -59,7 +59,7 @@ pub struct Puzzle {
     store: Store,
     all_different: Vec<AllDifferent>,
     slots: BTreeSet<Slot>,
-    cache: RefCell<Cache>,
+    cache: Mutex<Cache>,
 }
 
 impl Clone for Puzzle {
@@ -68,7 +68,7 @@ impl Clone for Puzzle {
             store: self.store.clone(),
             all_different: self.all_different.clone(),
             slots: self.slots.clone(),
-            cache: RefCell::new(self.cache.borrow().clone()),
+            cache: Mutex::new(self.cache.lock().expect("cache mutex poisoned").clone()),
         }
     }
 }
@@ -94,7 +94,7 @@ impl Puzzle {
             store: Store::full(n),
             all_different: all_different_constraints(n)?,
             slots: BTreeSet::new(),
-            cache: RefCell::new(Cache::default()),
+            cache: Mutex::new(Cache::default()),
         })
     }
 
@@ -138,7 +138,7 @@ impl Puzzle {
             store: Store::full(n),
             all_different: all_different_constraints(n)?,
             slots: slots.iter().cloned().collect(),
-            cache: RefCell::new(Cache::default()),
+            cache: Mutex::new(Cache::default()),
         }
         .propagate())
     }
@@ -177,7 +177,7 @@ impl Puzzle {
             store: self.store.clone(),
             all_different: self.all_different.clone(),
             slots,
-            cache: RefCell::new(self.cache.borrow().clone()),
+            cache: Mutex::new(self.cache.lock().expect("cache mutex poisoned").clone()),
         }
         .propagate())
     }
@@ -228,7 +228,7 @@ impl Puzzle {
             store: self.store.clone(),
             all_different: self.all_different.clone(),
             slots,
-            cache: RefCell::new(self.cache.borrow().clone()),
+            cache: Mutex::new(self.cache.lock().expect("cache mutex poisoned").clone()),
         })
     }
 
@@ -251,7 +251,7 @@ impl Puzzle {
             store: self.store.clone(),
             all_different: self.all_different.clone(),
             slots,
-            cache: RefCell::new(self.cache.borrow().clone()),
+            cache: Mutex::new(self.cache.lock().expect("cache mutex poisoned").clone()),
         })
     }
 
@@ -287,7 +287,7 @@ impl Puzzle {
             store: self.store.clone(),
             all_different: self.all_different.clone(),
             slots,
-            cache: RefCell::new(self.cache.borrow().clone()),
+            cache: Mutex::new(self.cache.lock().expect("cache mutex poisoned").clone()),
         }
         .propagate())
     }
@@ -380,7 +380,7 @@ impl Puzzle {
             store: Store::full(self.n()),
             all_different: self.all_different.clone(),
             slots,
-            cache: RefCell::new(Cache::default()),
+            cache: Mutex::new(Cache::default()),
         }
         .propagate()
         .unwrap_or_else(|| unreachable!("widening fills cannot produce a contradiction"))
@@ -392,7 +392,12 @@ impl Puzzle {
     /// Each viable tuple is one specific ordered assignment of values to the
     /// cage's cells. Results are memoized across calls.
     pub fn viable_tuple_count(&self, cage: &Cage) -> usize {
-        viable_tuples(cage, &self.store, &mut self.cache.borrow_mut()).len()
+        viable_tuples(
+            cage,
+            &self.store,
+            &mut self.cache.lock().expect("cache mutex poisoned"),
+        )
+        .len()
     }
 
     /// The number of distinct unordered value-sets (multisets) that are viable
@@ -401,7 +406,12 @@ impl Puzzle {
     /// Multiple ordered tuples may share the same underlying multiset; this
     /// counts each multiset once. Results are memoized across calls.
     pub fn viable_multiset_count(&self, cage: &Cage) -> usize {
-        let tuples = viable_tuples(cage, &self.store, &mut self.cache.borrow_mut()).clone();
+        let tuples = viable_tuples(
+            cage,
+            &self.store,
+            &mut self.cache.lock().expect("cache mutex poisoned"),
+        )
+        .clone();
         let mut seen: std::collections::HashSet<Tuple> = std::collections::HashSet::new();
         for tuple in &tuples {
             let mut sorted = tuple.clone();
@@ -443,7 +453,7 @@ impl Puzzle {
             store,
             all_different: all_different.clone(),
             slots: slots.clone(),
-            cache: RefCell::new(Cache::default()),
+            cache: Mutex::new(Cache::default()),
         })
     }
 
@@ -498,7 +508,7 @@ impl Puzzle {
     fn propagate(self) -> Option<Self> {
         let constraints = self.constraints();
         let mut store = self.store;
-        let mut cache = self.cache.into_inner();
+        let mut cache = self.cache.into_inner().expect("cache mutex poisoned");
         let outcome = {
             let mut ctx = PropagationCtx::new(&mut store, &mut cache);
             propagate_to_fixpoint(&mut ctx, &constraints)
@@ -510,7 +520,7 @@ impl Puzzle {
             store,
             all_different: self.all_different,
             slots: self.slots,
-            cache: RefCell::new(cache),
+            cache: Mutex::new(cache),
         })
     }
 

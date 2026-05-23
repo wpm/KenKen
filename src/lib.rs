@@ -14,10 +14,16 @@
 //!
 //! ## Threading
 //!
-//! This crate is single-threaded. [`Puzzle`] uses [`std::cell::RefCell`] for
-//! interior mutability and is neither [`Send`] nor [`Sync`].
+//! [`Puzzle`] is [`Send`] and [`Sync`]. Interior mutability of the memoization
+//! cache is handled with [`std::sync::Mutex`], so puzzles can be shared across
+//! threads freely.
 
-#![allow(clippy::must_use_candidate, clippy::return_self_not_must_use)]
+#![allow(
+    clippy::must_use_candidate,
+    clippy::return_self_not_must_use,
+    clippy::expect_used,
+    clippy::missing_panics_doc
+)]
 
 mod all_different;
 mod arithmetic;

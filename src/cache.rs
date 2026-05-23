@@ -10,7 +10,7 @@
 //! - It is never the source of truth: an independent empty cache yields the identical result, so
 //!   the cache only changes performance, never observable behavior.
 
-use std::{collections::HashMap, rc::Rc};
+use std::{collections::HashMap, sync::Arc};
 
 use crate::{Domain, Tuple, cage::Cage, store::Store, types::N, variable::Variable};
 
@@ -29,7 +29,7 @@ struct ViableKey {
 /// (independent of the store) and the viable subset under a given projection.
 #[derive(Debug, Default, Clone)]
 pub struct Cache {
-    statics: HashMap<Cage, Rc<[Tuple]>>,
+    statics: HashMap<Cage, Arc<[Tuple]>>,
     viable: HashMap<ViableKey, TupleSet>,
 }
 
@@ -39,12 +39,12 @@ impl Cache {
         self.viable.len()
     }
 
-    fn static_tuples(&mut self, cage: &Cage) -> Rc<[Tuple]> {
+    fn static_tuples(&mut self, cage: &Cage) -> Arc<[Tuple]> {
         if let Some(cached) = self.statics.get(cage) {
-            return Rc::clone(cached);
+            return Arc::clone(cached);
         }
-        let computed: Rc<[Tuple]> = Rc::from(cage.tuples());
-        let _ = self.statics.insert(cage.clone(), Rc::clone(&computed));
+        let computed: Arc<[Tuple]> = Arc::from(cage.tuples());
+        let _ = self.statics.insert(cage.clone(), Arc::clone(&computed));
         computed
     }
 }
