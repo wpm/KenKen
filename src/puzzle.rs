@@ -418,6 +418,13 @@ impl Puzzle {
         self.store.domains()
     }
 
+    /// Returns `true` if every cell in the grid belongs to a cage.
+    pub fn is_complete(&self) -> bool {
+        let cage_cells: std::collections::HashSet<Cell> =
+            self.cages().flat_map(Cage::cells).collect();
+        self.cells().all(|cell| cage_cells.contains(&cell))
+    }
+
     /// Enumerates the puzzle's solutions via depth-first backtracking search.
     ///
     /// Each item is a fully solved [`Puzzle`]. The iterator is lazy: stop after
@@ -901,6 +908,37 @@ mod tests {
             .unwrap()
             .1;
         assert_eq!(pinned, Domain::new([3]));
+    }
+
+    // --- is_complete ---
+
+    #[test]
+    fn is_complete_false_for_empty_puzzle() {
+        assert!(!puzzle_4().is_complete());
+    }
+
+    #[test]
+    fn is_complete_false_when_only_some_cells_covered() {
+        let p = puzzle_4().insert_cage(singleton_cage()).unwrap().unwrap();
+        assert!(!p.is_complete());
+    }
+
+    #[test]
+    fn is_complete_false_when_region_covers_all_cells() {
+        // Regions don't count — only cages.
+        let all_cells: Vec<(usize, usize)> =
+            (0..4).flat_map(|r| (0..4).map(move |c| (r, c))).collect();
+        let p = puzzle_4().insert_region(poly(&all_cells)).unwrap();
+        assert!(!p.is_complete());
+    }
+
+    #[test]
+    fn is_complete_true_when_all_cells_in_cages() {
+        // Four non-overlapping pair cages that tile all 4 cells of a 2×2 grid.
+        let c1 = cage(2, &[(0, 0), (0, 1)], Operation::Add(3));
+        let c2 = cage(2, &[(1, 0), (1, 1)], Operation::Add(3));
+        let p = Puzzle::with_cages(2, &[c1, c2]).unwrap().unwrap();
+        assert!(p.is_complete());
     }
 
     // --- viable_tuple_count / viable_multiset_count ---
