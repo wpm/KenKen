@@ -41,6 +41,22 @@ impl Constraint<Cell> for KenKenConstraint {
     }
 }
 
+/// Cached state of [`Puzzle::solutions`].
+///
+/// | Variant          | Meaning                                                  |
+/// |------------------|----------------------------------------------------------|
+/// | `Uncomputed`     | Not yet evaluated                                        |
+/// | `Incomplete`     | Puzzle has uncaged cells — solutions are not defined     |
+/// | `Solved([])`     | Puzzle is complete but its constraints are unsatisfiable |
+/// | `Solved([…])`    | Puzzle is complete and these are all its solutions       |
+#[derive(Debug, Clone, Default)]
+enum SolutionsCache {
+    #[default]
+    Uncomputed,
+    Incomplete,
+    Solved(Vec<Puzzle>),
+}
+
 /// A KenKen puzzle: a grid of cell domains together with cage and
 /// all-different constraints.
 ///
@@ -50,19 +66,10 @@ impl Constraint<Cell> for KenKenConstraint {
 /// change — every cell's domain is already as narrow as the constraints
 /// require. Every `Puzzle` upholds this invariant: construction and mutation
 /// methods propagate constraints to a fixpoint before returning. If propagation
-///  empties any cell's domain (a contradiction), the method returns
+/// empties any cell's domain (a contradiction), the method returns
 /// `None` instead of a `Puzzle`, so a `Puzzle` value always represents a
 /// consistent, fully propagated state. Regions contribute no propagation, so
 /// region-only mutations skip that step.
-/// Cached state of [`Puzzle::solutions`].
-#[derive(Debug, Clone, Default)]
-enum SolutionsCache {
-    #[default]
-    Uncomputed,
-    Incomplete,
-    Solved(Vec<Puzzle>),
-}
-
 #[derive(Debug)]
 pub struct Puzzle {
     store: Store,
@@ -449,14 +456,8 @@ impl Puzzle {
 
     /// Returns the solutions of this puzzle, lazily computed and cached.
     ///
-    /// ## Return value
-    ///
-    /// | Result        | Meaning                                              |
-    /// |---------------|------------------------------------------------------|
-    /// | `None`        | Puzzle is incomplete — some cells have no cage       |
-    /// | `Some([])`    | Puzzle is complete but its constraints are unsatisfiable |
-    /// | `Some([…])`   | Puzzle is complete and these are all its solutions   |
-    ///
+    /// Returns `None` if the puzzle is incomplete (some cells have no cage),
+    /// or `Some(vec)` with all solutions if complete (empty if unsatisfiable).
     /// The first call runs the solver; subsequent calls clone the cached result.
     pub fn solutions(&self) -> Option<Vec<Self>> {
         let mut guard = self

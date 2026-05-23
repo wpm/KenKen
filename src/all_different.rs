@@ -75,7 +75,7 @@ impl Cover for AllDifferent {
 /// Full Régin GAC for all-different: given one domain per variable, returns the
 /// pruned domains in the same order. A value survives for a variable iff some
 /// assignment of distinct values (one per variable, each within its domain) uses
-/// it; if no such complete assignment exists every domain empties.
+/// it; if no such complete assignment exists, every domain empties.
 #[allow(clippy::similar_names)]
 pub fn regin_gac(domains: &[Domain]) -> Vec<Domain> {
     let n = domains.len();
