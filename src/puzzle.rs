@@ -1,7 +1,7 @@
 //! A [`Puzzle`] pairs a domain [`Store`] with a set of [`Cage`] constraints and
 //! all-different constraints for every row and column.
 
-use std::collections::BTreeSet;
+use std::{collections::BTreeSet, sync::Mutex};
 
 use rand::Rng;
 
@@ -13,7 +13,7 @@ use crate::{
         CageConflict, CellNotCovered, DuplicateSlotPolyomino, InfeasibleOperation, InvalidGridSize,
         RegionConflict, SlotNotInPuzzle, TargetNotAdjacent,
     },
-    Operation, Polyomino, Slot,
+    Operation, Polyomino, Slot, Tuple,
     all_different::AllDifferent,
     cache::{Cache, viable_tuples},
     constraint::{Constraint, Outcome, PropagationCtx, propagate_to_fixpoint},
@@ -54,12 +54,28 @@ impl Constraint<Cell> for KenKenConstraint {
 /// `None` instead of a `Puzzle`, so a `Puzzle` value always represents a
 /// consistent, fully propagated state. Regions contribute no propagation, so
 /// region-only mutations skip that step.
-#[derive(Debug, Clone)]
+#[derive(Debug)]
 pub struct Puzzle {
     store: Store,
     all_different: Vec<AllDifferent>,
     slots: BTreeSet<Slot>,
-    cache: Cache,
+    cache: Mutex<Cache>,
+}
+
+impl Clone for Puzzle {
+    fn clone(&self) -> Self {
+        Self {
+            store: self.store.clone(),
+            all_different: self.all_different.clone(),
+            slots: self.slots.clone(),
+            cache: Mutex::new(
+                self.cache
+                    .lock()
+                    .unwrap_or_else(std::sync::PoisonError::into_inner)
+                    .clone(),
+            ),
+        }
+    }
 }
 
 /// The row and column all-different constraints of an `n`×`n` grid.
@@ -83,7 +99,7 @@ impl Puzzle {
             store: Store::full(n),
             all_different: all_different_constraints(n)?,
             slots: BTreeSet::new(),
-            cache: Cache::default(),
+            cache: Mutex::new(Cache::default()),
         })
     }
 
@@ -127,7 +143,7 @@ impl Puzzle {
             store: Store::full(n),
             all_different: all_different_constraints(n)?,
             slots: slots.iter().cloned().collect(),
-            cache: Cache::default(),
+            cache: Mutex::new(Cache::default()),
         }
         .propagate())
     }
@@ -159,11 +175,19 @@ impl Puzzle {
         }
         let mut slots = self.slots.clone();
         let _ = slots.insert(Slot::Cage(cage));
+        // Carry the existing cache into propagation: entries are keyed on
+        // (cage, domain-projection), so prior entries remain valid even as
+        // the new cage may further narrow domains.
         Ok(Self {
             store: self.store.clone(),
             all_different: self.all_different.clone(),
             slots,
-            cache: self.cache.clone(),
+            cache: Mutex::new(
+                self.cache
+                    .lock()
+                    .unwrap_or_else(std::sync::PoisonError::into_inner)
+                    .clone(),
+            ),
         }
         .propagate())
     }
@@ -214,7 +238,12 @@ impl Puzzle {
             store: self.store.clone(),
             all_different: self.all_different.clone(),
             slots,
-            cache: self.cache.clone(),
+            cache: Mutex::new(
+                self.cache
+                    .lock()
+                    .unwrap_or_else(std::sync::PoisonError::into_inner)
+                    .clone(),
+            ),
         })
     }
 
@@ -237,7 +266,12 @@ impl Puzzle {
             store: self.store.clone(),
             all_different: self.all_different.clone(),
             slots,
-            cache: self.cache.clone(),
+            cache: Mutex::new(
+                self.cache
+                    .lock()
+                    .unwrap_or_else(std::sync::PoisonError::into_inner)
+                    .clone(),
+            ),
         })
     }
 
@@ -273,7 +307,12 @@ impl Puzzle {
             store: self.store.clone(),
             all_different: self.all_different.clone(),
             slots,
-            cache: self.cache.clone(),
+            cache: Mutex::new(
+                self.cache
+                    .lock()
+                    .unwrap_or_else(std::sync::PoisonError::into_inner)
+                    .clone(),
+            ),
         }
         .propagate())
     }
@@ -366,7 +405,7 @@ impl Puzzle {
             store: Store::full(self.n()),
             all_different: self.all_different.clone(),
             slots,
-            cache: Cache::default(),
+            cache: Mutex::new(Cache::default()),
         }
         .propagate()
         .unwrap_or_else(|| unreachable!("widening fills cannot produce a contradiction"))
@@ -376,23 +415,34 @@ impl Puzzle {
     /// viable for `cage` under the current puzzle state.
     ///
     /// Each viable tuple is one specific ordered assignment of values to the
-    /// cage's cells. The result is memoized in the puzzle's cache.
+    /// cage's cells. Results are memoized across calls.
     pub fn viable_tuple_count(&self, cage: &Cage) -> usize {
-        let mut cache = self.cache.clone();
-        viable_tuples(cage, &self.store, &mut cache).len()
+        viable_tuples(
+            cage,
+            &self.store,
+            &mut self
+                .cache
+                .lock()
+                .unwrap_or_else(std::sync::PoisonError::into_inner),
+        )
+        .len()
     }
 
     /// The number of distinct unordered value-sets (multisets) that are viable
     /// for `cage` under the current puzzle state.
     ///
     /// Multiple ordered tuples may share the same underlying multiset; this
-    /// counts each multiset once. The result is derived from the cached viable
-    /// tuples.
+    /// counts each multiset once. Results are memoized across calls.
     pub fn viable_multiset_count(&self, cage: &Cage) -> usize {
-        let mut cache = self.cache.clone();
-        let tuples = viable_tuples(cage, &self.store, &mut cache);
-        let mut seen: std::collections::HashSet<Vec<u8>> = std::collections::HashSet::new();
-        for tuple in tuples {
+        let tuples = {
+            let mut cache = self
+                .cache
+                .lock()
+                .unwrap_or_else(std::sync::PoisonError::into_inner);
+            viable_tuples(cage, &self.store, &mut cache).clone()
+        };
+        let mut seen: std::collections::HashSet<Tuple> = std::collections::HashSet::new();
+        for tuple in &tuples {
             let mut sorted = tuple.clone();
             sorted.sort_unstable();
             let _ = seen.insert(sorted);
@@ -432,7 +482,7 @@ impl Puzzle {
             store,
             all_different: all_different.clone(),
             slots: slots.clone(),
-            cache: Cache::default(),
+            cache: Mutex::new(Cache::default()),
         })
     }
 
@@ -487,7 +537,10 @@ impl Puzzle {
     fn propagate(self) -> Option<Self> {
         let constraints = self.constraints();
         let mut store = self.store;
-        let mut cache = self.cache;
+        let mut cache = self
+            .cache
+            .into_inner()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
         let outcome = {
             let mut ctx = PropagationCtx::new(&mut store, &mut cache);
             propagate_to_fixpoint(&mut ctx, &constraints)
@@ -499,7 +552,7 @@ impl Puzzle {
             store,
             all_different: self.all_different,
             slots: self.slots,
-            cache,
+            cache: Mutex::new(cache),
         })
     }
 
@@ -954,13 +1007,13 @@ mod tests {
 
     #[test]
     fn viable_multiset_count_less_than_tuple_count_for_multi_permutation_cage() {
-        // n=4, l-shape, Add(6): has 7 ordered tuples but fewer multisets.
+        // n=4, l-shape, Add(6): 7 ordered tuples from 2 multisets.
+        // {1,2,3} gives all 6 permutations; {1,1,4} gives only [4,1,1]
+        // (the two orderings that put a 1 at position 0 fail the collinear checks).
         let c = cage(4, &[(0, 0), (0, 1), (1, 0)], Operation::Add(6));
         let puzzle = puzzle_4().insert_cage(c.clone()).unwrap().unwrap();
-        let tuples = puzzle.viable_tuple_count(&c);
-        let multisets = puzzle.viable_multiset_count(&c);
-        assert!(multisets <= tuples);
-        assert_eq!(tuples, 7); // matches existing cage test
+        assert_eq!(puzzle.viable_tuple_count(&c), 7);
+        assert_eq!(puzzle.viable_multiset_count(&c), 2);
     }
 
     // --- internal engine ---
