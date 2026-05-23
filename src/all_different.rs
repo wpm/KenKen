@@ -77,7 +77,7 @@ impl Cover for AllDifferent {
 /// assignment of distinct values (one per variable, each within its domain) uses
 /// it; if no such complete assignment exists every domain empties.
 #[allow(clippy::similar_names)]
-fn regin_gac(domains: &[Domain]) -> Vec<Domain> {
+pub fn regin_gac(domains: &[Domain]) -> Vec<Domain> {
     let n = domains.len();
     if n == 0 {
         return vec![];
