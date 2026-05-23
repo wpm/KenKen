@@ -444,7 +444,7 @@ fn regin_filter_tuples(mut tuples: Vec<Tuple>, groups: &[Vec<usize>]) -> Vec<Tup
 
 /// Returns an iterator over all distinct permutations of `values` in
 /// lexicographic order.
-pub fn permutations(values: &[N]) -> impl Iterator<Item = Tuple> {
+fn permutations(values: &[N]) -> impl Iterator<Item = Tuple> {
     let mut perm = values.to_vec();
     perm.sort_unstable();
     let mut all = vec![perm.clone()];
