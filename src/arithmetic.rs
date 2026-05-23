@@ -6,7 +6,7 @@ use crate::{
 /// Returns an iterator over all non-decreasing `k`-tuples with values in
 /// `1..=n` that sum to `s`.
 pub fn addition_multisets(n: N, k: usize, s: N) -> impl Iterator<Item = Tuple> {
-    simplex_multisets(n, k, |acc, i| acc + M::from(i), M::from(s))
+    simplex_multisets(n, k, |acc, i| acc + u64::from(i), u64::from(s))
 }
 
 /// Returns all 2-element tuples `[i, j]` with `j - i == d` and `1 <= i < j <=
@@ -18,7 +18,7 @@ pub fn subtraction_multisets(max: N, d: N) -> impl Iterator<Item = Tuple> {
 /// Returns an iterator over all non-decreasing `k`-tuples with values in
 /// `1..=n` whose product is `s`.
 pub fn multiplication_multisets(n: N, k: usize, s: M) -> impl Iterator<Item = Tuple> {
-    simplex_multisets(n, k, |acc, i| acc * M::from(i), s)
+    simplex_multisets(n, k, |acc, i| acc * u64::from(i), u64::from(s))
 }
 
 /// Returns all 2-element tuples `[i, j]` with `j / i == q` and `1 <= i < j <=
@@ -30,23 +30,26 @@ pub fn division_multisets(max: N, q: N) -> impl Iterator<Item = Tuple> {
 /// Returns an iterator over all non-decreasing `tuple_size`-tuples with values
 /// in `1..=n` where applying `f` across the tuple (left fold) equals `s`.
 ///
-/// `f` folds an `M` accumulator over each `N` element, so products that exceed
-/// `u8::MAX` are handled correctly. Partial tuples whose accumulated value
-/// already exceeds `s` are pruned, since extending them can only increase it.
+/// `f` folds a `u64` accumulator over each `N` element. This matters for
+/// multiplication: the worst case is a 9-cell cage on a 9×9 grid whose product
+/// could reach 9×9! ≈ 3.3×10⁶, which overflows `M` (`u16`) but fits
+/// comfortably in `u64`. Because the target `s` is also widened to `u64` before
+/// the comparison, any partial product that exceeds `M::MAX` will simply fail
+/// the `v <= s` pruning check and be discarded — no special-casing needed.
 /// Complete tuples are yielded only when their value equals `s`.
 #[allow(clippy::many_single_char_names)]
 fn simplex_multisets(
     n: N,
     tuple_size: usize,
-    f: impl Fn(M, N) -> M + Copy + 'static,
-    s: M,
+    f: impl Fn(u64, N) -> u64 + Copy + 'static,
+    s: u64,
 ) -> Box<dyn Iterator<Item = Tuple>> {
     fn recurse(
         n: N,
         tuple_size: usize,
         k: usize,
-        f: impl Fn(M, N) -> M + Copy + 'static,
-        s: M,
+        f: impl Fn(u64, N) -> u64 + Copy + 'static,
+        s: u64,
     ) -> Box<dyn Iterator<Item = Tuple>> {
         if k == 0 {
             return Box::new(std::iter::once(vec![]));
@@ -77,12 +80,12 @@ fn simplex_multisets(
 }
 
 /// Reduces `t` by left-folding `f` over its elements, starting from the first
-/// element widened to `M`. Returns [`Error::EmptyTuple`] if `t` is empty.
-fn sequence_operation(f: impl Fn(M, N) -> M, t: &[N]) -> Result<M, Error> {
+/// element widened to `u64`. Returns [`Error::EmptyTuple`] if `t` is empty.
+fn sequence_operation(f: impl Fn(u64, N) -> u64, t: &[N]) -> Result<u64, Error> {
     let Some((&t_0, rest)) = t.split_first() else {
         return Err(Error::EmptyTuple);
     };
-    Ok(rest.iter().fold(M::from(t_0), |acc, &i| f(acc, i)))
+    Ok(rest.iter().fold(u64::from(t_0), |acc, &i| f(acc, i)))
 }
 
 #[cfg(test)]
@@ -177,8 +180,14 @@ mod tests {
         itertools::assert_equal(multiplication_multisets(9, 3, 729), [vec![9, 9, 9]]);
     }
 
-    fn add_acc(a: M, b: N) -> M {
-        a + M::from(b)
+    #[test]
+    fn multiplication_multisets_overflow_product_returns_empty() {
+        // 9^9 = 387_420_489 overflows M (u16); no tuple should match.
+        assert!(multiplication_multisets(9, 9, u16::MAX).next().is_none());
+    }
+
+    fn add_acc(a: u64, b: N) -> u64 {
+        a + u64::from(b)
     }
 
     #[test]
