@@ -156,7 +156,7 @@ where
         let operation = op(&values, n)?;
         let cage = Cage::new(n_max, polyomino, operation);
         puzzle = puzzle
-            .insert(cage)?
+            .insert_cage(cage)?
             .unwrap_or_else(|| unreachable!("disjoint tiling cannot produce a contradiction"));
     }
     Ok(puzzle)

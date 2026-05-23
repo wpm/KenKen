@@ -279,7 +279,7 @@ mod test {
     fn insert_region_overlap_returns_public_region_conflict() {
         let puzzle = Puzzle::new(4)
             .unwrap()
-            .insert(cage(4, &[(0, 0)], Operation::Given(3)))
+            .insert_cage(cage(4, &[(0, 0)], Operation::Given(3)))
             .unwrap()
             .unwrap();
         assert!(matches!(
@@ -322,7 +322,7 @@ mod test {
     #[test]
     fn remove_region_on_cage_polyomino_is_noop() {
         let c = cage(4, &[(0, 0)], Operation::Given(3));
-        let puzzle = Puzzle::new(4).unwrap().insert(c).unwrap().unwrap();
+        let puzzle = Puzzle::new(4).unwrap().insert_cage(c).unwrap().unwrap();
         let after = puzzle.remove_region(&region(&[(0, 0)])).unwrap();
         assert_eq!(after.cages().count(), 1);
         assert_eq!(after.regions().count(), 0);

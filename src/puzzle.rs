@@ -142,7 +142,7 @@ impl Puzzle {
     /// # Errors
     /// Returns [`Error::CageConflict`] if `cage` overlaps a different cage or
     /// region already in the puzzle.
-    pub fn insert(&self, cage: Cage) -> Result<Option<Self>, Error> {
+    pub fn insert_cage(&self, cage: Cage) -> Result<Option<Self>, Error> {
         match self
             .slots
             .iter()
@@ -172,7 +172,7 @@ impl Puzzle {
     ///
     /// # Errors
     /// Never returns an error today; the signature mirrors the other mutators.
-    pub fn remove(&self, cage: &Cage) -> Result<Self, Error> {
+    pub fn remove_cage(&self, cage: &Cage) -> Result<Self, Error> {
         let key = CageSlot::Cage(cage.clone());
         if self.slots.get(&key) != Some(&key) {
             return Ok(self.clone());
@@ -220,7 +220,7 @@ impl Puzzle {
     /// must [`demote`](Self::demote) first.
     ///
     /// # Errors
-    /// Never returns an error today; the signature mirrors [`remove`](Self::remove).
+    /// Never returns an error today; the signature mirrors [`remove_cage`](Self::remove_cage).
     pub fn remove_region(&self, polyomino: &Polyomino) -> Result<Self, Error> {
         let key = CageSlot::Region(polyomino.clone());
         if self.slots.get(&key) != Some(&key) {
@@ -277,7 +277,7 @@ impl Puzzle {
     /// Idempotent: a no-op when no cage lives at `polyomino`.
     ///
     /// # Errors
-    /// Never returns an error today; the signature mirrors [`remove`](Self::remove).
+    /// Never returns an error today; the signature mirrors [`remove_cage`](Self::remove_cage).
     pub fn demote(&self, polyomino: &Polyomino) -> Result<Self, Error> {
         match self.slots.get(&CageSlot::Region(polyomino.clone())) {
             None | Some(CageSlot::Region(_)) => return Ok(self.clone()),
@@ -559,71 +559,71 @@ mod tests {
         ));
     }
 
-    // --- insert ---
+    // --- insert_cage ---
 
     #[test]
-    fn insert_non_overlapping_succeeds() {
-        assert!(puzzle_4().insert(singleton_cage()).is_ok());
+    fn insert_cage_non_overlapping_succeeds() {
+        assert!(puzzle_4().insert_cage(singleton_cage()).is_ok());
     }
 
     #[test]
-    fn insert_overlapping_is_err() {
-        let p = puzzle_4().insert(singleton_cage()).unwrap().unwrap();
+    fn insert_cage_overlapping_is_err() {
+        let p = puzzle_4().insert_cage(singleton_cage()).unwrap().unwrap();
         let overlap = cage(4, &[(0, 0)], Operation::Given(1));
-        assert!(matches!(p.insert(overlap), Err(CageConflict(_))));
+        assert!(matches!(p.insert_cage(overlap), Err(CageConflict(_))));
     }
 
     #[test]
-    fn insert_duplicate_is_idempotent() {
-        let p = puzzle_4().insert(singleton_cage()).unwrap().unwrap();
-        let p2 = p.insert(singleton_cage()).unwrap().unwrap();
+    fn insert_cage_duplicate_is_idempotent() {
+        let p = puzzle_4().insert_cage(singleton_cage()).unwrap().unwrap();
+        let p2 = p.insert_cage(singleton_cage()).unwrap().unwrap();
         assert_eq!(p.store(), p2.store());
     }
 
     #[test]
-    fn insert_is_non_destructive() {
+    fn insert_cage_is_non_destructive() {
         let base = puzzle_4();
-        let _ = base.insert(singleton_cage()).unwrap();
-        assert!(base.insert(singleton_cage()).is_ok());
+        let _ = base.insert_cage(singleton_cage()).unwrap();
+        assert!(base.insert_cage(singleton_cage()).is_ok());
     }
 
     #[test]
-    fn insert_contradiction_is_none() {
+    fn insert_cage_contradiction_is_none() {
         let p = Puzzle::new(2)
             .unwrap()
-            .insert(cage(2, &[(0, 0)], Operation::Given(1)))
+            .insert_cage(cage(2, &[(0, 0)], Operation::Given(1)))
             .unwrap()
             .unwrap();
         assert!(
-            p.insert(cage(2, &[(0, 1)], Operation::Given(1)))
+            p.insert_cage(cage(2, &[(0, 1)], Operation::Given(1)))
                 .unwrap()
                 .is_none()
         );
     }
 
-    // --- remove ---
+    // --- remove_cage ---
 
     #[test]
-    fn remove_present_widens() {
+    fn remove_cage_present_widens() {
         let c = singleton_cage();
-        let p = puzzle_4().insert(c.clone()).unwrap().unwrap();
+        let p = puzzle_4().insert_cage(c.clone()).unwrap().unwrap();
         assert_eq!(p.domain(Cell::new(0, 0)), Domain::new([3]));
-        let p2 = p.remove(&c).unwrap();
+        let p2 = p.remove_cage(&c).unwrap();
         assert_eq!(p2.domain(Cell::new(0, 0)), Domain::full(4));
     }
 
     #[test]
-    fn remove_absent_is_noop() {
-        let p2 = puzzle_4().remove(&singleton_cage()).unwrap();
-        assert!(p2.insert(singleton_cage()).is_ok());
+    fn remove_cage_absent_is_noop() {
+        let p2 = puzzle_4().remove_cage(&singleton_cage()).unwrap();
+        assert!(p2.insert_cage(singleton_cage()).is_ok());
     }
 
     #[test]
-    fn remove_same_polyomino_different_operation_is_noop() {
+    fn remove_cage_same_polyomino_different_operation_is_noop() {
         let original = singleton_cage();
-        let p = puzzle_4().insert(original).unwrap().unwrap();
+        let p = puzzle_4().insert_cage(original).unwrap().unwrap();
         let other = cage(4, &[(0, 0)], Operation::Given(2));
-        let p2 = p.remove(&other).unwrap();
+        let p2 = p.remove_cage(&other).unwrap();
         assert_eq!(p2.domain(Cell::new(0, 0)), Domain::new([3]));
     }
 
@@ -638,7 +638,7 @@ mod tests {
 
     #[test]
     fn insert_region_overlap_with_cage_is_err() {
-        let p = puzzle_4().insert(singleton_cage()).unwrap().unwrap();
+        let p = puzzle_4().insert_cage(singleton_cage()).unwrap().unwrap();
         assert!(matches!(
             p.insert_region(singleton()),
             Err(RegionConflict(_))
@@ -674,7 +674,7 @@ mod tests {
 
     #[test]
     fn remove_region_on_cage_polyomino_is_noop() {
-        let p = puzzle_4().insert(singleton_cage()).unwrap().unwrap();
+        let p = puzzle_4().insert_cage(singleton_cage()).unwrap().unwrap();
         let after = p.remove_region(&singleton()).unwrap();
         assert_eq!(after.cages().count(), 1);
     }
@@ -721,7 +721,7 @@ mod tests {
 
     #[test]
     fn promote_existing_same_op_is_idempotent() {
-        let p = puzzle_4().insert(singleton_cage()).unwrap().unwrap();
+        let p = puzzle_4().insert_cage(singleton_cage()).unwrap().unwrap();
         let p2 = p
             .promote(&singleton(), Operation::Given(3))
             .unwrap()
@@ -731,7 +731,7 @@ mod tests {
 
     #[test]
     fn promote_existing_different_op_is_conflict() {
-        let p = puzzle_4().insert(singleton_cage()).unwrap().unwrap();
+        let p = puzzle_4().insert_cage(singleton_cage()).unwrap().unwrap();
         assert!(matches!(
             p.promote(&singleton(), Operation::Given(2)),
             Err(CageConflict(_))
@@ -740,7 +740,7 @@ mod tests {
 
     #[test]
     fn demote_widens_and_replaces_with_region() {
-        let p = puzzle_4().insert(singleton_cage()).unwrap().unwrap();
+        let p = puzzle_4().insert_cage(singleton_cage()).unwrap().unwrap();
         let p2 = p.demote(&singleton()).unwrap();
         assert_eq!(p2.cages().count(), 0);
         assert_eq!(p2.regions().count(), 1);
@@ -756,7 +756,7 @@ mod tests {
 
     #[test]
     fn demote_then_promote_round_trips() {
-        let p = puzzle_4().insert(singleton_cage()).unwrap().unwrap();
+        let p = puzzle_4().insert_cage(singleton_cage()).unwrap().unwrap();
         let p2 = p
             .demote(&singleton())
             .unwrap()
@@ -773,10 +773,10 @@ mod tests {
         let a = cage(4, &[(0, 0)], Operation::Given(3));
         let b = cage(4, &[(1, 1)], Operation::Given(2));
         let puzzle = puzzle_4()
-            .insert(b)
+            .insert_cage(b)
             .unwrap()
             .unwrap()
-            .insert(a.clone())
+            .insert_cage(a.clone())
             .unwrap()
             .unwrap();
         assert_eq!(puzzle.cages().next(), Some(&a));
@@ -786,7 +786,7 @@ mod tests {
     #[test]
     fn regions_yields_only_regions() {
         let p = puzzle_4()
-            .insert(singleton_cage())
+            .insert_cage(singleton_cage())
             .unwrap()
             .unwrap()
             .insert_region(poly(&[(1, 1)]))
@@ -797,7 +797,7 @@ mod tests {
 
     #[test]
     fn domains_are_row_major_and_reflect_pins() {
-        let puzzle = puzzle_4().insert(singleton_cage()).unwrap().unwrap();
+        let puzzle = puzzle_4().insert_cage(singleton_cage()).unwrap().unwrap();
         let cells: Vec<Cell> = puzzle.domains().map(|(c, _)| c).collect();
         assert_eq!(cells.first(), Some(&Cell::new(0, 0)));
         assert_eq!(cells.len(), 16);
@@ -813,7 +813,7 @@ mod tests {
 
     #[test]
     fn propagate_is_idempotent() {
-        let p = puzzle_4().insert(singleton_cage()).unwrap().unwrap();
+        let p = puzzle_4().insert_cage(singleton_cage()).unwrap().unwrap();
         let again = p.clone().propagate().unwrap();
         assert_eq!(p.store(), again.store());
     }
@@ -842,7 +842,7 @@ mod tests {
 
     #[test]
     fn serializes_to_n_and_slots() {
-        let puzzle = puzzle_4().insert(singleton_cage()).unwrap().unwrap();
+        let puzzle = puzzle_4().insert_cage(singleton_cage()).unwrap().unwrap();
         let json = serde_json::to_string(&puzzle).unwrap();
         assert!(json.contains("\"n\":4"));
         assert!(json.contains("\"slots\""));
@@ -850,7 +850,7 @@ mod tests {
 
     #[test]
     fn round_trips_through_json() {
-        let original = puzzle_4().insert(singleton_cage()).unwrap().unwrap();
+        let original = puzzle_4().insert_cage(singleton_cage()).unwrap().unwrap();
         let restored: Puzzle =
             serde_json::from_str(&serde_json::to_string(&original).unwrap()).unwrap();
         assert_eq!(original.store(), restored.store());
