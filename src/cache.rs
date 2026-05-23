@@ -17,6 +17,9 @@ use crate::{Domain, Tuple, cage::Cage, store::Store, types::N, variable::Variabl
 /// A set of viable ordered tuples for a cage.
 pub type TupleSet = Vec<Tuple>;
 
+/// A set of viable unordered multisets for a cage (each inner `Tuple` is sorted).
+pub type MultisetSet = Vec<Tuple>;
+
 /// Memo key: a cage plus its cells' current domains, projected to value lists so
 /// two stores agreeing on the cage's cells hit the same entry.
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
@@ -25,26 +28,30 @@ struct ViableKey {
     projection: Vec<Vec<N>>,
 }
 
-/// Derived state, populated lazily. Two memos: a cage's full static tuple set
-/// (independent of the store) and the viable subset under a given projection.
+/// Derived state, populated lazily. Three memos: a cage's full static tuple set
+/// (independent of the store), the viable ordered-tuple subset under a given
+/// projection, and the viable unordered-multiset subset under a given projection.
 #[derive(Debug, Default, Clone)]
 pub struct Cache {
-    statics: HashMap<Cage, Arc<[Tuple]>>,
-    viable: HashMap<ViableKey, TupleSet>,
+    static_tuples: HashMap<Cage, Arc<[Tuple]>>,
+    viable_tuples: HashMap<ViableKey, TupleSet>,
+    viable_multisets: HashMap<ViableKey, MultisetSet>,
 }
 
 impl Cache {
     #[cfg(test)]
-    pub fn viable_entry_count(&self) -> usize {
-        self.viable.len()
+    pub fn viable_tuple_entry_count(&self) -> usize {
+        self.viable_tuples.len()
     }
 
-    fn static_tuples(&mut self, cage: &Cage) -> Arc<[Tuple]> {
-        if let Some(cached) = self.statics.get(cage) {
+    fn get_static_tuples(&mut self, cage: &Cage) -> Arc<[Tuple]> {
+        if let Some(cached) = self.static_tuples.get(cage) {
             return Arc::clone(cached);
         }
         let computed: Arc<[Tuple]> = Arc::from(cage.tuples());
-        let _ = self.statics.insert(cage.clone(), Arc::clone(&computed));
+        let _ = self
+            .static_tuples
+            .insert(cage.clone(), Arc::clone(&computed));
         computed
     }
 }
@@ -68,7 +75,7 @@ fn filter_viable(statics: &[Tuple], domains: &[Domain]) -> TupleSet {
         .collect()
 }
 
-/// Returns the viable tuples for `cage` under `store`, memoized in `cache`.
+/// Returns the viable ordered tuples for `cage` under `store`, memoized in `cache`.
 ///
 /// Pure: for the same cage and the same store contents over the cage's cells it
 /// always returns the same set, regardless of cache state.
@@ -77,13 +84,38 @@ pub fn viable_tuples<'c>(cage: &Cage, store: &Store, cache: &'c mut Cache) -> &'
         cage: cage.clone(),
         projection: projection(cage, store),
     };
-    if !cache.viable.contains_key(&key) {
-        let statics = cache.static_tuples(cage);
+    if !cache.viable_tuples.contains_key(&key) {
+        let statics = cache.get_static_tuples(cage);
         let domains: Vec<Domain> = cage.cells().map(|cell| store.get(cell.id())).collect();
         let filtered = filter_viable(&statics, &domains);
-        let _ = cache.viable.insert(key.clone(), filtered);
+        let _ = cache.viable_tuples.insert(key.clone(), filtered);
     }
-    &cache.viable[&key]
+    &cache.viable_tuples[&key]
+}
+
+/// Returns the viable unordered multisets for `cage` under `store`, memoized in `cache`.
+///
+/// Each entry is a sorted `Tuple`; permutations of the same values appear once.
+/// Pure: for the same cage and store projection, it always returns the same set.
+pub fn viable_multisets<'c>(cage: &Cage, store: &Store, cache: &'c mut Cache) -> &'c MultisetSet {
+    let key = ViableKey {
+        cage: cage.clone(),
+        projection: projection(cage, store),
+    };
+    if !cache.viable_multisets.contains_key(&key) {
+        let tuples = viable_tuples(cage, store, cache);
+        let mut seen: std::collections::HashSet<Tuple> = std::collections::HashSet::new();
+        let multisets: MultisetSet = tuples
+            .iter()
+            .filter_map(|t| {
+                let mut sorted = t.clone();
+                sorted.sort_unstable();
+                seen.insert(sorted.clone()).then_some(sorted)
+            })
+            .collect();
+        let _ = cache.viable_multisets.insert(key.clone(), multisets);
+    }
+    &cache.viable_multisets[&key]
 }
 
 #[cfg(test)]
@@ -117,7 +149,7 @@ mod tests {
         let mut cache = Cache::default();
         let first = viable_tuples(&cage, &store, &mut cache).clone();
         let second = viable_tuples(&cage, &store, &mut cache).clone();
-        assert_eq!(cache.viable_entry_count(), 1);
+        assert_eq!(cache.viable_tuple_entry_count(), 1);
         assert_eq!(first, second);
 
         // An independent, empty cache produces the identical value: the cache
@@ -142,6 +174,52 @@ mod tests {
         narrowed.set(Cell::new(0, 0).id(), Domain::new([1]));
         let _ = viable_tuples(&cage, &narrowed, &mut cache);
 
-        assert_eq!(cache.viable_entry_count(), 2);
+        assert_eq!(cache.viable_tuple_entry_count(), 2);
+    }
+
+    #[test]
+    fn viable_multisets_deduplicates_permutations() {
+        // Add(4) on a same-row pair: tuples are [1,3] and [3,1], one multiset {1,3}.
+        let cage = cage();
+        let store = Store::full(4);
+        let mut cache = Cache::default();
+        let multisets = viable_multisets(&cage, &store, &mut cache).clone();
+        assert_eq!(multisets.len(), 1);
+        assert_eq!(multisets[0], vec![1u8, 3]);
+    }
+
+    #[test]
+    fn viable_multisets_is_a_pure_memo() {
+        let cage = cage();
+        let store = Store::full(4);
+        let mut cache = Cache::default();
+        let first = viable_multisets(&cage, &store, &mut cache).clone();
+        let second = viable_multisets(&cage, &store, &mut cache).clone();
+        assert_eq!(first, second);
+        // A fresh cache gives the same result.
+        let mut fresh = Cache::default();
+        assert_eq!(first, *viable_multisets(&cage, &store, &mut fresh));
+    }
+
+    #[test]
+    fn viable_multisets_consistent_with_viable_tuples() {
+        // Every multiset entry must appear as a sorted tuple in the tuple set.
+        let cage = cage();
+        let store = Store::full(4);
+        let mut cache = Cache::default();
+        let tuples = viable_tuples(&cage, &store, &mut cache).clone();
+        let multisets = viable_multisets(&cage, &store, &mut cache).clone();
+        let tuple_multisets: std::collections::HashSet<Vec<u8>> = tuples
+            .iter()
+            .map(|t| {
+                let mut s = t.clone();
+                s.sort_unstable();
+                s
+            })
+            .collect();
+        for ms in &multisets {
+            assert!(tuple_multisets.contains(ms));
+        }
+        assert_eq!(multisets.len(), tuple_multisets.len());
     }
 }

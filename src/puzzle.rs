@@ -13,9 +13,9 @@ use crate::{
         CageConflict, CellNotCovered, DuplicateSlotPolyomino, InfeasibleOperation, InvalidGridSize,
         RegionConflict, SlotNotInPuzzle, TargetNotAdjacent,
     },
-    Operation, Polyomino, Slot, Tuple,
+    Operation, Polyomino, Slot,
     all_different::AllDifferent,
-    cache::{Cache, viable_tuples},
+    cache::{Cache, viable_multisets, viable_tuples},
     constraint::{Constraint, Outcome, PropagationCtx, propagate_to_fixpoint},
     cover::Cover,
     generator::generate::{SizeDistribution, default_op_policy, generate, generate_with},
@@ -68,7 +68,7 @@ impl Clone for Puzzle {
             store: self.store.clone(),
             all_different: self.all_different.clone(),
             slots: self.slots.clone(),
-            cache: Mutex::new(self.cache.lock().expect("cache mutex poisoned").clone()),
+            cache: Mutex::new(self.cache_lock().clone()),
         }
     }
 }
@@ -173,13 +173,7 @@ impl Puzzle {
         // Carry the existing cache into propagation: entries are keyed on
         // (cage, domain-projection), so prior entries remain valid even as
         // the new cage may further narrow domains.
-        Ok(Self {
-            store: self.store.clone(),
-            all_different: self.all_different.clone(),
-            slots,
-            cache: Mutex::new(self.cache.lock().expect("cache mutex poisoned").clone()),
-        }
-        .propagate())
+        Ok(self.with_slots_and_cache(slots).propagate())
     }
 
     /// Returns a new puzzle with `cage` removed and constraints re-propagated
@@ -224,12 +218,7 @@ impl Puzzle {
         }
         let mut slots = self.slots.clone();
         let _ = slots.insert(Slot::Region(polyomino));
-        Ok(Self {
-            store: self.store.clone(),
-            all_different: self.all_different.clone(),
-            slots,
-            cache: Mutex::new(self.cache.lock().expect("cache mutex poisoned").clone()),
-        })
+        Ok(self.with_slots_and_cache(slots))
     }
 
     /// Returns a new [`Puzzle`] with the region at `polyomino` removed. Regions
@@ -247,12 +236,7 @@ impl Puzzle {
         }
         let mut slots = self.slots.clone();
         let _ = slots.remove(&key);
-        Ok(Self {
-            store: self.store.clone(),
-            all_different: self.all_different.clone(),
-            slots,
-            cache: Mutex::new(self.cache.lock().expect("cache mutex poisoned").clone()),
-        })
+        Ok(self.with_slots_and_cache(slots))
     }
 
     /// Returns a new [`Puzzle`] with the region at `polyomino` replaced by a cage
@@ -283,13 +267,7 @@ impl Puzzle {
         }
         let mut slots = self.slots.clone();
         let _ = slots.replace(Slot::Cage(cage));
-        Ok(Self {
-            store: self.store.clone(),
-            all_different: self.all_different.clone(),
-            slots,
-            cache: Mutex::new(self.cache.lock().expect("cache mutex poisoned").clone()),
-        }
-        .propagate())
+        Ok(self.with_slots_and_cache(slots).propagate())
     }
 
     /// Returns a new [`Puzzle`] with the cage at `polyomino` replaced by a
@@ -371,6 +349,21 @@ impl Puzzle {
         Ok(self.rebuilt(slots))
     }
 
+    fn cache_lock(&self) -> std::sync::MutexGuard<'_, Cache> {
+        self.cache.lock().expect("cache mutex poisoned")
+    }
+
+    /// Returns a new puzzle with `slots` and this puzzle's store, all-different
+    /// constraints, and a clone of its cache (so warm entries carry over).
+    fn with_slots_and_cache(&self, slots: BTreeSet<Slot>) -> Self {
+        Self {
+            store: self.store.clone(),
+            all_different: self.all_different.clone(),
+            slots,
+            cache: Mutex::new(self.cache_lock().clone()),
+        }
+    }
+
     /// Rebuilds the puzzle from a fully widened grid with `slots` and
     /// re-propagates. Used by the widening mutators ([`remove_cage`](Self::remove_cage),
     /// [`demote`](Self::demote)); widening can only enlarge domains, so
@@ -392,12 +385,7 @@ impl Puzzle {
     /// Each viable tuple is one specific ordered assignment of values to the
     /// cage's cells. Results are memoized across calls.
     pub fn viable_tuple_count(&self, cage: &Cage) -> usize {
-        viable_tuples(
-            cage,
-            &self.store,
-            &mut self.cache.lock().expect("cache mutex poisoned"),
-        )
-        .len()
+        viable_tuples(cage, &self.store, &mut self.cache_lock()).len()
     }
 
     /// The number of distinct unordered value-sets (multisets) that are viable
@@ -406,19 +394,7 @@ impl Puzzle {
     /// Multiple ordered tuples may share the same underlying multiset; this
     /// counts each multiset once. Results are memoized across calls.
     pub fn viable_multiset_count(&self, cage: &Cage) -> usize {
-        let tuples = viable_tuples(
-            cage,
-            &self.store,
-            &mut self.cache.lock().expect("cache mutex poisoned"),
-        )
-        .clone();
-        let mut seen: std::collections::HashSet<Tuple> = std::collections::HashSet::new();
-        for tuple in &tuples {
-            let mut sorted = tuple.clone();
-            sorted.sort_unstable();
-            let _ = seen.insert(sorted);
-        }
-        seen.len()
+        viable_multisets(cage, &self.store, &mut self.cache_lock()).len()
     }
 
     /// The puzzle's cages in ascending polyomino order.
