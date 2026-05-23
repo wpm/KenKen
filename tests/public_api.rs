@@ -6,6 +6,13 @@ mod test {
 
     use kenken::{Cage, CageOption, Cell, Domain, Operation, Operator, Polyomino, Puzzle, Slot};
 
+    /// Never called. The `where` bound fails compilation if `Puzzle` loses `Send` or `Sync`.
+    const fn _assert_puzzle_is_send_sync()
+    where
+        Puzzle: Send + Sync,
+    {
+    }
+
     const fn cell(row: usize, column: usize) -> Cell {
         Cell::new(row, column)
     }
