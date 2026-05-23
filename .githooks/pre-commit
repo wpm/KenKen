@@ -27,4 +27,7 @@ cargo clippy --all-targets -- \
 echo "==> cargo doc"
 RUSTDOCFLAGS="-D warnings" cargo doc --no-deps 2>&1
 
+echo "==> cargo test"
+cargo test --lib 2>&1
+
 echo "==> Pre-commit checks passed"
