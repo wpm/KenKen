@@ -98,10 +98,10 @@ pub fn default_op_policy(values: &[N], n: Index) -> Result<Operation, Error> {
             }
         }
         _ => {
-            let prod: M = values.iter().map(|&v| M::from(v)).product();
-            let area = M::try_from(n * n).unwrap_or(M::MAX);
+            let prod: u64 = values.iter().map(|&v| u64::from(v)).product();
+            let area = u64::from(M::try_from(n * n).unwrap_or(M::MAX));
             if prod <= area {
-                Ok(Multiply(prod))
+                Ok(Multiply(M::try_from(prod).unwrap_or(M::MAX)))
             } else {
                 Ok(Add(values.iter().map(|&v| M::from(v)).sum()))
             }
@@ -265,6 +265,16 @@ mod tests {
         assert_eq!(
             default_op_policy(&[3, 4, 4], 4).unwrap(),
             Operation::Add(11)
+        );
+    }
+
+    #[test]
+    fn default_op_policy_overflowing_product_falls_back_to_add() {
+        // 9^9 = 387_420_489 overflows M (u16); must fall back to Add.
+        // sum = 9*9 = 81
+        assert_eq!(
+            default_op_policy(&[9, 9, 9, 9, 9, 9, 9, 9, 9], 9).unwrap(),
+            Operation::Add(81)
         );
     }
 
