@@ -481,11 +481,7 @@ impl Puzzle {
         self.solutions().map(|s| s.len())
     }
 
-    /// Enumerates the puzzle's solutions via depth-first backtracking search.
-    ///
-    /// Each item is a fully solved [`Puzzle`]. The iterator is lazy: stop after
-    /// the first item for a uniqueness check, or drain it to count all solutions.
-    pub fn solve(&self) -> impl Iterator<Item = Self> {
+    fn solve(&self) -> impl Iterator<Item = Self> {
         let all_different = self.all_different.clone();
         let slots = self.slots.clone();
         Search::new(self.store.clone(), self.constraints()).map(move |store| Self {
@@ -1074,6 +1070,13 @@ mod tests {
     }
 
     #[test]
+    fn solutions_returns_none_for_empty_9x9() {
+        let p = Puzzle::new(9).unwrap();
+        assert!(p.solutions().is_none());
+        assert!(p.solution_count().is_none());
+    }
+
+    #[test]
     fn solutions_returns_none_when_only_regions_cover_cells() {
         let p = puzzle_4().insert_region(singleton()).unwrap();
         assert!(p.solutions().is_none());
@@ -1132,7 +1135,7 @@ mod tests {
         assert_eq!(p.solution_count(), Some(p.solutions().unwrap().len()));
     }
 
-    // --- solve ---
+    // --- solve (private; tested via solutions/solution_count) ---
 
     #[test]
     fn solve_unique_puzzle_yields_one_solution() {
@@ -1141,13 +1144,13 @@ mod tests {
             cage(2, &[(0, 1)], Operation::Given(2)),
         ];
         let puzzle = Puzzle::with_cages(2, &cages).unwrap().unwrap();
-        let solutions: Vec<Puzzle> = puzzle.solve().collect();
+        let solutions = puzzle.solve().collect::<Vec<_>>();
         assert_eq!(solutions.len(), 1);
         assert_eq!(solutions[0].domain(Cell::new(1, 1)), Domain::new([1]));
     }
 
     #[test]
-    fn solve_empty_3x3_has_twelve_latin_squares() {
+    fn solve_empty_puzzle_has_known_latin_square_count() {
         assert_eq!(puzzle_4().solve().count(), 576);
         assert_eq!(Puzzle::new(3).unwrap().solve().count(), 12);
     }

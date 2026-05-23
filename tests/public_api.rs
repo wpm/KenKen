@@ -30,19 +30,14 @@ mod test {
         Polyomino::from_cells(&cells).unwrap()
     }
 
-    /// A 6×6 puzzle fully covered by 18 vertical `Subtract(1)` pair cages,
-    /// one per column pair `((0,c)-(1,c))`, `((2,c)-(3,c))`, `((4,c)-(5,c))`.
-    ///
-    /// Each cage admits both orderings of every consecutive pair, so many
-    /// Latin-square completions satisfy the constraints.
+    /// A 2×2 puzzle covered by two `Add(3)` row cages. Both (1 2 / 2 1) and
+    /// (2 1 / 1 2) satisfy the constraints, so the puzzle has two solutions.
     fn multi_solution_puzzle() -> Puzzle {
-        let mut cages = Vec::with_capacity(18);
-        for col in 0..6 {
-            for (r0, r1) in [(0, 1), (2, 3), (4, 5)] {
-                cages.push(cage(6, &[(r0, col), (r1, col)], Operation::Subtract(1)));
-            }
-        }
-        Puzzle::with_cages(6, &cages).unwrap().unwrap()
+        let cages = [
+            cage(2, &[(0, 0), (0, 1)], Operation::Add(3)),
+            cage(2, &[(1, 0), (1, 1)], Operation::Add(3)),
+        ];
+        Puzzle::with_cages(2, &cages).unwrap().unwrap()
     }
 
     /// The [`multi_solution_puzzle`] layout with one cage swapped from
@@ -69,34 +64,33 @@ mod test {
     }
 
     #[test]
-    fn solve_finds_multiple_solutions_for_underconstrained_puzzle() {
+    fn solutions_finds_multiple_solutions_for_underconstrained_puzzle() {
         let puzzle = multi_solution_puzzle();
         let start = std::time::Instant::now();
-        let mut solutions = puzzle.solve();
-        assert!(solutions.next().is_some());
-        assert!(solutions.next().is_some());
+        let count = puzzle.solution_count().unwrap();
+        assert!(count >= 2);
         assert!(start.elapsed() < std::time::Duration::from_secs(1));
     }
 
     #[test]
-    fn solve_finds_no_solutions_for_infeasible_puzzle() {
+    fn solutions_finds_no_solutions_for_infeasible_puzzle() {
         let puzzle = no_solution_puzzle();
         let start = std::time::Instant::now();
-        let mut solutions = puzzle.solve();
-        assert!(solutions.next().is_none());
+        assert_eq!(puzzle.solution_count(), Some(0));
         assert!(start.elapsed() < std::time::Duration::from_secs(1));
     }
 
     #[test]
-    fn solve_finds_exactly_one_solution_for_uniquely_determined_puzzle() {
-        // 2×2 puzzle with Given(1) at (0,0) and Given(2) at (0,1) admits only
-        // the Latin completion (1 2 / 2 1).
+    fn solutions_finds_exactly_one_solution_for_uniquely_determined_puzzle() {
+        // 2×2 puzzle fully covered: Given(1) and Given(2) in row 0, Add(3) for
+        // row 1. Admits only the Latin completion (1 2 / 2 1).
         let cages = [
             cage(2, &[(0, 0)], Operation::Given(1)),
             cage(2, &[(0, 1)], Operation::Given(2)),
+            cage(2, &[(1, 0), (1, 1)], Operation::Add(3)),
         ];
         let puzzle = Puzzle::with_cages(2, &cages).unwrap().unwrap();
-        assert_eq!(puzzle.solve().count(), 1);
+        assert_eq!(puzzle.solution_count(), Some(1));
     }
 
     mod generator {

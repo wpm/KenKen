@@ -3,7 +3,7 @@
 //! [`Puzzle`] is the entry point for everything the crate does:
 //! - Build an empty board with [`Puzzle::new`] and add constraints with [`Puzzle::insert_cage`], or
 //!   bulk-construct with [`Puzzle::with_cages`].
-//! - Enumerate solutions with [`Puzzle::solve`].
+//! - Enumerate solutions with [`Puzzle::solutions`] (or [`Puzzle::solution_count`]).
 //! - Generate a random puzzle with [`Puzzle::generate`] (or [`Puzzle::generate_with`] for a custom
 //!   operation policy and cage-size distribution).
 //!

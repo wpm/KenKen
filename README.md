@@ -26,9 +26,10 @@ Everything is accessed through the [`Puzzle`] type.
 via `remove(&cage)`, or bulk-construct with `Puzzle::with_cages(n, &cages)`. Each `Cage` is a
 `Polyomino` paired with an `Operation` (`Add`, `Subtract`, `Multiply`, `Divide`, or `Given`).
 
-**Enumerate solutions** with `puzzle.solve()`, a depth-first backtracking iterator that yields one
-solved `Puzzle` per solution. Stop after the first item for uniqueness checks, or drain the
-iterator to count all solutions.
+**Enumerate solutions** with `puzzle.solutions()`, which returns `None` if the puzzle is
+incomplete, `Some([])` if it is complete but unsatisfiable, or `Some([…])` with all solutions.
+The result is lazily computed on the first call and cached for subsequent calls. Use
+`puzzle.solution_count()` to get only the count.
 
 **Generate puzzles** randomly with `Puzzle::generate(n, rng)`, or use
 `Puzzle::generate_with(n, rng, op_policy, sizes)` for custom operation assignment and cage-size
