@@ -47,6 +47,7 @@ impl Constraint<Cell> for KenKenConstraint {
 /// |------------------|----------------------------------------------------------|
 /// | `Uncomputed`     | Not yet evaluated                                        |
 /// | `Incomplete`     | Puzzle has uncaged cells — solutions are not defined     |
+/// | `IsSolution`     | This puzzle is itself a solution; no nested vec needed   |
 /// | `Solved([])`     | Puzzle is complete but its constraints are unsatisfiable |
 /// | `Solved([…])`    | Puzzle is complete and these are all its solutions       |
 #[derive(Debug, Clone, Default)]
@@ -54,6 +55,7 @@ enum SolutionsCache {
     #[default]
     Uncomputed,
     Incomplete,
+    IsSolution,
     Solved(Vec<Puzzle>),
 }
 
@@ -472,6 +474,7 @@ impl Puzzle {
             };
         }
         match &*guard {
+            SolutionsCache::IsSolution => Some(vec![self.clone()]),
             SolutionsCache::Solved(v) => Some(v.clone()),
             SolutionsCache::Incomplete => None,
             SolutionsCache::Uncomputed => unreachable!(),
@@ -492,7 +495,7 @@ impl Puzzle {
             all_different: all_different.clone(),
             slots: slots.clone(),
             tuples_cache: Mutex::new(TuplesCache::default()),
-            solutions_cache: Mutex::new(SolutionsCache::Uncomputed),
+            solutions_cache: Mutex::new(SolutionsCache::IsSolution),
         })
     }
 
