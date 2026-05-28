@@ -4,7 +4,14 @@
 #![allow(clippy::unwrap_used)]
 mod test {
 
-    use kenken::{Cage, CageOption, CageSlot, Cell, Fill, Operation, Operator, Polyomino, Puzzle};
+    use kenken::{Cage, CageOption, Cell, Domain, Operation, Operator, Polyomino, Puzzle, Slot};
+
+    /// Never called. The `where` bound fails compilation if `Puzzle` loses `Send` or `Sync`.
+    const fn _assert_puzzle_is_send_sync()
+    where
+        Puzzle: Send + Sync,
+    {
+    }
 
     const fn cell(row: usize, column: usize) -> Cell {
         Cell::new(row, column)
@@ -23,19 +30,14 @@ mod test {
         Polyomino::from_cells(&cells).unwrap()
     }
 
-    /// A 6×6 puzzle fully covered by 18 vertical `Subtract(1)` pair cages,
-    /// one per column pair `((0,c)-(1,c))`, `((2,c)-(3,c))`, `((4,c)-(5,c))`.
-    ///
-    /// Each cage admits both orderings of every consecutive pair, so many
-    /// Latin-square completions satisfy the constraints.
+    /// A 2×2 puzzle covered by two `Add(3)` row cages. Both (1 2 / 2 1) and
+    /// (2 1 / 1 2) satisfy the constraints, so the puzzle has two solutions.
     fn multi_solution_puzzle() -> Puzzle {
-        let mut cages = Vec::with_capacity(18);
-        for col in 0..6 {
-            for (r0, r1) in [(0, 1), (2, 3), (4, 5)] {
-                cages.push(cage(6, &[(r0, col), (r1, col)], Operation::Subtract(1)));
-            }
-        }
-        Puzzle::with_cages(6, &cages).unwrap().unwrap()
+        let cages = [
+            cage(2, &[(0, 0), (0, 1)], Operation::Add(3)),
+            cage(2, &[(1, 0), (1, 1)], Operation::Add(3)),
+        ];
+        Puzzle::with_cages(2, &cages).unwrap().unwrap()
     }
 
     /// The [`multi_solution_puzzle`] layout with one cage swapped from
@@ -62,34 +64,33 @@ mod test {
     }
 
     #[test]
-    fn solve_finds_multiple_solutions_for_underconstrained_puzzle() {
+    fn solutions_finds_multiple_solutions_for_underconstrained_puzzle() {
         let puzzle = multi_solution_puzzle();
         let start = std::time::Instant::now();
-        let mut solutions = puzzle.solve();
-        assert!(solutions.next().is_some());
-        assert!(solutions.next().is_some());
+        let count = puzzle.solution_count().unwrap();
+        assert!(count >= 2);
         assert!(start.elapsed() < std::time::Duration::from_secs(1));
     }
 
     #[test]
-    fn solve_finds_no_solutions_for_infeasible_puzzle() {
+    fn solutions_finds_no_solutions_for_infeasible_puzzle() {
         let puzzle = no_solution_puzzle();
         let start = std::time::Instant::now();
-        let mut solutions = puzzle.solve();
-        assert!(solutions.next().is_none());
+        assert_eq!(puzzle.solution_count(), Some(0));
         assert!(start.elapsed() < std::time::Duration::from_secs(1));
     }
 
     #[test]
-    fn solve_finds_exactly_one_solution_for_uniquely_determined_puzzle() {
-        // 2×2 puzzle with Given(1) at (0,0) and Given(2) at (0,1) admits only
-        // the Latin completion (1 2 / 2 1).
+    fn solutions_finds_exactly_one_solution_for_uniquely_determined_puzzle() {
+        // 2×2 puzzle fully covered: Given(1) and Given(2) in row 0, Add(3) for
+        // row 1. Admits only the Latin completion (1 2 / 2 1).
         let cages = [
             cage(2, &[(0, 0)], Operation::Given(1)),
             cage(2, &[(0, 1)], Operation::Given(2)),
+            cage(2, &[(1, 0), (1, 1)], Operation::Add(3)),
         ];
         let puzzle = Puzzle::with_cages(2, &cages).unwrap().unwrap();
-        assert_eq!(puzzle.solve().count(), 1);
+        assert_eq!(puzzle.solution_count(), Some(1));
     }
 
     mod generator {
@@ -129,12 +130,6 @@ mod test {
             assert!(calls.get() > 0);
             assert!(puzzle.cages().count() > 0);
         }
-    }
-
-    #[test]
-    fn puzzle_is_send_and_sync() {
-        fn assert_send_sync<T: Send + Sync>() {}
-        assert_send_sync::<Puzzle>();
     }
 
     // The tests below mirror in-crate unit tests for the same methods. The
@@ -214,20 +209,20 @@ mod test {
     }
 
     #[test]
-    fn candidates_exposes_cell_fill_pairs_via_public_api() {
+    fn domains_exposes_cell_domain_pairs_via_public_api() {
         // Given(2) at (0,0) pins that cell to {2}; the remaining cells in row 0
         // and column 0 narrow to {1, 3, 4} via AllDifferent.
         let puzzle = Puzzle::with_cages(4, &[cage(4, &[(0, 0)], Operation::Given(2))])
             .unwrap()
             .unwrap();
-        let pairs: Vec<(Cell, Fill)> = puzzle.candidates().collect();
+        let pairs: Vec<(Cell, Domain)> = puzzle.domains().collect();
         assert_eq!(pairs.len(), 16);
         let pinned = pairs
             .iter()
             .find(|(c, _)| *c == cell(0, 0))
             .map(|(_, f)| *f)
             .unwrap();
-        assert_eq!(pinned, Fill::new([2]));
+        assert_eq!(pinned, Domain::new([2]));
     }
 
     #[test]
@@ -254,12 +249,8 @@ mod test {
         assert_eq!(widened.cages().count(), 0);
         assert_eq!(widened.regions().count(), 1);
         assert_eq!(
-            widened
-                .candidates()
-                .find(|(c, _)| *c == cell(0, 0))
-                .unwrap()
-                .1,
-            Fill::full(4)
+            widened.domains().find(|(c, _)| *c == cell(0, 0)).unwrap().1,
+            Domain::full(4)
         );
     }
 
@@ -281,7 +272,7 @@ mod test {
     fn insert_region_overlap_returns_public_region_conflict() {
         let puzzle = Puzzle::new(4)
             .unwrap()
-            .insert(cage(4, &[(0, 0)], Operation::Given(3)))
+            .insert_cage(cage(4, &[(0, 0)], Operation::Given(3)))
             .unwrap()
             .unwrap();
         assert!(matches!(
@@ -291,14 +282,14 @@ mod test {
     }
 
     #[test]
-    fn slots_iterator_yields_cage_slot_references() {
+    fn slots_iterator_yields_slot_references() {
         let puzzle = Puzzle::new(4)
             .unwrap()
             .insert_region(region(&[(0, 0)]))
             .unwrap();
-        let slots: Vec<&CageSlot> = puzzle.slots().collect();
+        let slots: Vec<&Slot> = puzzle.slots().collect();
         assert_eq!(slots.len(), 1);
-        assert!(matches!(slots[0], CageSlot::Region(_)));
+        assert!(matches!(slots[0], Slot::Region(_)));
     }
 
     #[test]
@@ -324,7 +315,7 @@ mod test {
     #[test]
     fn remove_region_on_cage_polyomino_is_noop() {
         let c = cage(4, &[(0, 0)], Operation::Given(3));
-        let puzzle = Puzzle::new(4).unwrap().insert(c).unwrap().unwrap();
+        let puzzle = Puzzle::new(4).unwrap().insert_cage(c).unwrap().unwrap();
         let after = puzzle.remove_region(&region(&[(0, 0)])).unwrap();
         assert_eq!(after.cages().count(), 1);
         assert_eq!(after.regions().count(), 0);
@@ -340,12 +331,8 @@ mod test {
             .remove_region(&p)
             .unwrap();
         assert_eq!(
-            puzzle
-                .candidates()
-                .find(|(c, _)| *c == cell(0, 0))
-                .unwrap()
-                .1,
-            Fill::full(4)
+            puzzle.domains().find(|(c, _)| *c == cell(0, 0)).unwrap().1,
+            Domain::full(4)
         );
     }
 
@@ -361,5 +348,126 @@ mod test {
         let base_regions: Vec<&Polyomino> = base.regions().collect();
         let round_tripped_regions: Vec<&Polyomino> = round_tripped.regions().collect();
         assert_eq!(base_regions, round_tripped_regions);
+    }
+
+    // --- insert_cell (public API) ---
+
+    #[test]
+    fn insert_cell_adjacent_cell_grows_region() {
+        let p = Puzzle::new(4)
+            .unwrap()
+            .insert_region(region(&[(0, 0)]))
+            .unwrap();
+        let slot = Slot::Region(region(&[(0, 0)]));
+        let new_p = p.insert_cell(cell(0, 1), &slot).unwrap().unwrap();
+        assert_eq!(new_p.regions().count(), 1);
+        assert!(new_p.regions().next().unwrap().contains(cell(0, 1)));
+    }
+
+    #[test]
+    fn insert_cell_on_cage_demotes_and_widens() {
+        let c = cage(4, &[(0, 0)], Operation::Given(3));
+        let p = Puzzle::new(4)
+            .unwrap()
+            .insert_cage(c.clone())
+            .unwrap()
+            .unwrap();
+        let slot = Slot::Cage(c);
+        let new_p = p.insert_cell(cell(0, 1), &slot).unwrap().unwrap();
+        assert_eq!(new_p.cages().count(), 0);
+        assert_eq!(new_p.regions().count(), 1);
+        assert_eq!(
+            new_p.domains().find(|(c, _)| *c == cell(0, 0)).unwrap().1,
+            Domain::full(4)
+        );
+    }
+
+    #[test]
+    fn insert_cell_non_adjacent_returns_target_not_adjacent() {
+        let p = Puzzle::new(4)
+            .unwrap()
+            .insert_region(region(&[(0, 0)]))
+            .unwrap();
+        let slot = Slot::Region(region(&[(0, 0)]));
+        assert!(matches!(
+            p.insert_cell(cell(1, 1), &slot),
+            Err(kenken::Error::TargetNotAdjacent)
+        ));
+    }
+
+    #[test]
+    fn insert_cell_slot_not_in_puzzle_returns_err() {
+        let slot = Slot::Region(region(&[(0, 0)]));
+        assert!(matches!(
+            Puzzle::new(4).unwrap().insert_cell(cell(0, 1), &slot),
+            Err(kenken::Error::SlotNotInPuzzle(_))
+        ));
+    }
+
+    #[test]
+    fn insert_cell_into_occupied_cell_returns_region_conflict() {
+        let p = Puzzle::new(4)
+            .unwrap()
+            .insert_region(region(&[(0, 0)]))
+            .unwrap()
+            .insert_region(region(&[(0, 1)]))
+            .unwrap();
+        let slot = Slot::Region(region(&[(0, 0)]));
+        assert!(matches!(
+            p.insert_cell(cell(0, 1), &slot),
+            Err(kenken::Error::RegionConflict(_))
+        ));
+    }
+
+    // --- remove_cell (public API) ---
+
+    #[test]
+    fn remove_cell_shrinks_region() {
+        let p = Puzzle::new(4)
+            .unwrap()
+            .insert_region(region(&[(0, 0), (0, 1)]))
+            .unwrap();
+        let new_p = p.remove_cell(cell(0, 1)).unwrap();
+        assert_eq!(new_p.regions().count(), 1);
+        assert!(!new_p.regions().next().unwrap().contains(cell(0, 1)));
+    }
+
+    #[test]
+    fn remove_cell_from_cage_demotes_and_widens() {
+        let c = cage(4, &[(0, 0), (0, 1)], Operation::Add(3));
+        let p = Puzzle::new(4).unwrap().insert_cage(c).unwrap().unwrap();
+        let new_p = p.remove_cell(cell(0, 1)).unwrap();
+        assert_eq!(new_p.cages().count(), 0);
+        assert_eq!(new_p.regions().count(), 1);
+    }
+
+    #[test]
+    fn remove_cell_singleton_removes_slot() {
+        let p = Puzzle::new(4)
+            .unwrap()
+            .insert_region(region(&[(0, 0)]))
+            .unwrap();
+        let new_p = p.remove_cell(cell(0, 0)).unwrap();
+        assert_eq!(new_p.slots().count(), 0);
+    }
+
+    #[test]
+    fn remove_cell_not_covered_returns_cell_not_covered() {
+        assert!(matches!(
+            Puzzle::new(4).unwrap().remove_cell(cell(0, 0)),
+            Err(kenken::Error::CellNotCovered(_))
+        ));
+    }
+
+    #[test]
+    fn remove_cell_would_disconnect_returns_err() {
+        let p = Puzzle::new(4)
+            .unwrap()
+            .insert_region(region(&[(0, 0), (0, 1), (0, 2)]))
+            .unwrap();
+        assert!(matches!(
+            p.remove_cell(cell(0, 1)),
+            Err(kenken::Error::WouldDisconnect(_))
+        ));
     }
 }

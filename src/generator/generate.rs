@@ -6,8 +6,8 @@ use std::collections::HashSet;
 use rand::{Rng, RngExt};
 
 use crate::{
-    Cell, Polyomino,
-    constraints::cage::{Cage, operation::Operation},
+    Cell, Operation, Polyomino,
+    cage::Cage,
     generator::latin_square::generate_latin_square,
     puzzle::Puzzle,
     types::{Error, Index, M, N},
@@ -98,10 +98,10 @@ pub fn default_op_policy(values: &[N], n: Index) -> Result<Operation, Error> {
             }
         }
         _ => {
-            let prod: M = values.iter().map(|&v| M::from(v)).product();
-            let area = M::try_from(n * n).unwrap_or(M::MAX);
+            let prod: u64 = values.iter().map(|&v| u64::from(v)).product();
+            let area = u64::from(M::try_from(n * n).unwrap_or(M::MAX));
             if prod <= area {
-                Ok(Multiply(prod))
+                Ok(Multiply(M::try_from(prod).unwrap_or(M::MAX)))
             } else {
                 Ok(Add(values.iter().map(|&v| M::from(v)).sum()))
             }
@@ -109,7 +109,7 @@ pub fn default_op_policy(values: &[N], n: Index) -> Result<Operation, Error> {
     }
 }
 
-/// Generates a random `n`×`n` puzzle using [`default_op_policy`] and
+/// Generates a random `n`×`n` puzzle using the default operation policy and
 /// [`SizeDistribution::default_for`].
 ///
 /// # Errors
@@ -156,7 +156,7 @@ where
         let operation = op(&values, n)?;
         let cage = Cage::new(n_max, polyomino, operation);
         puzzle = puzzle
-            .insert(cage)?
+            .insert_cage(cage)?
             .unwrap_or_else(|| unreachable!("disjoint tiling cannot produce a contradiction"));
     }
     Ok(puzzle)
@@ -230,7 +230,7 @@ mod tests {
     use rand::SeedableRng;
 
     use super::*;
-    use crate::constraints::Cover;
+    use crate::cover::Cover;
 
     #[test]
     fn default_op_policy_one_cell_is_given() {
@@ -265,6 +265,16 @@ mod tests {
         assert_eq!(
             default_op_policy(&[3, 4, 4], 4).unwrap(),
             Operation::Add(11)
+        );
+    }
+
+    #[test]
+    fn default_op_policy_overflowing_product_falls_back_to_add() {
+        // 9^9 = 387_420_489 overflows M (u16); must fall back to Add.
+        // sum = 9*9 = 81
+        assert_eq!(
+            default_op_policy(&[9, 9, 9, 9, 9, 9, 9, 9, 9], 9).unwrap(),
+            Operation::Add(81)
         );
     }
 
