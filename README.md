@@ -3,6 +3,9 @@
 [![CI](https://github.com/wpm/KenKen/actions/workflows/ci.yml/badge.svg)](https://github.com/wpm/KenKen/actions/workflows/ci.yml)
 [![codecov](https://codecov.io/gh/wpm/KenKen/branch/main/graph/badge.svg)](https://codecov.io/gh/wpm/KenKen)
 
+**_The KenKen library has been supersceded by [Mathdoku](https://github.com/wpm/Mathdoku).
+This library is archived and no longer maintained._**
+
 A Rust library for generating and solving KenKen puzzles.
 
 [KenKen](https://www.kenken.com) is a math-based logic puzzle played on an n×n grid. The grid is divided
